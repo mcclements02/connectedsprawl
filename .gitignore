@@ -1,0 +1,35 @@
+# --- Unreal Engine generated ---------------------------------------------
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# --- Editor / IDE metadata -----------------------------------------------
+*.suo
+*.sln
+*.sdf
+*.opensdf
+*.opendb
+*.VC.db
+*.VC.opendb
+*.xcworkspace/
+*.xcuserstate
+.vs/
+.idea/
+.vscode/
+
+# --- OS clutter ----------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# --- Source archives / raw imports (the .uasset versions live in Content/) -
+*.zip
+*.blend
+sm_subwaycar.fbx
+police_interceptor.fbx
+staging/
+
+# --- Logs / crash reports ------------------------------------------------
+*.log
+ConnectedSprawl-backup*.log

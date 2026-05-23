@@ -1,0 +1,30 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.7",
+	"Category": "Game",
+	"Description": "The Connected Sprawl — Zarri's 15-mile founder hustle. GTA-style open world with a startup economy.",
+	"Modules": [
+		{
+			"Name": "ConnectedSprawl",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"CoreUObject",
+				"ChaosVehicles",
+				"EnhancedInput",
+				"UMG",
+				"GameplayTags",
+				"AIModule"
+			]
+		}
+	],
+	"Plugins": [
+		{ "Name": "EnhancedInput", "Enabled": true },
+		{ "Name": "ChaosVehiclesPlugin", "Enabled": true },
+		{ "Name": "ModelingToolsEditorMode", "Enabled": true },
+		{ "Name": "GameplayAbilities", "Enabled": true },
+		{ "Name": "Niagara", "Enabled": true }
+	],
+	"TargetPlatforms": [ "IOS", "Mac" ]
+}
