@@ -3,6 +3,7 @@
 #include "Vehicles/SprawlCar.h"
 #include "Characters/ZarriCharacter.h"
 #include "Components/BoxComponent.h"
+#include "Components/MeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Camera/CameraComponent.h"
@@ -15,6 +16,63 @@
 #include "Engine/SkeletalMesh.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
+
+#include <initializer_list>
+
+namespace
+{
+bool SlotNameContainsAny(const FString& LowerSlotName, std::initializer_list<const TCHAR*> Terms)
+{
+	for (const TCHAR* Term : Terms)
+	{
+		if (LowerSlotName.Contains(Term))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool IsVehiclePaintSlotName(const FName SlotName)
+{
+	const FString LowerSlotName = SlotName.ToString().ToLower();
+	if (SlotNameContainsAny(LowerSlotName, {
+		TEXT("glass"), TEXT("screen"), TEXT("wheel"), TEXT("tyre"),
+		TEXT("tire"), TEXT("rim"), TEXT("brake"), TEXT("light"),
+		TEXT("lamp"), TEXT("grill"), TEXT("exhaust"), TEXT("interior"),
+		TEXT("plate")
+	}))
+	{
+		return false;
+	}
+
+	return SlotNameContainsAny(LowerSlotName, { TEXT("body"), TEXT("paint"), TEXT("carbon") });
+}
+
+void ApplyVehiclePaintMaterial(UMeshComponent* MeshComponent, UMaterialInterface* PaintMaterial)
+{
+	if (!MeshComponent || !PaintMaterial)
+	{
+		return;
+	}
+
+	bool bAppliedPaint = false;
+	const TArray<FName> SlotNames = MeshComponent->GetMaterialSlotNames();
+	for (int32 SlotIndex = 0; SlotIndex < SlotNames.Num(); ++SlotIndex)
+	{
+		if (IsVehiclePaintSlotName(SlotNames[SlotIndex]))
+		{
+			MeshComponent->SetMaterial(SlotIndex, PaintMaterial);
+			bAppliedPaint = true;
+		}
+	}
+
+	if (!bAppliedPaint && MeshComponent->GetNumMaterials() > 0)
+	{
+		MeshComponent->SetMaterial(0, PaintMaterial);
+	}
+}
+}
 
 ASprawlCar::ASprawlCar()
 {
@@ -74,6 +132,7 @@ ASprawlCar::ASprawlCar()
 	UMaterialInterface* ChromeMaterial = ChromeMat.Succeeded() ? ChromeMat.Object.Get() : nullptr;
 	UMaterialInterface* LampMaterial = LampMat.Succeeded() ? LampMat.Object.Get() : nullptr;
 	UMaterialInterface* TailMaterial = TailMat.Succeeded() ? TailMat.Object.Get() : BodyMaterial;
+	BodyPaintMaterial = BodyMaterial;
 
 	FullBodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ExternalVehicleMesh"));
 	FullBodyMesh->SetupAttachment(Hull);
@@ -187,6 +246,7 @@ void ASprawlCar::SetBodyMaterial(UMaterialInterface* Mat)
 {
 	if (Mat)
 	{
+		BodyPaintMaterial = Mat;
 		for (UStaticMeshComponent* BodyPart : BodyPaintMeshes)
 		{
 			if (BodyPart)
@@ -194,6 +254,8 @@ void ASprawlCar::SetBodyMaterial(UMaterialInterface* Mat)
 				BodyPart->SetMaterial(0, Mat);
 			}
 		}
+		ApplyVehiclePaintMaterial(FullBodyMesh, Mat);
+		ApplyVehiclePaintMaterial(FullSkeletalBodyMesh, Mat);
 	}
 }
 
@@ -206,9 +268,11 @@ void ASprawlCar::SetExternalVehicleMesh(UStaticMesh* Mesh, FVector RelativeLocat
 	}
 
 	FullBodyMesh->SetStaticMesh(Mesh);
+	FullBodyMesh->EmptyOverrideMaterials();
 	FullBodyMesh->SetRelativeLocation(RelativeLocation);
 	FullBodyMesh->SetRelativeRotation(RelativeRotation);
 	FullBodyMesh->SetRelativeScale3D(RelativeScale);
+	ApplyVehiclePaintMaterial(FullBodyMesh, BodyPaintMaterial);
 	FullBodyMesh->SetVisibility(true, true);
 	FullBodyMesh->SetHiddenInGame(false);
 	if (FullSkeletalBodyMesh)
@@ -228,9 +292,11 @@ void ASprawlCar::SetExternalSkeletalVehicleMesh(USkeletalMesh* Mesh, FVector Rel
 	}
 
 	FullSkeletalBodyMesh->SetSkeletalMesh(Mesh);
+	FullSkeletalBodyMesh->EmptyOverrideMaterials();
 	FullSkeletalBodyMesh->SetRelativeLocation(RelativeLocation);
 	FullSkeletalBodyMesh->SetRelativeRotation(RelativeRotation);
 	FullSkeletalBodyMesh->SetRelativeScale3D(RelativeScale);
+	ApplyVehiclePaintMaterial(FullSkeletalBodyMesh, BodyPaintMaterial);
 	FullSkeletalBodyMesh->SetVisibility(true, true);
 	FullSkeletalBodyMesh->SetHiddenInGame(false);
 	if (FullBodyMesh)
@@ -365,9 +431,17 @@ void ASprawlCar::Tick(float DeltaSeconds)
 		return;
 	}
 
-	// Only the player drives; parked cars just sit.
-	if (!Cast<APlayerController>(GetController()))
+	const bool bPlayerDriving = Cast<APlayerController>(GetController()) != nullptr;
+	if (!bPlayerDriving && !bAutoDrive)
 	{
+		// Parked, unpossessed cars just sit.
+		return;
+	}
+	if (bAutoDrive && !bPlayerDriving)
+	{
+		RunAutoDrive(DeltaSeconds);
+		// AI drives physics directly inside RunAutoDrive — skip the
+		// AddForce-based player path so the two paths don't fight.
 		return;
 	}
 
@@ -390,5 +464,70 @@ void ASprawlCar::Tick(float DeltaSeconds)
 		const float TargetYaw = SteerInput * Dir * TurnRate * SpeedFactor;
 		Hull->SetPhysicsAngularVelocityInDegrees(
 			FVector(AngVel.X, AngVel.Y, TargetYaw));
+	}
+}
+
+void ASprawlCar::RunAutoDrive(float DeltaSeconds)
+{
+	// Seed the target heading from the car's spawn rotation, snapped to a
+	// cardinal direction so the AI follows the road grid.
+	if (!bAITargetYawSeeded)
+	{
+		const float Yaw = GetActorRotation().Yaw;
+		AITargetYaw = FMath::RoundHalfToEven(Yaw / 90.f) * 90.f;
+		bAITargetYawSeeded = true;
+		AINextTurnDelay = FMath::FRandRange(4.f, 9.f);
+		UE_LOG(LogTemp, Display, TEXT("[SprawlAI] %s starting auto-drive, target yaw=%.0f, hull-simulating=%s"),
+			*GetName(), AITargetYaw, Hull && Hull->IsSimulatingPhysics() ? TEXT("yes") : TEXT("no"));
+	}
+
+	// City-bounds check: if near the map edge, force a U-turn toward the centre
+	// so the car doesn't drive off into the abyss.
+	const FVector Loc = GetActorLocation();
+	const float CityHalf = 8200.f;
+	if (FMath::Abs(Loc.X) > CityHalf || FMath::Abs(Loc.Y) > CityHalf)
+	{
+		const float YawToCenter = FMath::RadiansToDegrees(FMath::Atan2(-Loc.Y, -Loc.X));
+		const float SnappedYaw  = FMath::RoundHalfToEven(YawToCenter / 90.f) * 90.f;
+		AITargetYaw = SnappedYaw;
+		// Reset the turn timer so we don't immediately re-roll a turn into the edge.
+		AITimeSinceTurn = 0.f;
+		AINextTurnDelay = FMath::FRandRange(6.f, 11.f);
+	}
+
+	// Every few seconds, randomly turn left/right or keep going straight.
+	AITimeSinceTurn += DeltaSeconds;
+	if (AITimeSinceTurn >= AINextTurnDelay)
+	{
+		AITimeSinceTurn = 0.f;
+		AINextTurnDelay = FMath::FRandRange(6.f, 14.f);
+		const float r = FMath::FRand();
+		if (r < 0.30f) { AITargetYaw -= 90.f; }
+		else if (r < 0.60f) { AITargetYaw += 90.f; }
+		// otherwise continue straight
+	}
+
+	// Steer toward the target heading.
+	const float CurYaw = GetActorRotation().Yaw;
+	const float Delta = FMath::FindDeltaAngleDegrees(CurYaw, AITargetYaw);
+	SteerInput = FMath::Clamp(Delta / 25.f, -1.f, 1.f);
+	// Slow down for sharp turns; otherwise just cruise.
+	const float TurnFactor = FMath::Lerp(1.f, 0.55f, FMath::Clamp(FMath::Abs(Delta) / 60.f, 0.f, 1.f));
+	ThrottleInput = TurnFactor;
+
+	// Drive the physics body directly — bypass AddForce so component
+	// collisions / damping can't stall the AI car.
+	if (Hull)
+	{
+		const FVector Fwd = GetActorForwardVector();
+		const FVector CurVel = Hull->GetPhysicsLinearVelocity();
+		// Keep gravity acting on Z; set horizontal velocity to cruise * throttle.
+		const FVector Drive = Fwd * AICruiseSpeed * ThrottleInput;
+		Hull->SetPhysicsLinearVelocity(
+			FVector(Drive.X, Drive.Y, CurVel.Z));
+		// Yaw spin proportional to steering input.
+		const FVector AngVel = Hull->GetPhysicsAngularVelocityInDegrees();
+		Hull->SetPhysicsAngularVelocityInDegrees(
+			FVector(AngVel.X, AngVel.Y, SteerInput * TurnRate));
 	}
 }

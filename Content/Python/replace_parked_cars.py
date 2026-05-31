@@ -2,30 +2,47 @@
 car meshes at the same positions / orientations.
 """
 import unreal
-import random
+import os
+import re
+import sys
 
-random.seed(13)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.append(SCRIPT_DIR)
+
+import vehicle_realism
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 les.load_level("/Game/Maps/TestMap")
 
-mesh_paths = [
-    "/Game/Vehicles/Imported/Generic/Car_{}".format(i) for i in range(1, 11)
-] + ["/Game/Vehicles/Imported/Police/police_interceptor"]
-meshes = [m for m in (unreal.load_asset(p) for p in mesh_paths)
-          if m and isinstance(m, unreal.StaticMesh)]
+meshes = vehicle_realism.load_vehicle_meshes()
+paint_mats = vehicle_realism.load_vehicle_paint_materials()
 unreal.log("[ParkedCars] {} real meshes available".format(len(meshes)))
 if not meshes:
     raise RuntimeError("No imported car meshes found.")
 
-# Snapshot positions from each "_body" piece (one per kitbash car).
+# Snapshot positions from each old "_body" piece, or from already-replaced
+# City_Car_N static mesh actors so this script stays idempotent.
 snapshots = []
+seen = set()
 for a in eas.get_all_level_actors():
     lbl = a.get_actor_label()
-    if lbl.startswith("City_Car_") and lbl.endswith("_body"):
+    real_match = re.match(r"^City_Car_(\d+)$", lbl)
+    if real_match and real_match.group(1) not in seen:
+        key = real_match.group(1)
         loc = a.get_actor_location()
         rot = a.get_actor_rotation()
-        snapshots.append((loc, rot.yaw))
+        snapshots.append((key, loc, rot.yaw - 90.0))
+        seen.add(key)
+        continue
+
+    kitbash_match = re.match(r"^City_Car_(\d+)_body$", lbl)
+    if kitbash_match and kitbash_match.group(1) not in seen:
+        key = kitbash_match.group(1)
+        loc = a.get_actor_location()
+        rot = a.get_actor_rotation()
+        snapshots.append((key, loc, rot.yaw))
+        seen.add(key)
 
 # Clear ALL kitbash pieces.
 removed = 0
@@ -36,32 +53,12 @@ for a in list(eas.get_all_level_actors()):
 unreal.log("[ParkedCars] cleared {} kitbash pieces, will place {} real cars".format(
     removed, len(snapshots)))
 
-TARGET_LEN = 470.0
-
-def place(idx, loc, car_yaw):
-    mesh = random.choice(meshes)
-    bb = mesh.get_bounding_box()
-    sz = bb.max - bb.min
-    natural_len = max(sz.x, sz.y, 1.0)
-    scale = max(0.45, min(1.4, TARGET_LEN / natural_len))
-    # Drop the actor so the mesh bottom sits at z ≈ 8 (just above the road).
-    z = 8.0 - bb.min.z * scale
-    actor_loc = unreal.Vector(loc.x, loc.y, z)
-    # FBX cars are Y-forward; add yaw=90 so the car's long axis aligns with our chosen yaw.
-    rot = unreal.Rotator(0.0, car_yaw + 90.0, 0.0)
-    a = eas.spawn_actor_from_class(unreal.StaticMeshActor, actor_loc, rot)
-    a.set_actor_label("City_Car_{}".format(idx))
-    a.set_actor_scale3d(unreal.Vector(scale, scale, scale))
-    smc = a.static_mesh_component
-    smc.set_static_mesh(mesh)
-    smc.set_mobility(unreal.ComponentMobility.STATIC)
-    return a
-
 placed = 0
-for i, (loc, yaw) in enumerate(snapshots):
-    place(i, loc, yaw)
+snapshots.sort(key=lambda s: int(s[0]))
+for i, (_, loc, yaw) in enumerate(snapshots):
+    vehicle_realism.spawn_real_parked_car(eas, i, loc, yaw, meshes, paint_mats)
     placed += 1
-unreal.log("[ParkedCars] placed {} real parked cars".format(placed))
+unreal.log("[ParkedCars] placed {} real parked cars with varied paint".format(placed))
 
 saved = les.save_current_level()
 unreal.log("[ParkedCars] level saved: {}. DONE".format(saved))

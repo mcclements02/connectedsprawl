@@ -5,6 +5,14 @@ Idempotent: clears its own City_Car_/City_Water_/City_NPC_ actors.
 import unreal
 import math
 import random
+import os
+import sys
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.append(SCRIPT_DIR)
+
+import vehicle_realism
 
 random.seed(31)
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -50,11 +58,14 @@ CAR_COLORS = [
     mi("MI_Car_Red", (0.42, 0.04, 0.04), 0.28, 0.5),
     mi("MI_Car_White", (0.72, 0.72, 0.72), 0.30, 0.4),
     mi("MI_Car_Blue", (0.05, 0.12, 0.34), 0.28, 0.5),
-    mi("MI_Car_Black", (0.03, 0.03, 0.035), 0.25, 0.5),
+    mi("MI_Car_Black", (0.08, 0.085, 0.09), 0.25, 0.5),
     mi("MI_Car_Silver", (0.40, 0.42, 0.44), 0.25, 0.7),
-    mi("MI_Car_Yellow", (0.55, 0.42, 0.03), 0.28, 0.5),
+    mi("MI_Car_Yellow", (0.85, 0.55, 0.05), 0.28, 0.5),
 ]
+CAR_COLORS = vehicle_realism.load_vehicle_paint_materials(CAR_COLORS)
+REAL_CAR_MESHES = vehicle_realism.load_vehicle_meshes()
 unreal.log("[Populate] materials ready")
+unreal.log("[Populate] real vehicle meshes available: {}".format(len(REAL_CAR_MESHES)))
 
 # ---- helpers ------------------------------------------------------------
 def mesh_actor(mesh, label, loc, scale, mat, yaw=0.0, roll=0.0):
@@ -112,7 +123,13 @@ unreal.log("[Populate] recoloured {} streetlights".format(ns))
 clear("City_Car_")
 
 def spawn_car(idx, x, y, yaw_deg):
-    color = random.choice(CAR_COLORS)
+    if REAL_CAR_MESHES:
+        actor = vehicle_realism.spawn_real_parked_car(
+            eas, idx, unreal.Vector(x, y, 0.0), yaw_deg, REAL_CAR_MESHES, CAR_COLORS)
+        if actor:
+            return actor
+
+    color = vehicle_realism.paint_for_index(CAR_COLORS, idx) or random.choice(CAR_COLORS)
     yr = math.radians(yaw_deg)
     cos, sin = math.cos(yr), math.sin(yr)
     def w(lx, ly, z):

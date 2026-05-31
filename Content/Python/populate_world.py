@@ -3,6 +3,14 @@ pedestrians (ASprawlPedestrian), and drivable cars (ASprawlCar).
 """
 import unreal
 import random
+import os
+import sys
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.append(SCRIPT_DIR)
+
+import vehicle_realism
 
 random.seed(44)
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -70,12 +78,9 @@ unreal.log("[World] spawned {} walking pedestrians".format(peds))
 # 3) Drivable cars
 # ============================================================
 clear("City_DriveCar_")
-car_mats = [unreal.load_asset("/Game/CityArt/MI_Car_Red"),
-            unreal.load_asset("/Game/CityArt/MI_Car_White"),
-            unreal.load_asset("/Game/CityArt/MI_Car_Blue"),
-            unreal.load_asset("/Game/CityArt/MI_Car_Black"),
-            unreal.load_asset("/Game/CityArt/MI_Car_Silver"),
-            unreal.load_asset("/Game/CityArt/MI_Car_Yellow")]
+car_mats = vehicle_realism.load_vehicle_paint_materials()
+real_car_meshes = vehicle_realism.load_vehicle_meshes()
+unreal.log("[World] real vehicle meshes available: {}".format(len(real_car_meshes)))
 
 # spots: a couple right by the player spawn, the rest scattered on roads
 spots = [
@@ -97,16 +102,17 @@ for _ in range(8):
         spots.append((x, y, yaw))
 
 cars = 0
+real_cars = 0
 for (x, y, yaw) in spots:
     car = eas.spawn_actor_from_class(unreal.SprawlCar,
                                      unreal.Vector(x, y, 170),
                                      unreal.Rotator(0, 0, yaw))
     car.set_actor_label("City_DriveCar_{}".format(cars))
-    m = random.choice(car_mats)
-    if m:
-        car.set_body_material(m)
+    if vehicle_realism.configure_drivable_car(car, cars, real_car_meshes, car_mats):
+        real_cars += 1
     cars += 1
 unreal.log("[World] spawned {} drivable cars".format(cars))
+unreal.log("[World] applied real meshes and varied paint to {} drivable cars".format(real_cars))
 
 saved = les.save_current_level()
 unreal.log("[World] level saved: {}. DONE".format(saved))

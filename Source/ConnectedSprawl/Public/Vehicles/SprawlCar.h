@@ -15,6 +15,7 @@ class UInputMappingContext;
 class USkeletalMesh;
 class USkeletalMeshComponent;
 class UStaticMesh;
+class UMaterialInterface;
 class AZarriCharacter;
 struct FInputActionValue;
 
@@ -71,6 +72,7 @@ protected:
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> BodyPaintMeshes;
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> DetailMeshes;
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> WheelMeshes;
+	UPROPERTY() TObjectPtr<UMaterialInterface> BodyPaintMaterial;
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<USpringArmComponent> SpringArm;
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<UCameraComponent> FollowCamera;
 
@@ -83,10 +85,24 @@ protected:
 	/** Yaw rate at speed, deg/s. */
 	UPROPERTY(EditAnywhere, Category="Car") float TurnRate = 62.f;
 
+	/** If true and no player is in the seat, the car drives itself around the grid. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Car|AI") bool bAutoDrive = false;
+	/** Cruise speed cap (cm/s) for AI-driven cars; throttle backs off once reached. */
+	UPROPERTY(EditAnywhere, Category="Car|AI") float AICruiseSpeed = 520.f;
+
 	UPROPERTY() TObjectPtr<AZarriCharacter> Driver;
 
 	float ThrottleInput = 0.f;
 	float SteerInput = 0.f;
+
+	// --- AI driving state ---
+	float AITimeSinceTurn = 0.f;
+	float AINextTurnDelay = 8.f;
+	float AITargetYaw = 0.f;
+	bool bAITargetYawSeeded = false;
+
+	/** Drive the car between turn decisions; called each Tick when bAutoDrive is on. */
+	void RunAutoDrive(float DeltaSeconds);
 
 	void HandleMove(const FInputActionValue& Value);
 	void HandleMoveEnd(const FInputActionValue& Value);
