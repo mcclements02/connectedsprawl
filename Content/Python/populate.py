@@ -23,9 +23,6 @@ ART = "/Game/CityArt"
 
 CUBE = unreal.load_object(None, "/Engine/BasicShapes/Cube.Cube")
 CYL = unreal.load_object(None, "/Engine/BasicShapes/Cylinder.Cylinder")
-SK_MANN = unreal.load_object(None, "/Game/Mannequin/Character/Mesh/SK_Mannequin.SK_Mannequin")
-ANIM = unreal.load_object(None, "/Game/Mannequin/Animations/ThirdPerson_AnimBP.ThirdPerson_AnimBP")
-ANIM_CLASS = ANIM.generated_class() if ANIM else None
 
 les.load_level("/Game/Maps/TestMap")
 
@@ -223,7 +220,7 @@ cube("City_Water_RailBar", unreal.Vector(beach_cx, LY1 + 60, 128),
 unreal.log("[Populate] waterfront built")
 
 # ============================================================
-# 4) NPC pedestrians (idle mannequins on sidewalks)
+# 4) NPC pedestrians (use live Sprawl pedestrians so imported avatars win)
 # ============================================================
 clear("City_NPC_")
 npc = 0
@@ -239,15 +236,11 @@ for gx in range(N):
                                (BLOCK / 2 - 120, 0), (-(BLOCK / 2 - 120), 0)])
         loc = unreal.Vector(bx + edge[0] + random.uniform(-200, 200),
                             by + edge[1] + random.uniform(-200, 200), 14)
-        a = eas.spawn_actor_from_class(unreal.SkeletalMeshActor, loc,
+        a = eas.spawn_actor_from_class(unreal.SprawlPedestrian, loc,
                                        unreal.Rotator(0, 0, random.uniform(0, 360)))
         a.set_actor_label("City_NPC_{}".format(npc))
-        smc = a.skeletal_mesh_component
-        smc.set_skeletal_mesh_asset(SK_MANN)
-        if ANIM_CLASS:
-            smc.set_anim_instance_class(ANIM_CLASS)
         npc += 1
-unreal.log("[Populate] placed {} NPC pedestrians".format(npc))
+unreal.log("[Populate] placed {} live NPC pedestrians".format(npc))
 
 saved = les.save_current_level()
 unreal.EditorAssetLibrary.save_directory(ART, only_if_is_dirty=False)

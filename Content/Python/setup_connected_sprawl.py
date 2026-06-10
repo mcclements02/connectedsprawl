@@ -12,7 +12,7 @@ Or via the Output Log command input:
 This script:
   1. Creates /Content/Core/ and /Content/Maps/ folders
   2. Creates BP_Zarri, BP_SprawlGameMode, BP_SprawlPlayerController
-  3. Assigns a mannequin skeletal mesh + anim BP to BP_Zarri (if available)
+  3. Assigns Zarri a preferred imported hero mesh, with mannequin fallback
   4. Wires BP_SprawlGameMode defaults (DefaultPawnClass, PlayerControllerClass)
   5. Creates WBP_SprawlHUD
   6. Sets project Default GameMode + Default Maps
@@ -22,7 +22,15 @@ This script:
 After running, just press Play.
 """
 
+import os
+import sys
 import unreal
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.append(SCRIPT_DIR)
+
+import avatar_realism
 
 # ------------------------------------------------------------------
 # Utilities
@@ -108,47 +116,19 @@ bp_controller = create_blueprint("BP_SprawlPlayerController", "/Game/Core", CLS_
 wbp_hud       = create_widget_blueprint("WBP_SprawlHUD",      "/Game/UI",   CLS_HUDWidget)
 
 # ------------------------------------------------------------------
-# 4. Configure BP_Zarri — assign mannequin mesh if available
+# 4. Configure BP_Zarri — prefer imported Cappy, fall back to mannequin
 # ------------------------------------------------------------------
-mesh_candidates = ["SKM_Quinn_Simple", "SKM_Manny_Simple", "SK_Mannequin", "SKM_Quinn", "SKM_Manny"]
-anim_candidates = ["ABP_Manny", "ABP_Quinn", "ABP_Mannequin"]
-
-mesh_path = None
-for m in mesh_candidates:
-    p = find_asset_by_name(m)
-    if p:
-        mesh_path = p
-        log(f"Found mannequin mesh: {p}")
-        break
-
-anim_path = None
-for a in anim_candidates:
-    p = find_asset_by_name(a)
-    if p:
-        anim_path = p
-        log(f"Found animation BP: {p}")
-        break
-
-if mesh_path:
-    # Set on the ZarriCharacter CDO's Mesh component default value.
-    # The cleanest way from Python is to modify the Blueprint's class defaults after load.
-    bp_zarri_loaded = EAS.load_asset("/Game/Core/BP_Zarri")
-    cdo = unreal.get_default_object(bp_zarri_loaded.generated_class())
-    mesh_comp = cdo.get_editor_property("mesh")
-    if mesh_comp:
-        sk_asset = unreal.load_asset(mesh_path)
-        mesh_comp.set_skeletal_mesh_asset(sk_asset) if hasattr(mesh_comp, "set_skeletal_mesh_asset") else mesh_comp.set_editor_property("skeletal_mesh", sk_asset)
-        # Offset so feet touch capsule bottom
-        mesh_comp.set_relative_location(unreal.Vector(0, 0, -90))
-        mesh_comp.set_relative_rotation(unreal.Rotator(0, 0, -90))
-        if anim_path:
-            anim_bp = unreal.load_asset(anim_path)
-            if anim_bp and hasattr(anim_bp, "generated_class"):
-                mesh_comp.set_editor_property("anim_class", anim_bp.generated_class())
-        log("Zarri mesh + anim configured.")
+# Set on the ZarriCharacter CDO's Mesh component default value.
+# The cleanest way from Python is to modify the Blueprint's class defaults after load.
+bp_zarri_loaded = EAS.load_asset("/Game/Core/BP_Zarri")
+cdo = unreal.get_default_object(bp_zarri_loaded.generated_class())
+mesh_comp = cdo.get_editor_property("mesh")
+configured, source = avatar_realism.apply_hero_mesh_defaults(mesh_comp)
+if configured:
+    log(f"Zarri mesh configured from {source}.")
     EAS.save_asset("/Game/Core/BP_Zarri")
 else:
-    log("⚠️  No mannequin mesh found. Add the 'Third Person' content pack, then re-run this script.")
+    log("⚠️  No preferred hero mesh or mannequin fallback was found.")
 
 # ------------------------------------------------------------------
 # 5. Configure BP_SprawlGameMode defaults
@@ -259,6 +239,6 @@ except Exception as e:
 log("=" * 50)
 log("✅ SETUP COMPLETE")
 log("Now press the ▶ PLAY button in the editor.")
-log("Expected: mannequin Zarri spawns, log shows:")
+log("Expected: Zarri spawns with imported Cappy when artwork exists, otherwise mannequin fallback, and log shows:")
 log("   [Founder] Initialized. Cash=$2500 DailyBurn=$175 Runway=14.3 days")
 log("=" * 50)
