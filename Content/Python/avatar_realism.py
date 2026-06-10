@@ -36,7 +36,8 @@ def apply_hero_mesh_defaults(mesh_comp):
     else:
         mesh_comp.set_editor_property("skeletal_mesh", mesh)
 
-    # Match the Character mesh convention: feet on the capsule bottom, facing +X.
+    # Match AZarriCharacter's C++ default: -92 keeps feet on the capsule bottom.
+    # Use named Rotator args to avoid Unreal Python's positional order pitfalls.
     mesh_comp.set_relative_location_and_rotation(
         unreal.Vector(0.0, 0.0, -92.0),
         unreal.Rotator(roll=0.0, pitch=0.0, yaw=-90.0),
