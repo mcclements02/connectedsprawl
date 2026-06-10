@@ -7,6 +7,7 @@
 #include "GameFramework/Character.h"
 #include "ZarriCharacter.generated.h"
 
+class UAnimSequence;
 class UCameraComponent;
 class USpringArmComponent;
 class UInputAction;
@@ -103,6 +104,24 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> CommDeviceMID;
+
+	// --- Hero avatar (imported "Cappy" look; mannequin fallback) ---
+	/** Avatar variant folder under /Game/Pedestrians/ used for Zarri's look. */
+	UPROPERTY(EditAnywhere, Category="Zarri|Appearance") FString HeroVariant = TEXT("Cappy");
+	/** Standing height (cm) the hero mesh is scaled to. */
+	UPROPERTY(EditAnywhere, Category="Zarri|Appearance") float HeroHeight = 178.f;
+
+	UPROPERTY() TObjectPtr<UAnimSequence> HeroIdleAnim;
+	UPROPERTY() TObjectPtr<UAnimSequence> HeroWalkAnim;
+	UPROPERTY() TObjectPtr<UAnimSequence> HeroJogAnim;
+	UPROPERTY() TObjectPtr<UAnimSequence> HeroCurrentAnim;
+	bool bHasHeroAvatar = false;
+
+	/** Swap in the imported hero avatar if the art has been imported. */
+	void InitializeHeroAvatar();
+
+	/** Single-node Idle/Walk/Jog switching for the hero avatar. */
+	void UpdateHeroAnimation();
 
 	void InitializeEquipment();
 	void UpdateEquipmentVisuals(float DeltaSeconds);

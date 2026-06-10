@@ -40,13 +40,14 @@ public:
 	TArray<TSubclassOf<APawn>> TrafficPawnClasses;
 
 	/** Target count of active AI vehicles within the interest ring. */
-	UPROPERTY(EditAnywhere, Category="Traffic") int32 TargetActiveCount = 12;
+	UPROPERTY(EditAnywhere, Category="Traffic") int32 TargetActiveCount = 14;
 
-	/** Interest ring radius (cm). Vehicles inside this are kept; outside are despawned. */
-	UPROPERTY(EditAnywhere, Category="Traffic") float InterestRadius = 40000.f; // ~400m
+	/** Interest ring radius (cm). Vehicles inside this are kept; outside are despawned.
+	 *  Sized for the current prototype grid (~180m across), not the full 15-mile map. */
+	UPROPERTY(EditAnywhere, Category="Traffic") float InterestRadius = 7000.f;
 
 	/** Spawn annulus outer bound (cm). New vehicles spawn in [InterestRadius, SpawnRadius]. */
-	UPROPERTY(EditAnywhere, Category="Traffic") float SpawnRadius = 55000.f;
+	UPROPERTY(EditAnywhere, Category="Traffic") float SpawnRadius = 13000.f;
 
 	/** Throttle in seconds between spawn/cull passes. */
 	UPROPERTY(EditAnywhere, Category="Traffic") float EvaluateInterval = 1.0f;

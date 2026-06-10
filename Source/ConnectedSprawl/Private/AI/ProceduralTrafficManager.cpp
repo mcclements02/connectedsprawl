@@ -5,6 +5,8 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Engine/World.h"
+#include "Vehicles/SprawlCar.h"
+#include "World/SprawlCityGridSubsystem.h"
 
 AProceduralTrafficManager::AProceduralTrafficManager()
 {
@@ -58,30 +60,60 @@ void AProceduralTrafficManager::CullDistant(const FVector& PlayerLoc)
 
 void AProceduralTrafficManager::SpawnNeeded(const FVector& PlayerLoc)
 {
-	if (TrafficPawnClasses.Num() == 0) return;
+	using Grid = USprawlCityGridSubsystem;
 
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	while (ActiveTraffic.Num() < TargetActiveCount)
+	int32 Attempts = 0;
+	while (ActiveTraffic.Num() < TargetActiveCount && Attempts++ < 40)
 	{
-		// Random point in the outer annulus (InterestRadius..SpawnRadius).
+		// Random point in the outer annulus (InterestRadius..SpawnRadius),
+		// snapped onto a road lane so the car starts mid-traffic-flow.
 		const float Angle = FMath::FRandRange(0.f, 2.f * PI);
 		const float Dist  = FMath::FRandRange(InterestRadius, SpawnRadius);
-		const FVector Offset(FMath::Cos(Angle) * Dist, FMath::Sin(Angle) * Dist, 0.f);
-		const FVector SpawnLoc = PlayerLoc + Offset;
+		FVector SpawnLoc = PlayerLoc + FVector(FMath::Cos(Angle) * Dist, FMath::Sin(Angle) * Dist, 0.f);
 
-		// TODO: snap to navmesh / spline road once road network is defined.
+		// Snap to the nearest road on a random axis and pick a travel direction.
+		const bool bVerticalRoad = FMath::RandBool();
+		ESprawlHeading Heading;
+		if (bVerticalRoad)
+		{
+			const int32 Road = Grid::NearestRoadIndex(SpawnLoc.X);
+			Heading = FMath::RandBool() ? ESprawlHeading::North : ESprawlHeading::South;
+			SpawnLoc.X = Grid::LaneCenter(Road, Heading);
+		}
+		else
+		{
+			const int32 Road = Grid::NearestRoadIndex(SpawnLoc.Y);
+			Heading = FMath::RandBool() ? ESprawlHeading::East : ESprawlHeading::West;
+			SpawnLoc.Y = Grid::LaneCenter(Road, Heading);
+		}
+		SpawnLoc.Z = 180.f;
 
-		const int32 Idx = FMath::RandRange(0, TrafficPawnClasses.Num() - 1);
-		TSubclassOf<APawn> Cls = TrafficPawnClasses[Idx];
+		if (Grid::IsOverLake(SpawnLoc.X, SpawnLoc.Y) ||
+			!Grid::IsInsideRoadGrid(SpawnLoc.X, SpawnLoc.Y))
+		{
+			continue;
+		}
+
+		TSubclassOf<APawn> Cls = ASprawlCar::StaticClass();
+		if (TrafficPawnClasses.Num() > 0)
+		{
+			Cls = TrafficPawnClasses[FMath::RandRange(0, TrafficPawnClasses.Num() - 1)];
+		}
 		if (!Cls) break;
 
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-		APawn* Spawned = World->SpawnActor<APawn>(Cls, SpawnLoc, FRotator::ZeroRotator, Params);
+		APawn* Spawned = World->SpawnActor<APawn>(
+			Cls, SpawnLoc, FRotator(0.f, Grid::HeadingYaw(Heading), 0.f), Params);
 		if (!Spawned) break;
 
+		if (ASprawlCar* Car = Cast<ASprawlCar>(Spawned))
+		{
+			Car->bAutoDrive = true;
+		}
 		ActiveTraffic.Add(Spawned);
 	}
 }
