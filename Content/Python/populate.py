@@ -236,6 +236,8 @@ for gx in range(N):
                                (BLOCK / 2 - 120, 0), (-(BLOCK / 2 - 120), 0)])
         loc = unreal.Vector(bx + edge[0] + random.uniform(-200, 200),
                             by + edge[1] + random.uniform(-200, 200), 14)
+        # SprawlPedestrian already prefers imported avatars in BeginPlay and
+        # only falls back to the mannequin when the art pipeline is missing.
         a = eas.spawn_actor_from_class(unreal.SprawlPedestrian, loc,
                                        unreal.Rotator(0, 0, random.uniform(0, 360)))
         a.set_actor_label("City_NPC_{}".format(npc))

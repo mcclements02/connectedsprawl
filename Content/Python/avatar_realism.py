@@ -16,6 +16,7 @@ def load_preferred_hero_assets():
             "source": "imported hero avatar",
         }
 
+    unreal.log_warning("[AvatarRealism] Imported hero avatar not found at {}; using mannequin fallback.".format(HERO_MESH_PATH))
     anim_bp = unreal.load_object(None, MANNEQUIN_ANIM_BP_PATH)
     return {
         "mesh": unreal.load_object(None, MANNEQUIN_MESH_PATH),
@@ -35,6 +36,7 @@ def apply_hero_mesh_defaults(mesh_comp):
     else:
         mesh_comp.set_editor_property("skeletal_mesh", mesh)
 
+    # Match the Character mesh convention: feet on the capsule bottom, facing +X.
     mesh_comp.set_relative_location_and_rotation(
         unreal.Vector(0.0, 0.0, -92.0),
         unreal.Rotator(roll=0.0, pitch=0.0, yaw=-90.0),
