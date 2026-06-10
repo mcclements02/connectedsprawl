@@ -1,11 +1,19 @@
-"""Big one-shot: fix exposure, wire BP_Zarri to Manny mesh + AnimBP,
+"""Big one-shot: fix exposure, wire BP_Zarri to a preferred hero mesh,
    create EnhancedInput assets, build a procedural city block in TestMap.
 
 Run with:
   UnrealEditor <project.uproject> -ExecutePythonScript="<abs path>" -unattended -nosplash
 """
-import unreal
+import os
 import random
+import sys
+import unreal
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.append(SCRIPT_DIR)
+
+import avatar_realism
 
 LEVEL_PATH = "/Game/Maps/TestMap"
 
@@ -201,24 +209,13 @@ unreal.log("[Playable] loaded BP_Zarri: {}".format(bp))
 gen_class = bp.generated_class()
 cdo = unreal.get_default_object(gen_class)
 
-# Skeletal mesh
-sk_mesh = unreal.load_object(None, "/Game/Mannequin/Character/Mesh/SK_Mannequin.SK_Mannequin")
-anim_bp = unreal.load_object(None, "/Game/Mannequin/Animations/ThirdPerson_AnimBP.ThirdPerson_AnimBP")
-
 # The Character's mesh component is named "CharacterMesh0" — accessible on CDO via get_editor_property("mesh")
 mesh_comp = cdo.get_editor_property("mesh")
-if mesh_comp and sk_mesh:
-    mesh_comp.set_skeletal_mesh_asset(sk_mesh)
-    mesh_comp.set_relative_location_and_rotation(
-        unreal.Vector(0, 0, -90),
-        unreal.Rotator(0, -90, 0),
-        False, False,
-    )
-    if anim_bp:
-        mesh_comp.set_editor_property("anim_class", anim_bp.generated_class())
-    unreal.log("[Playable] BP_Zarri mesh + animBP assigned")
+configured, source = avatar_realism.apply_hero_mesh_defaults(mesh_comp)
+if configured:
+    unreal.log("[Playable] BP_Zarri mesh assigned from {}".format(source))
 else:
-    unreal.log_warning("[Playable] couldn't get mesh component or sk_mesh")
+    unreal.log_warning("[Playable] couldn't get mesh component or preferred hero mesh")
 
 # Input asset refs
 cdo.set_editor_property("DefaultMappingContext", imc)
