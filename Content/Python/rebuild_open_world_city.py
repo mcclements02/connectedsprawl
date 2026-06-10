@@ -17,6 +17,7 @@ SCRIPT_ORDER = [
     "realism_pass.py",
     "populate_world.py",
     "fix_cars.py",
+    "import_artwork.py",
     "aaa_realism_overhaul.py",
 ]
 

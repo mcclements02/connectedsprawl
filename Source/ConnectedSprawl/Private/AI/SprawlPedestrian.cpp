@@ -6,8 +6,10 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimSequence.h"
 #include "EngineUtils.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Characters/SprawlAvatarLibrary.h"
 #include "Vehicles/SprawlCar.h"
 #include "World/SprawlCityGridSubsystem.h"
 
@@ -29,6 +31,8 @@ ASprawlPedestrian::ASprawlPedestrian()
 	Move->MaxWalkSpeed              = 150.f;
 	Move->bUseRVOAvoidance          = true;  // don't clip through each other
 
+	// Fallback look only — BeginPlay swaps in a real human avatar when the
+	// imported art exists (see InitializeAppearance / import_artwork.py).
 	if (USkeletalMeshComponent* MeshComp = GetMesh())
 	{
 		MeshComp->SetRelativeLocationAndRotation(
@@ -128,7 +132,67 @@ void ASprawlPedestrian::BeginPlay()
 	SetActorScale3D(FVector(Stature));
 
 	WalkDir = FMath::RandBool() ? 1 : -1;
+	InitializeAppearance();
 	AnchorToNearestCorner();
+}
+
+void ASprawlPedestrian::InitializeAppearance()
+{
+	const TArray<FString>& Variants = FSprawlAvatarLibrary::PedestrianVariants();
+	const FString& Variant = Variants[FMath::RandRange(0, Variants.Num() - 1)];
+
+	USkeletalMesh* Mesh = FSprawlAvatarLibrary::LoadAvatarMesh(Variant);
+	const float Height = DesiredHeight * FMath::FRandRange(0.94f, 1.06f);
+	if (!FSprawlAvatarLibrary::ApplyAvatar(GetMesh(), Mesh, Height,
+		GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()))
+	{
+		return; // art not imported yet — keep the mannequin + its AnimBP
+	}
+
+	IdleAnim = FSprawlAvatarLibrary::LoadAvatarAnim(Variant, TEXT("Idle"));
+	WalkAnim = FSprawlAvatarLibrary::LoadAvatarAnim(Variant,
+		FSprawlAvatarLibrary::UsesFormalWalk(Variant) ? TEXT("WalkFormal") : TEXT("Walk"));
+	JogAnim  = FSprawlAvatarLibrary::LoadAvatarAnim(Variant, TEXT("Jog"));
+
+	// A few locals idle on the phone instead of just standing.
+	if (FMath::FRand() < 0.25f)
+	{
+		if (UAnimSequence* Talk = FSprawlAvatarLibrary::LoadAvatarAnim(Variant, TEXT("Talk")))
+		{
+			IdleAnim = Talk;
+		}
+	}
+
+	bHasAvatar = (IdleAnim && WalkAnim && JogAnim);
+	if (bHasAvatar)
+	{
+		FSprawlAvatarLibrary::PlayLoop(GetMesh(), IdleAnim, CurrentAnim);
+	}
+}
+
+void ASprawlPedestrian::UpdateAnimation()
+{
+	if (!bHasAvatar)
+	{
+		return;
+	}
+
+	const float Speed = GetVelocity().Size2D();
+	if (State == EPedState::Flee || Speed > BaseSpeed * 1.6f)
+	{
+		FSprawlAvatarLibrary::PlayLoop(GetMesh(), JogAnim, CurrentAnim,
+			FMath::Clamp(Speed / 260.f, 0.9f, 1.7f));
+	}
+	else if (Speed > 25.f)
+	{
+		// Match foot cadence to actual ground speed so feet don't skate.
+		FSprawlAvatarLibrary::PlayLoop(GetMesh(), WalkAnim, CurrentAnim,
+			FMath::Clamp(Speed / 105.f, 0.7f, 1.8f));
+	}
+	else
+	{
+		FSprawlAvatarLibrary::PlayLoop(GetMesh(), IdleAnim, CurrentAnim);
+	}
 }
 
 void ASprawlPedestrian::OnReachedCorner()
@@ -251,6 +315,8 @@ void ASprawlPedestrian::CheckForDanger()
 void ASprawlPedestrian::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	UpdateAnimation();
 
 	// Danger scan at ~5Hz keeps a big crowd cheap.
 	DangerScanTimer -= DeltaSeconds;

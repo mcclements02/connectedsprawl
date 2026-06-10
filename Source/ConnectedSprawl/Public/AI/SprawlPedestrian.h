@@ -6,6 +6,8 @@
 #include "GameFramework/Character.h"
 #include "SprawlPedestrian.generated.h"
 
+class UAnimSequence;
+
 /**
  * ASprawlPedestrian
  * -----------------
@@ -35,6 +37,8 @@ public:
 	UPROPERTY(EditAnywhere, Category="Pedestrian") float SidewalkInset = 120.f;
 	/** Chance of crossing the road on reaching a corner. */
 	UPROPERTY(EditAnywhere, Category="Pedestrian") float CrossChance = 0.30f;
+	/** Standing height (cm) the avatar mesh is scaled to (small per-ped variance added). */
+	UPROPERTY(EditAnywhere, Category="Pedestrian") float DesiredHeight = 165.f;
 
 private:
 	enum class EPedState : uint8 { WalkEdge, WaitToCross, Cross, Flee };
@@ -51,6 +55,19 @@ private:
 	float DangerScanTimer = 0.f;
 	float CurbScanTimer = 0.f;
 	float StuckTimer = 0.f;
+
+	// --- Imported human avatar (mesh + looping clips, single-node mode) ---
+	UPROPERTY() TObjectPtr<UAnimSequence> IdleAnim;
+	UPROPERTY() TObjectPtr<UAnimSequence> WalkAnim;
+	UPROPERTY() TObjectPtr<UAnimSequence> JogAnim;
+	UPROPERTY() TObjectPtr<UAnimSequence> CurrentAnim;
+	bool bHasAvatar = false;
+
+	/** Pick a random avatar variant and apply its mesh + animation set. */
+	void InitializeAppearance();
+
+	/** Swap Idle/Walk/Jog by current speed and scale the walk play rate. */
+	void UpdateAnimation();
 
 	/** Corner sign offsets for index 0..3. */
 	static FIntPoint CornerSigns(int32 Index);

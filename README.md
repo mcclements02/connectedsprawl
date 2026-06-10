@@ -73,9 +73,35 @@ The streets are simulated, not decorated:
   plants thousands of instanced grass blades and flowers in the parks; the
   lake gets an animated, depth-faded water material.
 
+## 🎨 Art & Credits
+
+The streets are walked by real humans now, not mannequins:
+
+- **16 human characters** (faces, hair, clothes — a suit guy, an old man,
+  women in streetwear, a mafia don, kids in hoodies…) from the CC0
+  **[100 Avatars](https://github.com/madjin/100avatars)** packs by
+  **Polygonal Mind**. Zarri's hero look is *Cappy* (cap + hoodie).
+- **Locomotion animations** (idle, walk, formal walk, jog, phone-talk) from
+  the CC0 **Universal Animation Library** by **Quaternius**, retargeted onto
+  every avatar's Mixamo rig by `Tools/retarget_avatars.py` (headless Blender:
+  world-space rotation transfer with per-bone rest alignment) and baked into
+  the FBX files at `Content/Import/Pedestrians/`.
+- **Street dressing** (benches, dumpsters, fire hydrants, bushes, boxes,
+  litter, a park water tower) from the CC0
+  **[KayKit City Builder Bits](https://github.com/KayKit-Game-Assets/KayKit-City-Builder-Bits-1.0)**
+  pack by **Kay Lousberg**, scattered deterministically along the sidewalks.
+
+Pedestrians pick a random avatar at spawn, scale to a believable height with
+per-person variance, and drive Idle/Walk/Jog clips by actual ground speed
+(play-rate matched so feet don't skate). A quarter of them idle chatting on
+the phone. Suits walk formally. Everything falls back to the mannequin if the
+art import hasn't run yet.
+
 To (re)build the world after compiling the C++ module:
 
 ```bash
+UnrealEditor ConnectedSprawl.uproject \
+  -ExecutePythonScript="Content/Python/import_artwork.py" -unattended -nosplash
 UnrealEditor ConnectedSprawl.uproject \
   -ExecutePythonScript="Content/Python/aaa_realism_overhaul.py" -unattended -nosplash
 ```

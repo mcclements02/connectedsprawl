@@ -17,6 +17,8 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimSequence.h"
+#include "Characters/SprawlAvatarLibrary.h"
 #include "UObject/ConstructorHelpers.h"
 
 AZarriCharacter::AZarriCharacter()
@@ -113,6 +115,7 @@ void AZarriCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	InitializeHeroAvatar();
 	InitializeEquipment();
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -131,7 +134,69 @@ void AZarriCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	UpdateHeroAnimation();
 	UpdateEquipmentVisuals(DeltaSeconds);
+}
+
+void AZarriCharacter::InitializeHeroAvatar()
+{
+	USkeletalMesh* Mesh = FSprawlAvatarLibrary::LoadAvatarMesh(HeroVariant);
+	if (!FSprawlAvatarLibrary::ApplyAvatar(GetMesh(), Mesh, HeroHeight,
+		GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()))
+	{
+		return; // art not imported yet — keep the mannequin + ThirdPerson_AnimBP
+	}
+
+	// The equipment sockets were named for the mannequin skeleton; retarget
+	// them onto the Mixamo-style bones of the imported avatar.
+	auto FindBone = [Mesh](const TCHAR* Suffix) -> FName
+	{
+		const FReferenceSkeleton& Ref = Mesh->GetRefSkeleton();
+		for (int32 i = 0; i < Ref.GetNum(); ++i)
+		{
+			if (Ref.GetBoneName(i).ToString().EndsWith(Suffix))
+			{
+				return Ref.GetBoneName(i);
+			}
+		}
+		return NAME_None;
+	};
+	if (const FName Spine = FindBone(TEXT("Spine2")); !Spine.IsNone()) { MobileOfficeRigSocket = Spine; }
+	if (const FName Wrist = FindBone(TEXT("LeftHand")); !Wrist.IsNone()) { RunwayTrackerSocket = Wrist; }
+	if (const FName Head = FindBone(TEXT("Head")); !Head.IsNone()) { CommDeviceSocket = Head; }
+
+	HeroIdleAnim = FSprawlAvatarLibrary::LoadAvatarAnim(HeroVariant, TEXT("Idle"));
+	HeroWalkAnim = FSprawlAvatarLibrary::LoadAvatarAnim(HeroVariant, TEXT("Walk"));
+	HeroJogAnim  = FSprawlAvatarLibrary::LoadAvatarAnim(HeroVariant, TEXT("Jog"));
+	bHasHeroAvatar = (HeroIdleAnim && HeroWalkAnim && HeroJogAnim);
+	if (bHasHeroAvatar)
+	{
+		FSprawlAvatarLibrary::PlayLoop(GetMesh(), HeroIdleAnim, HeroCurrentAnim);
+	}
+}
+
+void AZarriCharacter::UpdateHeroAnimation()
+{
+	if (!bHasHeroAvatar)
+	{
+		return;
+	}
+
+	const float Speed = GetVelocity().Size2D();
+	if (Speed > 320.f)
+	{
+		FSprawlAvatarLibrary::PlayLoop(GetMesh(), HeroJogAnim, HeroCurrentAnim,
+			FMath::Clamp(Speed / 330.f, 0.9f, 1.6f));
+	}
+	else if (Speed > 25.f)
+	{
+		FSprawlAvatarLibrary::PlayLoop(GetMesh(), HeroWalkAnim, HeroCurrentAnim,
+			FMath::Clamp(Speed / 130.f, 0.7f, 2.0f));
+	}
+	else
+	{
+		FSprawlAvatarLibrary::PlayLoop(GetMesh(), HeroIdleAnim, HeroCurrentAnim);
+	}
 }
 
 void AZarriCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
