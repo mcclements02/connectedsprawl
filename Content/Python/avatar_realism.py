@@ -8,6 +8,7 @@ MANNEQUIN_ANIM_BP_PATH = "/Game/Mannequin/Animations/ThirdPerson_AnimBP.ThirdPer
 
 
 def load_preferred_hero_assets():
+    """Return preferred Zarri mesh assets, falling back to the mannequin."""
     hero_mesh = unreal.load_asset(HERO_MESH_PATH)
     if hero_mesh:
         return {
@@ -17,15 +18,23 @@ def load_preferred_hero_assets():
         }
 
     unreal.log_warning("[AvatarRealism] Imported hero avatar not found at {}; using mannequin fallback.".format(HERO_MESH_PATH))
+    mannequin_mesh = unreal.load_object(None, MANNEQUIN_MESH_PATH)
     anim_bp = unreal.load_object(None, MANNEQUIN_ANIM_BP_PATH)
+    if not mannequin_mesh:
+        unreal.log_warning("[AvatarRealism] Mannequin fallback mesh also missing at {}.".format(MANNEQUIN_MESH_PATH))
     return {
-        "mesh": unreal.load_object(None, MANNEQUIN_MESH_PATH),
+        "mesh": mannequin_mesh,
         "anim_bp": anim_bp,
         "source": "mannequin fallback",
     }
 
 
 def apply_hero_mesh_defaults(mesh_comp):
+    """Apply the preferred Zarri mesh to a SkeletalMeshComponent.
+
+    Returns:
+        tuple[bool, str]: (configured, source label).
+    """
     assets = load_preferred_hero_assets()
     mesh = assets["mesh"]
     if not mesh_comp:
