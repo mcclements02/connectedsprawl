@@ -28,8 +28,10 @@ def load_preferred_hero_assets():
 def apply_hero_mesh_defaults(mesh_comp):
     assets = load_preferred_hero_assets()
     mesh = assets["mesh"]
-    if not mesh_comp or not mesh:
-        return False, assets["source"]
+    if not mesh_comp:
+        return False, "no mesh component"
+    if not mesh:
+        return False, "no mesh available"
 
     if hasattr(mesh_comp, "set_skeletal_mesh_asset"):
         mesh_comp.set_skeletal_mesh_asset(mesh)
