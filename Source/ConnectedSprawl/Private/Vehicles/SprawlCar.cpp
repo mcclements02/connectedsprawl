@@ -20,6 +20,10 @@
 
 #include <initializer_list>
 
+// File-scope alias (matches the other Sprawl translation units so unity
+// builds don't see a local declaration shadowing the global one).
+using Grid = USprawlCityGridSubsystem;
+
 namespace
 {
 bool SlotNameContainsAny(const FString& LowerSlotName, std::initializer_list<const TCHAR*> Terms)
@@ -488,8 +492,6 @@ void ASprawlCar::ResolveMove(ESprawlHeading InHeading, int32 InRoadIndex, int32 
 
 void ASprawlCar::DecideIntersectionMove(int32 CrossingRoadIndex)
 {
-	using Grid = USprawlCityGridSubsystem;
-
 	const FVector2D Center = Grid::IsNorthSouth(AIHeading)
 		? FVector2D(Grid::RoadCenter(AIRoadIndex), Grid::RoadCenter(CrossingRoadIndex))
 		: FVector2D(Grid::RoadCenter(CrossingRoadIndex), Grid::RoadCenter(AIRoadIndex));
@@ -563,8 +565,6 @@ float ASprawlCar::SenseObstacleAhead(float SenseLength) const
 
 void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 {
-	using Grid = USprawlCityGridSubsystem;
-
 	USprawlCityGridSubsystem* GridSub = GetWorld()
 		? GetWorld()->GetSubsystem<USprawlCityGridSubsystem>() : nullptr;
 

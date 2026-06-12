@@ -8,6 +8,10 @@
 #include "Vehicles/SprawlCar.h"
 #include "World/SprawlCityGridSubsystem.h"
 
+// File-scope alias (matches the other Sprawl translation units so unity
+// builds don't see a local declaration shadowing the global one).
+using Grid = USprawlCityGridSubsystem;
+
 AProceduralTrafficManager::AProceduralTrafficManager()
 {
 	PrimaryActorTick.bCanEverTick     = true;
@@ -60,8 +64,6 @@ void AProceduralTrafficManager::CullDistant(const FVector& PlayerLoc)
 
 void AProceduralTrafficManager::SpawnNeeded(const FVector& PlayerLoc)
 {
-	using Grid = USprawlCityGridSubsystem;
-
 	UWorld* World = GetWorld();
 	if (!World) return;
 
