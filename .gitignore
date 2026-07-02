@@ -33,3 +33,8 @@ staging/
 # --- Logs / crash reports ------------------------------------------------
 *.log
 ConnectedSprawl-backup*.log
+
+# --- Fab marketplace packs (re-downloadable, too large for git) ----------
+Content/Downtown_West/
+Content/Fab/
+staging/realkit/
