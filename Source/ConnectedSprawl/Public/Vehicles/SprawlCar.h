@@ -104,6 +104,9 @@ protected:
 	/** Drive the car between turn decisions; called each Tick when bAutoDrive is on. */
 	void RunAutoDrive(float DeltaSeconds);
 
+	/** Keep the arcade physics hull level and discard rollover angular velocity. */
+	void MaintainUpright();
+
 	void HandleMove(const FInputActionValue& Value);
 	void HandleMoveEnd(const FInputActionValue& Value);
 	void HandleExit(const FInputActionValue& Value);

@@ -235,10 +235,18 @@ void ASprawlCar::BeginPlay()
 	// Physics setup deferred out of the constructor (GEngine isn't ready there).
 	if (Hull)
 	{
+		const FRotator SpawnRotation = GetActorRotation();
+		SetActorRotation(FRotator(0.f, SpawnRotation.Yaw, 0.f),
+			ETeleportType::TeleportPhysics);
+		// Reapply the locks at runtime so serialized map instances cannot retain
+		// stale BodyInstance overrides from an older version of the class.
+		Hull->BodyInstance.bLockXRotation = true;
+		Hull->BodyInstance.bLockYRotation = true;
 		Hull->SetSimulatePhysics(true);
 		Hull->SetMassOverrideInKg(NAME_None, 1500.f, true);
 		Hull->SetLinearDamping(0.8f);
 		Hull->SetAngularDamping(3.5f);
+		MaintainUpright();
 	}
 }
 
@@ -430,6 +438,7 @@ void ASprawlCar::Tick(float DeltaSeconds)
 	{
 		return;
 	}
+	MaintainUpright();
 
 	const bool bPlayerDriving = Cast<APlayerController>(GetController()) != nullptr;
 	if (!bPlayerDriving && !bAutoDrive)
@@ -460,11 +469,41 @@ void ASprawlCar::Tick(float DeltaSeconds)
 	{
 		const float SpeedFactor = FMath::Clamp(FMath::Abs(ForwardSpeed) / 600.f, 0.25f, 1.f);
 		const float Dir = FMath::Sign(ForwardSpeed);
-		const FVector AngVel = Hull->GetPhysicsAngularVelocityInDegrees();
 		const float TargetYaw = SteerInput * Dir * TurnRate * SpeedFactor;
 		Hull->SetPhysicsAngularVelocityInDegrees(
-			FVector(AngVel.X, AngVel.Y, TargetYaw));
+			FVector(0.f, 0.f, TargetYaw));
 	}
+}
+
+void ASprawlCar::MaintainUpright()
+{
+	if (!Hull)
+	{
+		return;
+	}
+
+	const FVector AngularVelocity = Hull->GetPhysicsAngularVelocityInDegrees();
+	if (!FMath::IsNearlyZero(AngularVelocity.X) || !FMath::IsNearlyZero(AngularVelocity.Y))
+	{
+		Hull->SetPhysicsAngularVelocityInDegrees(
+			FVector(0.f, 0.f, AngularVelocity.Z));
+	}
+
+	constexpr float MinimumUprightDot = 0.995f;
+	if (FVector::DotProduct(Hull->GetUpVector(), FVector::UpVector) >= MinimumUprightDot)
+	{
+		return;
+	}
+
+	FVector FlatForward = Hull->GetForwardVector();
+	FlatForward.Z = 0.f;
+	const float UprightYaw = FlatForward.Normalize()
+		? FlatForward.Rotation().Yaw
+		: Hull->GetComponentRotation().Yaw;
+	const FVector LinearVelocity = Hull->GetPhysicsLinearVelocity();
+	Hull->SetWorldRotation(FRotator(0.f, UprightYaw, 0.f), false, nullptr,
+		ETeleportType::TeleportPhysics);
+	Hull->SetPhysicsLinearVelocity(LinearVelocity);
 }
 
 void ASprawlCar::RunAutoDrive(float DeltaSeconds)
@@ -526,8 +565,7 @@ void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 		Hull->SetPhysicsLinearVelocity(
 			FVector(Drive.X, Drive.Y, CurVel.Z));
 		// Yaw spin proportional to steering input.
-		const FVector AngVel = Hull->GetPhysicsAngularVelocityInDegrees();
 		Hull->SetPhysicsAngularVelocityInDegrees(
-			FVector(AngVel.X, AngVel.Y, SteerInput * TurnRate));
+			FVector(0.f, 0.f, SteerInput * TurnRate));
 	}
 }

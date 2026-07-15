@@ -55,7 +55,15 @@ paints = vehicle_realism.load_vehicle_paint_materials()
 if not meshes:
     raise RuntimeError("No imported car meshes — run import_vehicles first")
 
+# Reserve every existing drivable car before choosing traffic positions. The
+# two generators are often run independently, so checking only this script's
+# cars can spawn overlapping physics hulls and launch one of them upside down.
 placed = []
+for actor in eas.get_all_level_actors():
+    if actor.get_actor_label().startswith("City_DriveCar_"):
+        location = actor.get_actor_location()
+        placed.append((location.x, location.y))
+unreal.log("[Traffic] reserved {} existing drivable-car positions".format(len(placed)))
 MIN_GAP = 900.0
 SPAWN_CLEAR = 1400.0
 TARGET = 12
@@ -104,17 +112,27 @@ while spawned < TARGET and attempts < 600:
 
 # Always drop one nearby AI car ~1100 units down the street from spawn so
 # the player can immediately see it driving off.
-nearby_x = SPAWN[0] + 60.0
-nearby_y = SPAWN[1] + 1100.0
-if not over_lake(nearby_x, nearby_y):
+nearby_spots = [
+    (SPAWN[0] + 60.0, SPAWN[1] + 1100.0, 90.0),
+    (SPAWN[0] - 60.0, SPAWN[1] - 1100.0, 270.0),
+    (SPAWN[0] + 1100.0, SPAWN[1] - 60.0, 0.0),
+    (SPAWN[0] - 1100.0, SPAWN[1] + 60.0, 180.0),
+]
+for nearby_x, nearby_y, nearby_yaw in nearby_spots:
+    if over_lake(nearby_x, nearby_y) or not far_enough(nearby_x, nearby_y):
+        continue
     car = eas.spawn_actor_from_class(
         unreal.SprawlCar,
         unreal.Vector(nearby_x, nearby_y, 180.0),
-        unreal.Rotator(roll=0.0, pitch=0.0, yaw=90.0))
+        unreal.Rotator(roll=0.0, pitch=0.0, yaw=nearby_yaw))
     car.set_actor_label("City_TrafficCar_{}".format(spawned))
     car.set_editor_property("auto_drive", True)
     vehicle_realism.configure_drivable_car(car, spawned + 100, meshes, paints)
+    placed.append((nearby_x, nearby_y))
     spawned += 1
+    break
+else:
+    unreal.log_warning("[Traffic] no collision-free nearby traffic position was available")
 
 unreal.log("[Traffic] spawned {} AI traffic cars".format(spawned))
 saved = les.save_current_level()

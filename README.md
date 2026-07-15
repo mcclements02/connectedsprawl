@@ -8,15 +8,23 @@ A GTA-style open-world game built in **Unreal Engine 5.7**, starring **Zarri** �
 
 ## 🚗 Setup
 
-1. Ensure Unreal Engine 5.7 is installed at `/Users/matthewx/UE_5.7`
-2. Right-click `ConnectedSprawl.uproject` → **Generate Xcode Project Files**
-3. Open in Xcode, build the `ConnectedSprawlEditor` target
-4. Launch the editor: `/Users/matthewx/UE_5.7/Engine/Binaries/Mac/UnrealEditor.app` and open the `.uproject`
+1. Install Unreal Engine 5.7 and set `UE_ROOT` to that installation:
+   ```bash
+   export UE_ROOT="/path/to/UE_5.7"
+   ```
+2. From the repository root, right-click `ConnectedSprawl.uproject` and choose
+   **Generate Xcode Project Files**.
+3. Open the generated workspace in Xcode and build the
+   `ConnectedSprawlEditor` target.
+4. Launch the editor from `$UE_ROOT/Engine/Binaries/Mac/UnrealEditor.app` and
+   open the repository's `ConnectedSprawl.uproject`.
 
-Or from the terminal:
+Or, from the repository root:
 ```bash
-/Users/matthewx/UE_5.7/Engine/Build/BatchFiles/Mac/GenerateProjectFiles.sh \
-  -project=/Users/matthewx/code/ConnectedSprawl/ConnectedSprawl.uproject -game
+PROJECT_FILE="$PWD/ConnectedSprawl.uproject"
+"$UE_ROOT/Engine/Build/BatchFiles/Mac/GenerateProjectFiles.sh" \
+  -project="$PROJECT_FILE" -game
+open "$UE_ROOT/Engine/Binaries/Mac/UnrealEditor.app" --args "$PROJECT_FILE"
 ```
 
 ---

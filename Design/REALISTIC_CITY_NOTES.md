@@ -6,6 +6,50 @@
 
 ---
 
+## 2026-07-14 RPG Developer-Informed Pass
+
+This pass uses guidance from developers who shipped open-world games, rather
+than treating realism as a polygon-count problem:
+
+- Sucker Punch's *inFamous* GDC talk describes standardized building
+  footprints, tiling, and layout shortcuts as the way a small art team produced
+  a dense city. The takeaway for this prototype is to preserve the repeatable
+  grid and spend authored detail at player height. ([GDC Vault](https://www.gdcvault.com/play/1012233/Building-an-Open-World-Game))
+- Ubisoft's World Logic Designer describes believable worlds as linked layers
+  of transport, work, ecology, history, and local activity. Each Sprawl district
+  therefore needs visible evidence of who uses it and why. ([Ubisoft](https://www.ubisoft.com/en-us/company/about-us/our-people/articles/he-works-where-you-play-world-logic-designer))
+- The *Watch Dogs: Legion* team connected generated residents to roles,
+  relationships, and schedules. The lightweight equivalent here is to cluster
+  pedestrians around plausible destinations instead of distributing every NPC
+  uniformly. ([Ubisoft](https://news.ubisoft.com/en-ca/article/4po3S9Pwp1YcgBmGPmQxAh/watch-dogs-legion-the-tools-that-built-london))
+- CD Projekt Red makes Night City's districts distinct through architecture,
+  fashion, history, verticality, and the marks residents leave behind. The
+  Junction, Iron Forest, and Rail Yards should be recognizable from their prop
+  language before the HUD names them. ([CD Projekt Red](https://cdn-s-cyberpunk.cdprojektred.com/CP2077-UE-Booklet-EN-1.pdf))
+- Arkane/LucasArts' environmental-storytelling talk identifies props,
+  texturing, lighting, and composition as tools for implying history. Props are
+  placed as small cause-and-effect scenes, not as uniform decoration.
+  ([GDC Vault](https://www.gdcvault.com/play/1012696/What-Happened-Here-Environmental))
+
+### Implemented Direction
+
+`Content/Python/rpg_city_realism.py` is an additive, idempotent pass that:
+
+- concentrates varied storefront signs, a food cart, cafe seating, and five
+  additional pedestrians around The Junction's player-start corridor;
+- gives Iron Forest an ordered civic landmark and planters, while Rail Yards
+  receives a reused fence-and-tarp service edge;
+- adds two civic anchors so the grid has memorable navigation points;
+- tunes the existing sun, skylight, fog, and post-process actors toward a warm
+  late-afternoon look inspired by the supplied open-world references; and
+- limits the expensive lighting addition to four shadowless local lights near
+  the focal street, preserving the iPhone-first rendering strategy.
+
+The pass clears only `City_RPG_*` actors and reuses assets already present in
+the project. It does not rebuild the base city or alter engine configuration.
+
+---
+
 ## 📋 Current State Analysis
 
 ### Existing Systems
