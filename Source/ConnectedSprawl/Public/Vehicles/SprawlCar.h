@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
+#include "World/SprawlCityGridSubsystem.h"
 #include "SprawlCar.generated.h"
 
 class UBoxComponent;
@@ -63,6 +64,13 @@ public:
 	/** Step the driver back out onto the street. */
 	void RequestExit();
 
+	/** If true and no player is in the seat, the car drives itself around the grid. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Car|AI") bool bAutoDrive = false;
+	/** Cruise speed (cm/s) for AI-driven cars on open road. */
+	UPROPERTY(EditAnywhere, Category="Car|AI") float AICruiseSpeed = 850.f;
+	/** Speed (cm/s) while turning through an intersection. */
+	UPROPERTY(EditAnywhere, Category="Car|AI") float AITurnSpeed = 340.f;
+
 protected:
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<UBoxComponent> Hull;
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<UStaticMeshComponent> FullBodyMesh;
@@ -85,27 +93,35 @@ protected:
 	/** Yaw rate at speed, deg/s. */
 	UPROPERTY(EditAnywhere, Category="Car") float TurnRate = 62.f;
 
-	/** If true and no player is in the seat, the car drives itself around the grid. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Car|AI") bool bAutoDrive = false;
-	/** Cruise speed cap (cm/s) for AI-driven cars; throttle backs off once reached. */
-	UPROPERTY(EditAnywhere, Category="Car|AI") float AICruiseSpeed = 520.f;
-
 	UPROPERTY() TObjectPtr<AZarriCharacter> Driver;
 
 	float ThrottleInput = 0.f;
 	float SteerInput = 0.f;
 
-	// --- AI driving state ---
-	float AITimeSinceTurn = 0.f;
-	float AINextTurnDelay = 8.f;
-	float AITargetYaw = 0.f;
-	bool bAITargetYawSeeded = false;
+	// --- AI driving state (lane-following on the city grid) ---
+	ESprawlHeading AIHeading = ESprawlHeading::North;
+	int32 AIRoadIndex = 0;            // road we're travelling on (current axis)
+	bool  bAIStateSeeded = false;
+	int32 AIDecidedCrossing = -1;     // crossing-road index we've chosen a move for
+	int32 AIPendingTurn = 0;          // -1 = left, 0 = straight, +1 = right
+	float AISmoothedSpeed = 0.f;      // smoothed speed command (cm/s)
+	FVector2D AILastIntersection = FVector2D(1.e9f, 1.e9f); // center of last crossing we executed
 
-	/** Drive the car between turn decisions; called each Tick when bAutoDrive is on. */
+	/** Lane-follow the road grid: keep lane, obey signals, avoid traffic. */
 	void RunAutoDrive(float DeltaSeconds);
 
 	/** Keep the arcade physics hull level and discard rollover angular velocity. */
 	void MaintainUpright();
+
+	/** Pick straight/left/right at the upcoming crossing, avoiding lake/map edge. */
+	void DecideIntersectionMove(int32 CrossingRoadIndex);
+
+	/** Heading + road index after applying a turn choice at a crossing. */
+	static void ResolveMove(ESprawlHeading InHeading, int32 InRoadIndex, int32 CrossingRoadIndex,
+		int32 Turn, ESprawlHeading& OutHeading, int32& OutRoadIndex);
+
+	/** Distance to the nearest blocking car/pedestrian ahead, or -1 if clear. */
+	float SenseObstacleAhead(float SenseLength) const;
 
 	void HandleMove(const FInputActionValue& Value);
 	void HandleMoveEnd(const FInputActionValue& Value);

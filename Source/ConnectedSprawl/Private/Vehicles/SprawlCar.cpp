@@ -14,10 +14,15 @@
 #include "InputMappingContext.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/World.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 
 #include <initializer_list>
+
+// File-scope alias (matches the other Sprawl translation units so unity
+// builds don't see a local declaration shadowing the global one).
+using Grid = USprawlCityGridSubsystem;
 
 namespace
 {
@@ -506,65 +511,239 @@ void ASprawlCar::MaintainUpright()
 	Hull->SetPhysicsLinearVelocity(LinearVelocity);
 }
 
+void ASprawlCar::ResolveMove(ESprawlHeading InHeading, int32 InRoadIndex, int32 CrossingRoadIndex,
+	int32 Turn, ESprawlHeading& OutHeading, int32& OutRoadIndex)
+{
+	if (Turn == 0)
+	{
+		OutHeading = InHeading;
+		OutRoadIndex = InRoadIndex;
+		return;
+	}
+
+	// Headings follow increasing yaw (East, North, West, South). In UE,
+	// +90 yaw is a right turn, so right = +1 step and left = +3 (== -1 mod 4).
+	const int32 Steps = (Turn > 0) ? 1 : 3;
+	OutHeading = static_cast<ESprawlHeading>((static_cast<int32>(InHeading) + Steps) % 4);
+	// After turning we travel along what was the crossing road.
+	OutRoadIndex = CrossingRoadIndex;
+}
+
+void ASprawlCar::DecideIntersectionMove(int32 CrossingRoadIndex)
+{
+	const FVector2D Center = Grid::IsNorthSouth(AIHeading)
+		? FVector2D(Grid::RoadCenter(AIRoadIndex), Grid::RoadCenter(CrossingRoadIndex))
+		: FVector2D(Grid::RoadCenter(CrossingRoadIndex), Grid::RoadCenter(AIRoadIndex));
+
+	// A move is legal if one block past the intersection is still on the
+	// grid and not over the lake.
+	auto IsLegal = [&](int32 Turn) -> bool
+	{
+		ESprawlHeading NewHeading;
+		int32 NewRoad;
+		ResolveMove(AIHeading, AIRoadIndex, CrossingRoadIndex, Turn, NewHeading, NewRoad);
+		const FVector Dir = Grid::HeadingVector(NewHeading);
+		const FVector2D Probe = Center + FVector2D(Dir.X, Dir.Y) * Grid::Step;
+		return Grid::IsInsideRoadGrid(Probe.X, Probe.Y) && !Grid::IsOverLake(Probe.X, Probe.Y);
+	};
+
+	// Weighted choice: mostly straight, sometimes a turn; fall back to any
+	// legal move, and finally a U-turn if the car is boxed in.
+	const float Roll = FMath::FRand();
+	int32 Preferred = (Roll < 0.55f) ? 0 : (Roll < 0.80f) ? 1 : -1;
+
+	if (!IsLegal(Preferred))
+	{
+		Preferred = 99; // sentinel: none chosen yet
+		for (int32 Turn : { 0, 1, -1 })
+		{
+			if (IsLegal(Turn))
+			{
+				Preferred = Turn;
+				break;
+			}
+		}
+		if (Preferred == 99)
+		{
+			// Dead end: U-turn in place at the intersection.
+			AIHeading = static_cast<ESprawlHeading>((static_cast<int32>(AIHeading) + 2) % 4);
+			AIDecidedCrossing = -1;
+			return;
+		}
+	}
+
+	AIPendingTurn = Preferred;
+	AIDecidedCrossing = CrossingRoadIndex;
+}
+
+float ASprawlCar::SenseObstacleAhead(float SenseLength) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return -1.f;
+	}
+
+	const FVector Fwd = GetActorForwardVector();
+	const FVector Start = GetActorLocation() + Fwd * 280.f + FVector(0, 0, 30.f);
+	const FVector End = Start + Fwd * SenseLength;
+
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);        // pedestrians, characters
+	ObjectParams.AddObjectTypesToQuery(ECC_PhysicsBody); // other cars' hulls
+
+	FCollisionQueryParams Params(FName(TEXT("SprawlCarSense")), false, this);
+
+	FHitResult Hit;
+	const bool bHit = World->SweepSingleByObjectType(
+		Hit, Start, End, GetActorQuat(),
+		ObjectParams, FCollisionShape::MakeBox(FVector(20.f, 110.f, 55.f)), Params);
+
+	return bHit ? FMath::Max(0.f, Hit.Distance) : -1.f;
+}
+
 void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 {
-	// Seed the target heading from the car's spawn rotation, snapped to a
-	// cardinal direction so the AI follows the road grid.
-	if (!bAITargetYawSeeded)
-	{
-		const float Yaw = GetActorRotation().Yaw;
-		AITargetYaw = FMath::RoundHalfToEven(Yaw / 90.f) * 90.f;
-		bAITargetYawSeeded = true;
-		AINextTurnDelay = FMath::FRandRange(4.f, 9.f);
-		UE_LOG(LogTemp, Display, TEXT("[SprawlAI] %s starting auto-drive, target yaw=%.0f, hull-simulating=%s"),
-			*GetName(), AITargetYaw, Hull && Hull->IsSimulatingPhysics() ? TEXT("yes") : TEXT("no"));
-	}
+	USprawlCityGridSubsystem* GridSub = GetWorld()
+		? GetWorld()->GetSubsystem<USprawlCityGridSubsystem>() : nullptr;
 
-	// City-bounds check: if near the map edge, force a U-turn toward the centre
-	// so the car doesn't drive off into the abyss.
 	const FVector Loc = GetActorLocation();
-	const float CityHalf = 8200.f;
-	if (FMath::Abs(Loc.X) > CityHalf || FMath::Abs(Loc.Y) > CityHalf)
+
+	// Seed driving state from the spawn transform: snap heading to the road
+	// grid and latch onto the nearest road for that axis.
+	if (!bAIStateSeeded)
 	{
-		const float YawToCenter = FMath::RadiansToDegrees(FMath::Atan2(-Loc.Y, -Loc.X));
-		const float SnappedYaw  = FMath::RoundHalfToEven(YawToCenter / 90.f) * 90.f;
-		AITargetYaw = SnappedYaw;
-		// Reset the turn timer so we don't immediately re-roll a turn into the edge.
-		AITimeSinceTurn = 0.f;
-		AINextTurnDelay = FMath::FRandRange(6.f, 11.f);
+		AIHeading = Grid::HeadingFromYaw(GetActorRotation().Yaw);
+		AIRoadIndex = Grid::IsNorthSouth(AIHeading)
+			? Grid::NearestRoadIndex(Loc.X)
+			: Grid::NearestRoadIndex(Loc.Y);
+		bAIStateSeeded = true;
 	}
 
-	// Every few seconds, randomly turn left/right or keep going straight.
-	AITimeSinceTurn += DeltaSeconds;
-	if (AITimeSinceTurn >= AINextTurnDelay)
+	const bool bNS = Grid::IsNorthSouth(AIHeading);
+	const float TravelDir = (AIHeading == ESprawlHeading::North || AIHeading == ESprawlHeading::East)
+		? 1.f : -1.f;
+	const float TravelCoord = bNS ? Loc.Y : Loc.X;
+
+	// --- Find the next crossing road ahead of us ---
+	int32 NextCrossing = -1;
+	float DistAhead = TNumericLimits<float>::Max();
+	for (int32 R = 0; R < Grid::NumRoads; ++R)
 	{
-		AITimeSinceTurn = 0.f;
-		AINextTurnDelay = FMath::FRandRange(6.f, 14.f);
-		const float r = FMath::FRand();
-		if (r < 0.30f) { AITargetYaw -= 90.f; }
-		else if (r < 0.60f) { AITargetYaw += 90.f; }
-		// otherwise continue straight
+		const float D = (Grid::RoadCenter(R) - TravelCoord) * TravelDir;
+		if (D > -80.f && D < DistAhead)
+		{
+			DistAhead = D;
+			NextCrossing = R;
+		}
 	}
 
-	// Steer toward the target heading.
-	const float CurYaw = GetActorRotation().Yaw;
-	const float Delta = FMath::FindDeltaAngleDegrees(CurYaw, AITargetYaw);
-	SteerInput = FMath::Clamp(Delta / 25.f, -1.f, 1.f);
-	// Slow down for sharp turns; otherwise just cruise.
-	const float TurnFactor = FMath::Lerp(1.f, 0.55f, FMath::Clamp(FMath::Abs(Delta) / 60.f, 0.f, 1.f));
-	ThrottleInput = TurnFactor;
+	if (NextCrossing < 0)
+	{
+		// Ran out of road (past the last crossing): turn back toward the city.
+		AIHeading = static_cast<ESprawlHeading>((static_cast<int32>(AIHeading) + 2) % 4);
+		AIDecidedCrossing = -1;
+		return;
+	}
 
-	// Drive the physics body directly — bypass AddForce so component
-	// collisions / damping can't stall the AI car.
+	const FVector2D CrossingCenter = bNS
+		? FVector2D(Grid::RoadCenter(AIRoadIndex), Grid::RoadCenter(NextCrossing))
+		: FVector2D(Grid::RoadCenter(NextCrossing), Grid::RoadCenter(AIRoadIndex));
+
+	// --- Decide our move for the upcoming intersection, once ---
+	// The distance-from-last-intersection latch stops us re-deciding while
+	// still rolling through the crossing we just turned at.
+	constexpr float DecisionDistance = 1100.f;
+	if (DistAhead < DecisionDistance && AIDecidedCrossing != NextCrossing &&
+		FVector2D::Distance(FVector2D(Loc.X, Loc.Y), AILastIntersection) > 700.f)
+	{
+		DecideIntersectionMove(NextCrossing);
+	}
+
+	// --- Speed planning ---
+	float TargetSpeed = AICruiseSpeed;
+
+	// Traffic signal: brake to the stop line on red, or on amber if we can
+	// still stop comfortably. Once we're at the line, hold at zero.
+	// 750 puts the front bumper just behind the painted crosswalk.
+	constexpr float StopLine = 750.f;
+	if (GridSub && DistAhead > 300.f && DistAhead < DecisionDistance)
+	{
+		const int32 Ix = bNS ? AIRoadIndex : NextCrossing;
+		const int32 Iy = bNS ? NextCrossing : AIRoadIndex;
+		const ESprawlSignal Signal = GridSub->GetSignal(Ix, Iy, bNS);
+		const bool bMustStop = (Signal == ESprawlSignal::Red)
+			|| (Signal == ESprawlSignal::Amber && DistAhead > StopLine + 150.f);
+		if (bMustStop)
+		{
+			const float RoomToLine = FMath::Max(0.f, DistAhead - StopLine);
+			// Comfortable braking curve: v = sqrt(2 * a * d), a ~ 700 cm/s^2.
+			TargetSpeed = FMath::Min(TargetSpeed, FMath::Sqrt(2.f * 700.f * RoomToLine));
+			if (RoomToLine < 25.f)
+			{
+				TargetSpeed = 0.f;
+			}
+		}
+	}
+
+	// Slow for turns through the intersection.
+	if (AIPendingTurn != 0 && DistAhead < 700.f)
+	{
+		TargetSpeed = FMath::Min(TargetSpeed, AITurnSpeed);
+	}
+
+	// Car / pedestrian ahead: match a safe gap, hard-stop when close.
+	const float CurSpeed = Hull ? Hull->GetPhysicsLinearVelocity().Size2D() : 0.f;
+	const float SenseLength = FMath::Max(450.f, CurSpeed * 1.1f);
+	const float ObstacleDist = SenseObstacleAhead(SenseLength);
+	if (ObstacleDist >= 0.f)
+	{
+		TargetSpeed = FMath::Min(TargetSpeed, FMath::Max(0.f, (ObstacleDist - 160.f) * 2.2f));
+	}
+
+	// --- Execute the turn at the intersection center ---
+	if (AIDecidedCrossing == NextCrossing && DistAhead < 90.f)
+	{
+		ESprawlHeading NewHeading;
+		int32 NewRoad;
+		ResolveMove(AIHeading, AIRoadIndex, NextCrossing, AIPendingTurn, NewHeading, NewRoad);
+		AIHeading = NewHeading;
+		AIRoadIndex = NewRoad;
+		AIDecidedCrossing = -1;
+		AIPendingTurn = 0;
+		AILastIntersection = CrossingCenter;
+	}
+
+	// --- Lane keeping: steer toward a lookahead point on the lane center ---
+	const float LaneCoord = Grid::LaneCenter(AIRoadIndex, AIHeading);
+	FVector LookAhead = Loc + Grid::HeadingVector(AIHeading) * 600.f;
+	if (Grid::IsNorthSouth(AIHeading)) { LookAhead.X = LaneCoord; }
+	else                               { LookAhead.Y = LaneCoord; }
+
+	const float DesiredYaw = FMath::RadiansToDegrees(
+		FMath::Atan2(LookAhead.Y - Loc.Y, LookAhead.X - Loc.X));
+	const float YawError = FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, DesiredYaw);
+	SteerInput = FMath::Clamp(YawError / 30.f, -1.f, 1.f);
+
+	// Big heading error (mid-turn / U-turn): crawl until we're pointed right.
+	if (FMath::Abs(YawError) > 55.f)
+	{
+		TargetSpeed = FMath::Min(TargetSpeed, AITurnSpeed * 0.8f);
+	}
+
+	// --- Drive the physics body ---
+	AISmoothedSpeed = FMath::FInterpConstantTo(AISmoothedSpeed, TargetSpeed, DeltaSeconds,
+		TargetSpeed < AISmoothedSpeed ? 1400.f : 600.f); // brake harder than we accelerate
+	ThrottleInput = (AICruiseSpeed > 1.f) ? AISmoothedSpeed / AICruiseSpeed : 0.f;
+
 	if (Hull)
 	{
 		const FVector Fwd = GetActorForwardVector();
 		const FVector CurVel = Hull->GetPhysicsLinearVelocity();
-		// Keep gravity acting on Z; set horizontal velocity to cruise * throttle.
-		const FVector Drive = Fwd * AICruiseSpeed * ThrottleInput;
-		Hull->SetPhysicsLinearVelocity(
-			FVector(Drive.X, Drive.Y, CurVel.Z));
-		// Yaw spin proportional to steering input.
+		const FVector Drive = Fwd * AISmoothedSpeed;
+		// Keep gravity acting on Z; drive the horizontal velocity directly so
+		// damping / micro-collisions can't stall the AI car.
+		Hull->SetPhysicsLinearVelocity(FVector(Drive.X, Drive.Y, CurVel.Z));
 		Hull->SetPhysicsAngularVelocityInDegrees(
 			FVector(0.f, 0.f, SteerInput * TurnRate));
 	}
