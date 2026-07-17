@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 6 · **Last updated:** 2026-07-17 07:15 PDT · **Updated by:** claude
+**Version:** 7 · **Last updated:** 2026-07-17 07:25 PDT · **Updated by:** claude
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -20,13 +20,25 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 | Branch | Worktree | Agent | Status | Summary | Updated |
 |--------|----------|-------|--------|---------|---------|
-| main | . | — | idle | baseline (14 behind origin/main) | 2026-07-13 |
-| pre-5.8-upgrade | /Users/matthewx/code/ConnectedSprawl | claude | done; committed | Core loop live + Downtown West full-city pass | 2026-07-17 |
+| main | /Users/matthewx/code/ConnectedSprawl | claude | current | Core loop + DW city merged (266c071); pushed | 2026-07-17 |
 
 ## Log (append newest on top)
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-17 · main · claude
+- **Changed:** Merged `pre-5.8-upgrade` into `main` (fast-forward to 266c071)
+  and pushed to origin. The branch was already contained in origin/main up to
+  its merge base; the core-loop + city-pass commit was the only new work.
+  Removed the pre-5.8-upgrade Active Work row per the merge rule — the local
+  branch still exists but carries nothing unmerged.
+- **Validation:** `git merge --ff-only` (no merge commit, no conflicts);
+  `git rev-list origin/main..main` showed exactly 266c071 before push.
+- **Status:** done.
+- **Next:** future work continues on `main` (or fresh feature branches);
+  see the previous entry's Next list for the open items.
+<!-- entry:merge-to-main -->
 
 ### 2026-07-17 · pre-5.8-upgrade · claude
 - **Changed:** Wired the DRIVE→DECIDE→EARN→BURN loop end-to-end: new
