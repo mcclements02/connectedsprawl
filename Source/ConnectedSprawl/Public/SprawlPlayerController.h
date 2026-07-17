@@ -38,8 +38,11 @@ public:
 
 protected:
 	virtual void SetupInputComponent() override;
+	void EnsureUIInitialized();
 	void OnEscapePressed();
 	void OnOnePressed();
+
+	bool bUIInitialized = false;
 
 	/** E key — enter a nearby car on foot, or step out when driving. */
 	void OnInteractPressed();

@@ -83,6 +83,13 @@ void UFounderSubsystem::AddRecurringExpense(ECashFlowSource Source, float DailyA
 	BroadcastRunway();
 }
 
+void UFounderSubsystem::AdjustRecurringExpense(ECashFlowSource Source, float DailyDelta)
+{
+	float& Amount = RecurringDailyExpenses.FindOrAdd(Source);
+	Amount = FMath::Max(0.f, Amount + DailyDelta);
+	BroadcastRunway();
+}
+
 void UFounderSubsystem::RemoveRecurringExpense(ECashFlowSource Source)
 {
 	RecurringDailyExpenses.Remove(Source);

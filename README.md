@@ -27,6 +27,19 @@ PROJECT_FILE="$PWD/ConnectedSprawl.uproject"
 open "$UE_ROOT/Engine/Binaries/Mac/UnrealEditor.app" --args "$PROJECT_FILE"
 ```
 
+### Marketplace content (not in git)
+
+`Content/Downtown_West/` is the free **Downtown West Modular Pack** from Fab.
+It is gitignored (11 GB, re-downloadable) but `TestMap` references it — without
+it the city loses its streetlights, storefronts, props, and vistas. Install it
+once per clone: open the editor → **Window → Fab** → sign in → search
+"Downtown West Modular Pack" → **Add to My Library** → install to
+`Content/Downtown_West/`. Then re-run
+`Content/Python/mobile_texture_budget.py` to restore the mobile texture clamps.
+
+> Headless runs: always pass `-DisablePlugins=Fab` to `UnrealEditor-Cmd` —
+> restoring the editor's saved Fab browser tab asserts under `-nullrhi`.
+
 ---
 
 ## 🧠 Core Design

@@ -24,7 +24,7 @@ ASprawlRoadMarkings::ASprawlRoadMarkings()
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(
 		TEXT("/Engine/BasicShapes/Cube.Cube"));
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> PaintMat(
+	static ConstructorHelpers::FObjectFinderOptional<UMaterialInterface> PaintMat(
 		TEXT("/Game/Materials/MI_RoadPaint.MI_RoadPaint"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FallbackMat(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
@@ -37,9 +37,9 @@ ASprawlRoadMarkings::ASprawlRoadMarkings()
 	{
 		PaintMesh->SetStaticMesh(CubeMesh.Object);
 	}
-	if (PaintMat.Succeeded())
+	if (PaintMat.Get())
 	{
-		PaintMesh->SetMaterial(0, PaintMat.Object);
+		PaintMesh->SetMaterial(0, PaintMat.Get());
 	}
 	else if (FallbackMat.Succeeded())
 	{

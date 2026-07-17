@@ -5,6 +5,7 @@
 #include "Missions/DecisionSubsystem.h"
 #include "Missions/StrategicDecision.h"
 #include "UI/DecisionModalWidget.h"
+#include "UI/SprawlDecisionModal.h"
 
 #include "Kismet/KismetSystemLibrary.h"
 #include "Components/InputComponent.h"
@@ -15,12 +16,35 @@
 void ASprawlPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+	EnsureUIInitialized();
+}
 
-	if (IsLocalController() && HUDWidgetClass)
+void ASprawlPlayerController::EnsureUIInitialized()
+{
+	// Called from BeginPlay AND SetupInputComponent: a BP subclass overriding
+	// Event BeginPlay without a parent call must not silently lose the HUD,
+	// the modal default, or the decision binding.
+	if (bUIInitialized || !IsLocalController())
+	{
+		return;
+	}
+	bUIInitialized = true;
+
+	// The native modal keeps the decision loop playable when no WBP override
+	// was assigned in the BP subclass.
+	if (!DecisionModalClass)
+	{
+		DecisionModalClass = USprawlDecisionModal::StaticClass();
+	}
+
+	if (HUDWidgetClass)
 	{
 		HUDWidget = CreateWidget<UUserWidget>(this, HUDWidgetClass);
 		if (HUDWidget) HUDWidget->AddToViewport(0);
 	}
+	UE_LOG(LogTemp, Warning, TEXT("[Sprawl] UI init: HUD=%s modal=%s"),
+		HUDWidgetClass ? *HUDWidgetClass->GetName() : TEXT("none"),
+		DecisionModalClass ? *DecisionModalClass->GetName() : TEXT("none"));
 
 	if (UGameInstance* GI = GetGameInstance())
 	{
@@ -34,6 +58,8 @@ void ASprawlPlayerController::BeginPlay()
 void ASprawlPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+
+	EnsureUIInitialized();
 
 	if (InputComponent)
 	{
@@ -91,7 +117,14 @@ void ASprawlPlayerController::OnOnePressed()
 
 void ASprawlPlayerController::HandleDecisionOffered(UStrategicDecision* Decision)
 {
-	if (!Decision || !DecisionModalClass) return;
+	if (!Decision) return;
+	if (!DecisionModalClass)
+	{
+		DecisionModalClass = USprawlDecisionModal::StaticClass();
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[Sprawl] Presenting decision %s via %s"),
+		*Decision->DecisionId.ToString(), *DecisionModalClass->GetName());
 
 	DecisionWidget = CreateWidget<UUserWidget>(this, DecisionModalClass);
 	if (!DecisionWidget) return;

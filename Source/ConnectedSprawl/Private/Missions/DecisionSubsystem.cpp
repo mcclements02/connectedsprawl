@@ -55,11 +55,9 @@ void UDecisionSubsystem::ApplyBranchEffects(const FDecisionBranch& Branch)
 
 		if (!FMath::IsNearlyZero(Branch.DailyBurnDelta))
 		{
-			// For simplicity, track as payroll adjustment (designer-facing sources
-			// can be split later).
-			const float Current = Founder->GetDailyBurn();
-			Founder->AddRecurringExpense(ECashFlowSource::Payroll,
-				FMath::Max(0.f, Current + Branch.DailyBurnDelta));
+			// Track as payroll adjustment (designer-facing sources can be
+			// split later). Delta-based: other burn sources stay untouched.
+			Founder->AdjustRecurringExpense(ECashFlowSource::Payroll, Branch.DailyBurnDelta);
 		}
 	}
 

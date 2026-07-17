@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 5 · **Last updated:** 2026-07-14 12:54 PDT · **Updated by:** codex
+**Version:** 6 · **Last updated:** 2026-07-17 07:15 PDT · **Updated by:** claude
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -20,13 +20,53 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 | Branch | Worktree | Agent | Status | Summary | Updated |
 |--------|----------|-------|--------|---------|---------|
-| main | . | — | idle | baseline | 2026-07-13 |
-| pre-5.8-upgrade | /Users/matthewx/code/ConnectedSprawl | codex | done; uncommitted | City realism and upright-car fixes | 2026-07-14 |
+| main | . | — | idle | baseline (14 behind origin/main) | 2026-07-13 |
+| pre-5.8-upgrade | /Users/matthewx/code/ConnectedSprawl | claude | done; committed | Core loop live + Downtown West full-city pass | 2026-07-17 |
 
 ## Log (append newest on top)
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-17 · pre-5.8-upgrade · claude
+- **Changed:** Wired the DRIVE→DECIDE→EARN→BURN loop end-to-end: new
+  `USprawlMissionDirector` world subsystem (indexes StrategicDecision assets,
+  schedules the FirstVC opening call, auto-answers after the ring window,
+  chains follow-ups via UnlocksDecisionId), new native `USprawlDecisionModal`
+  (WidgetTree-built C++ UI, default when no WBP is assigned), five authored
+  decision assets in Content/Missions/Decisions (FirstVC → board/favor →
+  RailYardRun / BlockPartyGig bridge), and a delta-based
+  `AdjustRecurringExpense` fixing DecisionSubsystem's burn double-count.
+  Controller UI init is now BP-override-proof (BeginPlay + SetupInputComponent).
+  Created the missing `M_SignalGlow`/`MI_RoadPaint` the C++ CDOs referenced and
+  made those finders optional. Rebuilt `M_RealFacade2`/`M_RealGround` with
+  complete linear defaults (Bricks085/Ground037) — the AOTex-on-sRGB-default
+  mismatch was failing the whole material on Metal — and re-parented 3 MICs
+  orphaned by the never-committed `M_Simple_Opaque`. Visuals (dw_city_v3):
+  74 ring storefronts + awnings, 128 second-story window modules + 128
+  roofline trims over every storefront, 25 hanging + 11 foldout signs, 134
+  street trees, fountain plaza (5,5), playground (2,2), 2 mountain vistas.
+  Clamped fountain 4K→1K and mountain 8K→2K/1K textures (edits live in the
+  untracked Fab pack — re-run mobile_texture_budget.py after a pack refresh).
+  README + .gitignore document the Downtown_West Fab dependency.
+- **Validation:** `ConnectedSprawlEditor` built clean ×4; all python passes ran
+  headlessly; offscreen 45s game run (90 frames dumped): 5 decisions indexed,
+  FirstVC rang at 20s, auto-answered, modal presented and world paused (frame
+  sizes plateau after frame 62); zero "Failed to compile Material", zero CDO
+  missing-asset errors. Saved-map audit: all DW3 actor groups present.
+  Caveat: `-dumpmovie` captures the scene before Slate composition, so
+  HUD/modal don't appear in dumped PNGs — verified via logs + pause behavior;
+  eyeball the UI in an interactive run.
+- **Status:** done; committed on this branch.
+- **Next:** (1) iPhone profile — an iPhone 15 Pro Max is paired
+  (`xcrun devicectl list devices`); BuildCookRun will be a long first cook with
+  the DW pack. (2) 16 pedestrian avatars under /Game/Pedestrians were never
+  committed by the avatar PR — re-import (Tools/retarget_avatars.py) or accept
+  mannequin fallback. (3) Phone-call UI (ring banner + answer/decline input)
+  can now replace auto-answer via `bAutoAnswer=false`. (4) Save/Load of founder
+  state (GDD Phase 2 remainder). (5) Headless runs MUST pass
+  `-DisablePlugins=Fab` — the saved Fab browser tab asserts under nullrhi.
+<!-- entry:core-loop-live -->
 
 ### 2026-07-14 · pre-5.8-upgrade · codex
 - **Changed:** Made `ASprawlCar` discard rollover spin and self-right, taught both traffic generators to reserve the other fleet's positions, and regenerated 13 AI cars without changing the 28 drivable cars. The traffic application also refreshed the six existing car-paint material instances.

@@ -79,6 +79,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Founder|Burn")
 	void AddRecurringExpense(ECashFlowSource Source, float DailyAmount);
 
+	/** Shift one source's daily amount by a delta (clamped at zero). */
+	UFUNCTION(BlueprintCallable, Category="Founder|Burn")
+	void AdjustRecurringExpense(ECashFlowSource Source, float DailyDelta);
+
 	UFUNCTION(BlueprintCallable, Category="Founder|Burn")
 	void RemoveRecurringExpense(ECashFlowSource Source);
 

@@ -17,17 +17,18 @@ ASprawlTrafficLight::ASprawlTrafficLight()
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(
 		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
 
-	// Prefer the project's emissive signal material (created by the realism
-	// pass); fall back to the engine basic-shape material, which at least
-	// exposes a "Color" vector parameter.
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> GlowMat(
+	// Prefer the project's emissive signal material (optional: authored by the
+	// materials pass); fall back to the engine basic-shape material, which at
+	// least exposes a "Color" vector parameter.
+	static ConstructorHelpers::FObjectFinderOptional<UMaterialInterface> GlowMat(
 		TEXT("/Game/Materials/M_SignalGlow.M_SignalGlow"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMat(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 
 	UStaticMesh* Cube = CubeMesh.Succeeded() ? CubeMesh.Object.Get() : nullptr;
 	UStaticMesh* Cylinder = CylinderMesh.Succeeded() ? CylinderMesh.Object.Get() : Cube;
-	UMaterialInterface* LampBase = GlowMat.Succeeded() ? GlowMat.Object.Get()
+	UMaterialInterface* LampBase = GlowMat.Get()
+		? GlowMat.Get()
 		: (BasicMat.Succeeded() ? BasicMat.Object.Get() : nullptr);
 
 	auto MakePart = [&](const TCHAR* Name, UStaticMesh* Mesh, FVector RelLoc,

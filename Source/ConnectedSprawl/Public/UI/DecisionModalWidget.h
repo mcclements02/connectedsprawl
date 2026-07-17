@@ -24,7 +24,7 @@ class CONNECTEDSPRAWL_API UDecisionModalWidget : public UUserWidget
 public:
 	/** Called by the PlayerController when a decision is offered. */
 	UFUNCTION(BlueprintCallable, Category="Decision")
-	void PresentDecision(UStrategicDecision* InDecision);
+	virtual void PresentDecision(UStrategicDecision* InDecision);
 
 	/** UMG calls this from a branch button's OnClicked handler. */
 	UFUNCTION(BlueprintCallable, Category="Decision")
