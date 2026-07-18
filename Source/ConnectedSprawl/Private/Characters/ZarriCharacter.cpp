@@ -141,6 +141,16 @@ void AZarriCharacter::Tick(float DeltaSeconds)
 void AZarriCharacter::InitializeHeroAvatar()
 {
 	USkeletalMesh* Mesh = FSprawlAvatarLibrary::LoadAvatarMesh(HeroVariant);
+	UAnimSequence* LoadedIdle = FSprawlAvatarLibrary::LoadAvatarAnim(HeroVariant, TEXT("Idle"));
+	UAnimSequence* LoadedWalk = FSprawlAvatarLibrary::LoadAvatarAnim(HeroVariant, TEXT("Walk"));
+	UAnimSequence* LoadedJog = FSprawlAvatarLibrary::LoadAvatarAnim(HeroVariant, TEXT("Jog"));
+	if (!Mesh || !LoadedIdle || !LoadedWalk || !LoadedJog)
+	{
+		// Preserve the complete mannequin fallback when an avatar import is
+		// missing any of the clips needed by the native locomotion driver.
+		return;
+	}
+
 	if (!FSprawlAvatarLibrary::ApplyAvatar(GetMesh(), Mesh, HeroHeight,
 		GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()))
 	{
@@ -165,14 +175,11 @@ void AZarriCharacter::InitializeHeroAvatar()
 	if (const FName Wrist = FindBone(TEXT("LeftHand")); !Wrist.IsNone()) { RunwayTrackerSocket = Wrist; }
 	if (const FName Head = FindBone(TEXT("Head")); !Head.IsNone()) { CommDeviceSocket = Head; }
 
-	HeroIdleAnim = FSprawlAvatarLibrary::LoadAvatarAnim(HeroVariant, TEXT("Idle"));
-	HeroWalkAnim = FSprawlAvatarLibrary::LoadAvatarAnim(HeroVariant, TEXT("Walk"));
-	HeroJogAnim  = FSprawlAvatarLibrary::LoadAvatarAnim(HeroVariant, TEXT("Jog"));
-	bHasHeroAvatar = (HeroIdleAnim && HeroWalkAnim && HeroJogAnim);
-	if (bHasHeroAvatar)
-	{
-		FSprawlAvatarLibrary::PlayLoop(GetMesh(), HeroIdleAnim, HeroCurrentAnim);
-	}
+	HeroIdleAnim = LoadedIdle;
+	HeroWalkAnim = LoadedWalk;
+	HeroJogAnim = LoadedJog;
+	bHasHeroAvatar = true;
+	FSprawlAvatarLibrary::PlayLoop(GetMesh(), HeroIdleAnim, HeroCurrentAnim);
 }
 
 void AZarriCharacter::UpdateHeroAnimation()
@@ -280,28 +287,64 @@ void AZarriCharacter::EnterNearbyVehicle()
 	ASprawlCar* Vehicle = FindNearbyVehicle();
 	UE_LOG(LogTemp, Warning, TEXT("[Zarri] EnterNearbyVehicle found=%s"),
 		Vehicle ? *Vehicle->GetName() : TEXT("NULL"));
-	if (!Vehicle) return;
+	EnterVehicle(Vehicle);
+}
+
+bool AZarriCharacter::EnterVehicle(ASprawlCar* Vehicle)
+{
+	if (!Vehicle)
+	{
+		return false;
+	}
 
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC) return;
+	if (!PC || !Vehicle->AssignDriver(this))
+	{
+		return false;
+	}
 
-	Vehicle->SetDriver(this);
 	PC->Possess(Vehicle);
 	UE_LOG(LogTemp, Warning, TEXT("[Zarri] possessed car"));
 	// Hide Zarri but keep him in the world so we can teleport him to a door on exit.
 	SetActorHiddenInGame(true);
 	SetActorEnableCollision(false);
 	GetCharacterMovement()->DisableMovement();
+	return true;
 }
 
 void AZarriCharacter::OnExitedVehicle(ASprawlCar* FromVehicle)
 {
 	if (!FromVehicle) return;
 
-	// Teleport Zarri to the driver-side of the vehicle.
-	const FVector Exit = FromVehicle->GetActorLocation()
-		+ FromVehicle->GetActorRightVector() * -180.f
-		+ FVector(0, 0, 20.f);
+	// Prefer the driver side, then try the passenger side and front/rear. This
+	// keeps exiting reliable when a curb, building wall, or another car blocks
+	// the nominal door position.
+	const FVector CarLocation = FromVehicle->GetActorLocation();
+	const FVector Side = FromVehicle->GetActorRightVector() * 190.f;
+	const FVector End = FromVehicle->GetActorForwardVector() * 275.f;
+	const FVector Candidates[] = {
+		CarLocation - Side, CarLocation + Side,
+		CarLocation - End, CarLocation + End,
+	};
+	FVector Exit = CarLocation - Side + FVector(0.f, 0.f, 30.f);
+	if (UWorld* World = GetWorld())
+	{
+		FCollisionQueryParams Params(FName(TEXT("ZarriVehicleExit")), false, this);
+		Params.AddIgnoredActor(FromVehicle);
+		const FCollisionShape Capsule = FCollisionShape::MakeCapsule(
+			GetCapsuleComponent()->GetScaledCapsuleRadius(),
+			GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+		for (const FVector& Candidate : Candidates)
+		{
+			const FVector TestLocation = Candidate + FVector(0.f, 0.f, 100.f);
+			if (!World->OverlapBlockingTestByChannel(
+				TestLocation, FQuat::Identity, ECC_Pawn, Capsule, Params))
+			{
+				Exit = TestLocation;
+				break;
+			}
+		}
+	}
 	SetActorLocation(Exit, /*bSweep*/ false, nullptr, ETeleportType::TeleportPhysics);
 
 	SetActorHiddenInGame(false);
@@ -325,11 +368,16 @@ ASprawlCar* AZarriCharacter::FindNearbyVehicle() const
 	const FVector MyLoc = GetActorLocation();
 	for (AActor* Actor : Found)
 	{
+		ASprawlCar* Car = Cast<ASprawlCar>(Actor);
+		if (!Car || !Car->CanBeEntered())
+		{
+			continue;
+		}
 		const float D = FVector::DistSquared(MyLoc, Actor->GetActorLocation());
 		if (D <= BestDistSq)
 		{
 			BestDistSq = D;
-			Best = Cast<ASprawlCar>(Actor);
+			Best = Car;
 		}
 	}
 	return Best;
@@ -423,4 +471,3 @@ void AZarriCharacter::UpdateEquipmentVisuals(float DeltaSeconds)
 		}
 	}
 }
-

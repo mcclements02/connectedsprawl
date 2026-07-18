@@ -168,10 +168,11 @@ def spawn_car(idx, x, y, yaw_deg):
                    unreal.Vector(0.82, 0.82, 0.34), MI_TIRE, yaw_deg, roll=90.0)
 
 cars = 0
+PARKING_OFFSET = 410.0
 for x in vroads:
     for j in range(N):
         y = cx(j) + random.uniform(-400, 400)
-        px = x + (ROAD / 2 - 110) * random.choice([-1, 1])
+        px = x + PARKING_OFFSET * random.choice([-1, 1])
         if over_lake(px, y) or random.random() > 0.55:
             continue
         spawn_car(cars, px, y, random.choice([90, 270]))
@@ -179,7 +180,7 @@ for x in vroads:
 for y in hroads:
     for i in range(N):
         x = cx(i) + random.uniform(-400, 400)
-        py = y + (ROAD / 2 - 110) * random.choice([-1, 1])
+        py = y + PARKING_OFFSET * random.choice([-1, 1])
         if over_lake(x, py) or random.random() > 0.45:
             continue
         spawn_car(cars, x, py, random.choice([0, 180]))

@@ -5,6 +5,7 @@
 void UFactionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	ResetProgress();
 	UE_LOG(LogTemp, Log, TEXT("[Faction] Initialized. Corp=0 Street=0 Heat=0 Debt=0"));
 }
 
@@ -79,4 +80,32 @@ void UFactionSubsystem::RepayMoralDebt(int32 Amount)
 {
 	MoralDebt = FMath::Clamp(MoralDebt - Amount, 0, 100);
 	OnMoralDebtChanged.Broadcast(MoralDebt);
+}
+
+FFactionPersistentState UFactionSubsystem::CaptureState() const
+{
+	FFactionPersistentState State;
+	State.CorporateRep = CorporateRep;
+	State.StreetRep = StreetRep;
+	State.PoliceHeat = PoliceHeat;
+	State.MoralDebt = MoralDebt;
+	return State;
+}
+
+void UFactionSubsystem::RestoreState(const FFactionPersistentState& State)
+{
+	CorporateRep = FMath::Clamp(State.CorporateRep, -100, 100);
+	StreetRep = FMath::Clamp(State.StreetRep, -100, 100);
+	PoliceHeat = FMath::Clamp(State.PoliceHeat, 0, 100);
+	MoralDebt = FMath::Clamp(State.MoralDebt, 0, 100);
+
+	OnReputationChanged.Broadcast(EFaction::Corporate, CorporateRep);
+	OnReputationChanged.Broadcast(EFaction::Street, StreetRep);
+	OnHeatChanged.Broadcast(PoliceHeat);
+	OnMoralDebtChanged.Broadcast(MoralDebt);
+}
+
+void UFactionSubsystem::ResetProgress()
+{
+	RestoreState(FFactionPersistentState());
 }

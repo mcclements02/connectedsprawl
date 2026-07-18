@@ -25,6 +25,7 @@ public class ConnectedSprawl : ModuleRules
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
+			"AssetRegistry",
 			"Slate",
 			"SlateCore"
 		});

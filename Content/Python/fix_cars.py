@@ -68,7 +68,9 @@ for actor in eas.get_all_level_actors():
         placed.append((location.x, location.y))
 unreal.log("[Cars] reserved {} existing traffic-car positions".format(len(placed)))
 MIN_GAP = 650.0
-TARGET_CARS = 28
+# Keep one enterable player car; the moving fleet belongs to add_ai_traffic.py
+# / AProceduralTrafficManager. Do not fill live lanes with stationary pawns.
+TARGET_CARS = 1
 LANE_OFFSET = 150.0
 
 def far_enough(x, y):
@@ -90,8 +92,10 @@ def candidate():
         yaw = 0.0 if lane < 0 else 180.0
     return x, y, yaw
 
-# one car down the street from the player spawn (clear of it)
-guaranteed = (SPAWN[0] + 150, SPAWN[1] + 1550, 90.0)
+# One car in a recessed curb bay near the player, outside the ±150 live lanes.
+nearest_vroad = min(vroads, key=lambda value: abs(value - SPAWN[0]))
+parking_side = -1.0 if SPAWN[0] <= nearest_vroad else 1.0
+guaranteed = (nearest_vroad + parking_side * 410.0, SPAWN[1] + 300.0, 90.0)
 
 spots = []
 if far_enough(guaranteed[0], guaranteed[1]):
@@ -119,7 +123,10 @@ for (x, y, yaw) in spots:
                                      unreal.Vector(x, y, 175),
                                      unreal.Rotator(roll=0.0, pitch=0.0, yaw=yaw))
     car.set_actor_label("City_DriveCar_{}".format(cars))
-    if vehicle_realism.configure_drivable_car(car, cars, real_car_meshes, car_mats):
+    car.set_editor_property("auto_drive", False)
+    if vehicle_realism.configure_animated_car(car, cars, car_mats):
+        real_cars += 1
+    elif vehicle_realism.configure_drivable_car(car, cars, real_car_meshes, car_mats):
         real_cars += 1
     cars += 1
 unreal.log("[Cars] spawned {} well-spaced drivable cars".format(cars))

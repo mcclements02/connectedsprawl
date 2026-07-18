@@ -32,15 +32,28 @@ struct FCashFlowEntry
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly) FDateTime Timestamp;
-	UPROPERTY(BlueprintReadOnly) ECashFlowSource Source = ECashFlowSource::CleanContract;
-	UPROPERTY(BlueprintReadOnly) float Amount = 0.f;      // positive = income, negative = expense
-	UPROPERTY(BlueprintReadOnly) FText Note;
-	UPROPERTY(BlueprintReadOnly) bool bIsDirty = false;   // raised heat / moral debt
+	UPROPERTY(BlueprintReadOnly, SaveGame) FDateTime Timestamp;
+	UPROPERTY(BlueprintReadOnly, SaveGame) ECashFlowSource Source = ECashFlowSource::CleanContract;
+	UPROPERTY(BlueprintReadOnly, SaveGame) float Amount = 0.f;      // positive = income, negative = expense
+	UPROPERTY(BlueprintReadOnly, SaveGame) FText Note;
+	UPROPERTY(BlueprintReadOnly, SaveGame) bool bIsDirty = false;   // raised heat / moral debt
+};
+
+/** Version-independent founder data copied into the project's SaveGame. */
+USTRUCT(BlueprintType)
+struct FFounderPersistentState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, SaveGame) float Cash = 2500.f;
+	UPROPERTY(BlueprintReadOnly, SaveGame) int32 CurrentDay = 1;
+	UPROPERTY(BlueprintReadOnly, SaveGame) TMap<ECashFlowSource, float> RecurringDailyExpenses;
+	UPROPERTY(BlueprintReadOnly, SaveGame) TArray<FCashFlowEntry> Ledger;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCashChanged, float, NewCash);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRunwayChanged, float, DaysRemaining);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDayAdvanced, int32, NewDay);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnStartupBankrupt);
 
 /**
@@ -90,16 +103,24 @@ public:
 	UFUNCTION(BlueprintPure, Category="Founder") float GetCash() const { return Cash; }
 	UFUNCTION(BlueprintPure, Category="Founder") float GetDailyBurn() const;
 	UFUNCTION(BlueprintPure, Category="Founder") float GetRunwayDays() const;
+	UFUNCTION(BlueprintPure, Category="Founder") int32 GetCurrentDay() const { return CurrentDay; }
 	UFUNCTION(BlueprintPure, Category="Founder") bool IsInDanger() const { return GetRunwayDays() < 7.f; }
+
+	/** Snapshot/restore are used by the versioned progression save subsystem. */
+	FFounderPersistentState CaptureState() const;
+	void RestoreState(const FFounderPersistentState& State);
+	void ResetProgress();
 
 	// --- Events ---
 	UPROPERTY(BlueprintAssignable) FOnCashChanged    OnCashChanged;
 	UPROPERTY(BlueprintAssignable) FOnRunwayChanged  OnRunwayChanged;
+	UPROPERTY(BlueprintAssignable) FOnDayAdvanced    OnDayAdvanced;
 	UPROPERTY(BlueprintAssignable) FOnStartupBankrupt OnStartupBankrupt;
 
 protected:
 	/** Current cash on hand (USD). */
 	UPROPERTY(VisibleAnywhere, Category="Founder") float Cash = 2500.f;
+	UPROPERTY(VisibleAnywhere, Category="Founder") int32 CurrentDay = 1;
 
 	/** Recurring daily expenses keyed by source (e.g. rent, payroll). */
 	UPROPERTY() TMap<ECashFlowSource, float> RecurringDailyExpenses;

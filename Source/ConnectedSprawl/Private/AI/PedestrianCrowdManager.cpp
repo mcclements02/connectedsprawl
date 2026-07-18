@@ -45,13 +45,28 @@ bool APedestrianCrowdManager::FindSidewalkSpawnPoint(const FVector& PlayerLoc, F
 
 		// A random point on the block's sidewalk ring (the outer band of the
 		// raised block surface), so the pedestrian starts mid-stroll.
-		const float Reach = Grid::BlockSize * 0.5f - 120.f;
+		// Keep the walking line behind recessed curb-parking bays instead of
+		// spawning people through car bodies at the block edge.
+		const float Reach = Grid::BlockSize * 0.5f - 360.f;
 		const bool bXEdge = FMath::RandBool();
 		const float Along = FMath::FRandRange(-Reach, Reach);
 		const float Side  = FMath::RandBool() ? Reach : -Reach;
 		OutPoint = bXEdge
 			? FVector(Bx + Along, By + Side, 130.f)
 			: FVector(Bx + Side, By + Along, 130.f);
+
+		FCollisionObjectQueryParams Objects;
+		Objects.AddObjectTypesToQuery(ECC_WorldStatic);
+		Objects.AddObjectTypesToQuery(ECC_Pawn);
+		Objects.AddObjectTypesToQuery(ECC_PhysicsBody);
+		FCollisionQueryParams Params(
+			FName(TEXT("SprawlPedestrianSpawnClearance")), false, this);
+		const FVector ClearanceCenter = OutPoint + FVector(0.f, 0.f, 20.f);
+		if (GetWorld()->OverlapAnyTestByObjectType(ClearanceCenter, FQuat::Identity,
+			Objects, FCollisionShape::MakeBox(FVector(45.f, 45.f, 70.f)), Params))
+		{
+			continue;
+		}
 		return true;
 	}
 	return false;
@@ -95,13 +110,13 @@ void APedestrianCrowdManager::Evaluate()
 
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride =
-			ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+			ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
 		ASprawlPedestrian* Ped = World->SpawnActor<ASprawlPedestrian>(
 			PedestrianClass, SpawnPoint,
 			FRotator(0.f, FMath::FRandRange(0.f, 360.f), 0.f), Params);
 		if (!Ped)
 		{
-			break;
+			continue;
 		}
 		ActivePeds.Add(Ped);
 	}

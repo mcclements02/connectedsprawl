@@ -41,6 +41,8 @@ protected:
 	void EnsureUIInitialized();
 	void OnEscapePressed();
 	void OnOnePressed();
+	void OnSavePressed();
+	void OnLoadPressed();
 
 	bool bUIInitialized = false;
 

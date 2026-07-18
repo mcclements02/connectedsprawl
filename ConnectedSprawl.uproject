@@ -1,6 +1,6 @@
 {
 	"FileVersion": 3,
-	"EngineAssociation": "5.7",
+	"EngineAssociation": "5.8",
 	"Category": "Game",
 	"Description": "The Connected Sprawl — Zarri's 15-mile founder hustle. GTA-style open world with a startup economy.",
 	"Modules": [
@@ -20,6 +20,7 @@
 		}
 	],
 	"Plugins": [
+		{ "Name": "AndroidFileServer", "Enabled": false },
 		{ "Name": "EnhancedInput", "Enabled": true },
 		{ "Name": "PythonScriptPlugin", "Enabled": true },
 		{ "Name": "ChaosVehiclesPlugin", "Enabled": true },

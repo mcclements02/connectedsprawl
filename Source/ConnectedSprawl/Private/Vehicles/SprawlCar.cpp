@@ -4,6 +4,7 @@
 #include "Characters/ZarriCharacter.h"
 #include "Components/BoxComponent.h"
 #include "Components/MeshComponent.h"
+#include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Camera/CameraComponent.h"
@@ -14,6 +15,7 @@
 #include "InputMappingContext.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
@@ -88,9 +90,12 @@ ASprawlCar::ASprawlCar()
 	RootComponent = Hull;
 	Hull->SetBoxExtent(FVector(235.f, 100.f, 62.f));
 	Hull->SetCollisionProfileName(TEXT("PhysicsActor"));
-	// Keep the car flat — only let it yaw. (Safe to set on the CDO.)
-	Hull->BodyInstance.bLockXRotation = true;
-	Hull->BodyInstance.bLockYRotation = true;
+	// Normal driving is levelled in Tick. Rotations stay physically available
+	// so a severe crash can roll before the timed recovery takes over.
+	Hull->BodyInstance.bLockXRotation = false;
+	Hull->BodyInstance.bLockYRotation = false;
+	Hull->SetNotifyRigidBodyCollision(true);
+	Hull->OnComponentHit.AddDynamic(this, &ASprawlCar::HandleHullHit);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(
 		TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -131,6 +136,7 @@ ASprawlCar::ASprawlCar()
 	// Cube mesh is 100u; panels are scaled to centimetres / 100.
 	UStaticMesh* Cube = CubeMesh.Succeeded() ? CubeMesh.Object.Get() : nullptr;
 	UStaticMesh* Cylinder = CylinderMesh.Succeeded() ? CylinderMesh.Object.Get() : Cube;
+	PrototypeWheelMesh = Cylinder;
 	UMaterialInterface* BodyMaterial = BodyMat.Succeeded() ? BodyMat.Object.Get() : nullptr;
 	UMaterialInterface* GlassMaterial = GlassMat.Succeeded() ? GlassMat.Object.Get() : nullptr;
 	UMaterialInterface* TireMaterial = TireMat.Succeeded() ? TireMat.Object.Get() : nullptr;
@@ -196,9 +202,23 @@ ASprawlCar::ASprawlCar()
 	};
 	for (int32 i = 0; i < 4; ++i)
 	{
+		const FString PivotName = FString::Printf(TEXT("WheelPivot%d"), i);
+		USceneComponent* Pivot = CreateDefaultSubobject<USceneComponent>(*PivotName);
+		Pivot->SetupAttachment(Hull);
+		Pivot->SetRelativeLocation(WheelPos[i]);
+		WheelPivots.Add(Pivot);
+
 		const FString WName = FString::Printf(TEXT("Wheel%d"), i);
-		UStaticMeshComponent* W = MakePanel(*WName, Cylinder, WheelPos[i], WheelScale,
-		                                    TireMaterial, WheelRot);
+		UStaticMeshComponent* W = CreateDefaultSubobject<UStaticMeshComponent>(*WName);
+		W->SetupAttachment(Pivot);
+		W->SetStaticMesh(Cylinder);
+		W->SetRelativeRotation(WheelRot);
+		W->SetRelativeScale3D(WheelScale);
+		W->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (TireMaterial)
+		{
+			W->SetMaterial(0, TireMaterial);
+		}
 		WheelMeshes.Add(W);
 		DetailMeshes.Add(W);
 	}
@@ -236,6 +256,7 @@ ASprawlCar::ASprawlCar()
 void ASprawlCar::BeginPlay()
 {
 	Super::BeginPlay();
+	TryApplyRuntimeVehicleParts();
 
 	// Physics setup deferred out of the constructor (GEngine isn't ready there).
 	if (Hull)
@@ -243,16 +264,27 @@ void ASprawlCar::BeginPlay()
 		const FRotator SpawnRotation = GetActorRotation();
 		SetActorRotation(FRotator(0.f, SpawnRotation.Yaw, 0.f),
 			ETeleportType::TeleportPhysics);
-		// Reapply the locks at runtime so serialized map instances cannot retain
-		// stale BodyInstance overrides from an older version of the class.
-		Hull->BodyInstance.bLockXRotation = true;
-		Hull->BodyInstance.bLockYRotation = true;
+		// Reapply current crash-aware settings so serialized map instances cannot
+		// retain stale rotation locks from older versions of the class.
+		Hull->BodyInstance.bLockXRotation = false;
+		Hull->BodyInstance.bLockYRotation = false;
 		Hull->SetSimulatePhysics(true);
 		Hull->SetMassOverrideInKg(NAME_None, 1500.f, true);
 		Hull->SetLinearDamping(0.8f);
 		Hull->SetAngularDamping(3.5f);
-		MaintainUpright();
+		MaintainUpright(0.f);
 	}
+	if (Grid::IsInsideCityBounds(GetActorLocation().X, GetActorLocation().Y))
+	{
+		LastSafeTransform = GetActorTransform();
+		bHasLastSafeTransform = true;
+	}
+}
+
+void ASprawlCar::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ReleaseIntersectionReservation();
+	Super::EndPlay(EndPlayReason);
 }
 
 void ASprawlCar::SetBodyMaterial(UMaterialInterface* Mat)
@@ -279,6 +311,7 @@ void ASprawlCar::SetExternalVehicleMesh(UStaticMesh* Mesh, FVector RelativeLocat
 	{
 		return;
 	}
+	ClearExternalBodyDetails();
 
 	FullBodyMesh->SetStaticMesh(Mesh);
 	FullBodyMesh->EmptyOverrideMaterials();
@@ -293,7 +326,94 @@ void ASprawlCar::SetExternalVehicleMesh(UStaticMesh* Mesh, FVector RelativeLocat
 		FullSkeletalBodyMesh->SetVisibility(false, true);
 		FullSkeletalBodyMesh->SetHiddenInGame(true);
 	}
+	bUsingExternalWheelParts = false;
 	SetKitbashVisible(false);
+}
+
+void ASprawlCar::SetExternalVehicleParts(const TArray<UStaticMesh*>& ExternalBodyMeshes,
+	const TArray<UStaticMesh*>& ExternalWheelMeshes,
+	const TArray<FVector>& ExternalWheelCenters,
+	FVector RelativeLocation, FRotator RelativeRotation, FVector RelativeScale)
+{
+	if (!FullBodyMesh || ExternalBodyMeshes.IsEmpty() || !ExternalBodyMeshes[0]
+		|| ExternalWheelMeshes.Num() != 4
+		|| ExternalWheelCenters.Num() != 4 || WheelMeshes.Num() != 4
+		|| WheelPivots.Num() != 4)
+	{
+		return;
+	}
+	for (UStaticMesh* BodyPart : ExternalBodyMeshes)
+	{
+		if (!BodyPart)
+		{
+			return;
+		}
+	}
+
+	for (UStaticMesh* WheelMesh : ExternalWheelMeshes)
+	{
+		if (!WheelMesh)
+		{
+			return;
+		}
+	}
+
+	ClearExternalBodyDetails();
+	FullBodyMesh->SetStaticMesh(ExternalBodyMeshes[0]);
+	FullBodyMesh->EmptyOverrideMaterials();
+	FullBodyMesh->SetRelativeLocation(RelativeLocation);
+	FullBodyMesh->SetRelativeRotation(RelativeRotation);
+	FullBodyMesh->SetRelativeScale3D(RelativeScale);
+	ApplyVehiclePaintMaterial(FullBodyMesh, BodyPaintMaterial);
+	FullBodyMesh->SetVisibility(true, true);
+	FullBodyMesh->SetHiddenInGame(false);
+
+	for (int32 Index = 1; Index < ExternalBodyMeshes.Num(); ++Index)
+	{
+		const FName ComponentName(*FString::Printf(TEXT("ExternalVehicleDetail_%02d"), Index - 1));
+		UStaticMeshComponent* Detail = NewObject<UStaticMeshComponent>(this, ComponentName);
+		if (!Detail)
+		{
+			continue;
+		}
+		Detail->SetupAttachment(Hull);
+		Detail->SetStaticMesh(ExternalBodyMeshes[Index]);
+		Detail->SetRelativeLocation(RelativeLocation);
+		Detail->SetRelativeRotation(RelativeRotation);
+		Detail->SetRelativeScale3D(RelativeScale);
+		Detail->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		AddInstanceComponent(Detail);
+		Detail->RegisterComponent();
+		ExternalBodyDetailMeshes.Add(Detail);
+	}
+
+	if (FullSkeletalBodyMesh)
+	{
+		FullSkeletalBodyMesh->SetVisibility(false, true);
+		FullSkeletalBodyMesh->SetHiddenInGame(true);
+	}
+
+	SetKitbashVisible(false);
+	const FQuat BodyRotation = RelativeRotation.Quaternion();
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		const FVector ScaledCenter = ExternalWheelCenters[Index] * RelativeScale;
+		WheelPivots[Index]->SetRelativeLocation(
+			RelativeLocation + BodyRotation.RotateVector(ScaledCenter));
+		WheelPivots[Index]->SetRelativeRotation(FRotator::ZeroRotator);
+		WheelPivots[Index]->SetRelativeScale3D(FVector::OneVector);
+
+		UStaticMeshComponent* Wheel = WheelMeshes[Index];
+		Wheel->SetStaticMesh(ExternalWheelMeshes[Index]);
+		Wheel->EmptyOverrideMaterials();
+		Wheel->SetRelativeLocation(BodyRotation.RotateVector(-ScaledCenter));
+		Wheel->SetRelativeRotation(RelativeRotation);
+		Wheel->SetRelativeScale3D(RelativeScale);
+		Wheel->SetVisibility(true, true);
+		Wheel->SetHiddenInGame(false);
+	}
+
+	bUsingExternalWheelParts = true;
 }
 
 void ASprawlCar::SetExternalSkeletalVehicleMesh(USkeletalMesh* Mesh, FVector RelativeLocation,
@@ -303,6 +423,7 @@ void ASprawlCar::SetExternalSkeletalVehicleMesh(USkeletalMesh* Mesh, FVector Rel
 	{
 		return;
 	}
+	ClearExternalBodyDetails();
 
 	FullSkeletalBodyMesh->SetSkeletalMesh(Mesh);
 	FullSkeletalBodyMesh->EmptyOverrideMaterials();
@@ -317,11 +438,13 @@ void ASprawlCar::SetExternalSkeletalVehicleMesh(USkeletalMesh* Mesh, FVector Rel
 		FullBodyMesh->SetVisibility(false, true);
 		FullBodyMesh->SetHiddenInGame(true);
 	}
+	bUsingExternalWheelParts = false;
 	SetKitbashVisible(false);
 }
 
 void ASprawlCar::ClearExternalVehicleMesh()
 {
+	ClearExternalBodyDetails();
 	if (FullBodyMesh)
 	{
 		FullBodyMesh->SetStaticMesh(nullptr);
@@ -334,7 +457,46 @@ void ASprawlCar::ClearExternalVehicleMesh()
 		FullSkeletalBodyMesh->SetVisibility(false, true);
 		FullSkeletalBodyMesh->SetHiddenInGame(true);
 	}
+	ResetPrototypeWheels();
 	SetKitbashVisible(true);
+}
+
+void ASprawlCar::ClearExternalBodyDetails()
+{
+	for (UStaticMeshComponent* Detail : ExternalBodyDetailMeshes)
+	{
+		if (Detail)
+		{
+			RemoveInstanceComponent(Detail);
+			Detail->DestroyComponent();
+		}
+	}
+	ExternalBodyDetailMeshes.Reset();
+}
+
+void ASprawlCar::ResetPrototypeWheels()
+{
+	const FVector WheelScale(0.82f, 0.82f, 0.34f);
+	const FRotator WheelRotation(0.f, 0.f, 90.f);
+	const float WheelX = 150.f;
+	const float WheelY = 104.f;
+	const float WheelZ = -54.f;
+	const FVector Positions[4] = {
+		FVector(WheelX, WheelY, WheelZ), FVector(WheelX, -WheelY, WheelZ),
+		FVector(-WheelX, WheelY, WheelZ), FVector(-WheelX, -WheelY, WheelZ)
+	};
+
+	for (int32 Index = 0; Index < WheelMeshes.Num() && Index < WheelPivots.Num(); ++Index)
+	{
+		WheelPivots[Index]->SetRelativeLocation(Positions[Index]);
+		WheelPivots[Index]->SetRelativeRotation(FRotator::ZeroRotator);
+		WheelPivots[Index]->SetRelativeScale3D(FVector::OneVector);
+		WheelMeshes[Index]->SetStaticMesh(PrototypeWheelMesh);
+		WheelMeshes[Index]->SetRelativeLocation(FVector::ZeroVector);
+		WheelMeshes[Index]->SetRelativeRotation(WheelRotation);
+		WheelMeshes[Index]->SetRelativeScale3D(WheelScale);
+	}
+	bUsingExternalWheelParts = false;
 }
 
 void ASprawlCar::SetKitbashVisible(bool bVisible)
@@ -348,11 +510,6 @@ void ASprawlCar::SetKitbashVisible(bool bVisible)
 	{
 		Parts.Add(Part);
 	}
-	for (UStaticMeshComponent* Part : WheelMeshes)
-	{
-		Parts.Add(Part);
-	}
-
 	for (UStaticMeshComponent* Part : Parts)
 	{
 		if (Part)
@@ -378,6 +535,41 @@ void ASprawlCar::PossessedBy(AController* NewController)
 			}
 		}
 	}
+}
+
+bool ASprawlCar::CanBeEntered() const
+{
+	if (Driver || Cast<APlayerController>(GetController()))
+	{
+		return false;
+	}
+	const float Speed = Hull ? Hull->GetPhysicsLinearVelocity().Size2D() : GetVelocity().Size2D();
+	return Speed <= MaxEntrySpeed && IsWithinCityBounds();
+}
+
+bool ASprawlCar::AssignDriver(AZarriCharacter* InDriver)
+{
+	if (!InDriver || !CanBeEntered())
+	{
+		return false;
+	}
+
+	bResumeAutoDriveAfterExit = bAutoDrive;
+	bAutoDrive = false;
+	ReleaseIntersectionReservation();
+	Driver = InDriver;
+	if (Hull)
+	{
+		Hull->WakeAllRigidBodies();
+	}
+	return true;
+}
+
+bool ASprawlCar::IsWithinCityBounds() const
+{
+	const FVector Location = GetActorLocation();
+	return Grid::IsInsideCityBounds(Location.X, Location.Y, 300.f)
+		&& Location.Z > -250.f;
 }
 
 void ASprawlCar::SetupPlayerInputComponent(UInputComponent* InputComponent)
@@ -428,10 +620,14 @@ void ASprawlCar::HandleExit(const FInputActionValue& /*Value*/)
 {
 	if (Driver)
 	{
+		AZarriCharacter* ExitingDriver = Driver;
 		ThrottleInput = 0.f;
 		SteerInput = 0.f;
-		Driver->OnExitedVehicle(this);
 		Driver = nullptr;
+		bAutoDrive = bResumeAutoDriveAfterExit;
+		bResumeAutoDriveAfterExit = false;
+		bAIStateSeeded = false;
+		ExitingDriver->OnExitedVehicle(this);
 	}
 }
 
@@ -443,7 +639,12 @@ void ASprawlCar::Tick(float DeltaSeconds)
 	{
 		return;
 	}
-	MaintainUpright();
+	CrashUprightGraceRemaining = FMath::Max(
+		0.f, CrashUprightGraceRemaining - DeltaSeconds);
+	EnforceCityBoundary();
+	MaintainUpright(DeltaSeconds);
+	UpdateSafeRecoveryTransform();
+	UpdateWheelVisuals(DeltaSeconds);
 
 	const bool bPlayerDriving = Cast<APlayerController>(GetController()) != nullptr;
 	if (!bPlayerDriving && !bAutoDrive)
@@ -480,9 +681,94 @@ void ASprawlCar::Tick(float DeltaSeconds)
 	}
 }
 
-void ASprawlCar::MaintainUpright()
+void ASprawlCar::UpdateWheelVisuals(float DeltaSeconds)
 {
+	if (!Hull || WheelPivots.Num() != 4)
+	{
+		return;
+	}
+
+	const float SignedSpeed = FVector::DotProduct(
+		Hull->GetPhysicsLinearVelocity(), GetActorForwardVector());
+	const float Radius = FMath::Max(1.f, VisualWheelRadius);
+	WheelRotationDegrees = FMath::Fmod(
+		WheelRotationDegrees - FMath::RadiansToDegrees(SignedSpeed * DeltaSeconds / Radius),
+		360.f);
+
+	const float SteeringDegrees = SteerInput * VisualSteeringAngle;
+	for (int32 Index = 0; Index < WheelPivots.Num(); ++Index)
+	{
+		const float WheelSteering = Index < 2 ? SteeringDegrees : 0.f;
+		const FQuat SteeringQuat(FVector::UpVector, FMath::DegreesToRadians(WheelSteering));
+		const FQuat SpinQuat(FVector::RightVector, FMath::DegreesToRadians(WheelRotationDegrees));
+		WheelPivots[Index]->SetRelativeRotation(SteeringQuat * SpinQuat);
+	}
+}
+
+void ASprawlCar::TryApplyRuntimeVehicleParts()
+{
+	if (!FullBodyMesh || FullBodyMesh->GetStaticMesh()
+		|| (FullSkeletalBodyMesh && FullSkeletalBodyMesh->GetSkeletalMeshAsset()))
+	{
+		return;
+	}
+
+	const int32 Variant = static_cast<int32>(GetTypeHash(GetFName()) % 10u) + 1;
+	const FString BasePath = FString::Printf(TEXT("/Game/Vehicles/Animated/Car_%d"), Variant);
+	auto LoadPart = [&](const TCHAR* Suffix) -> UStaticMesh*
+	{
+		const FString AssetName = FString::Printf(TEXT("SM_Car_%d_%s"), Variant, Suffix);
+		const FString ObjectPath = FString::Printf(TEXT("%s/%s.%s"),
+			*BasePath, *AssetName, *AssetName);
+		return LoadObject<UStaticMesh>(nullptr, *ObjectPath);
+	};
+
+	TArray<UStaticMesh*> Bodies = { LoadPart(TEXT("Body")) };
+	for (int32 DetailIndex = 0; DetailIndex < 32; ++DetailIndex)
+	{
+		const FString Suffix = FString::Printf(TEXT("Detail_%02d"), DetailIndex);
+		UStaticMesh* Detail = LoadPart(*Suffix);
+		if (!Detail)
+		{
+			break;
+		}
+		Bodies.Add(Detail);
+	}
+	TArray<UStaticMesh*> Wheels = {
+		LoadPart(TEXT("Wheel_FL")), LoadPart(TEXT("Wheel_FR")),
+		LoadPart(TEXT("Wheel_RL")), LoadPart(TEXT("Wheel_RR"))
+	};
+	if (!Bodies[0] || Wheels.Contains(nullptr))
+	{
+		return;
+	}
+
+	const FBox BodyBounds = Bodies[0]->GetBoundingBox();
+	const FVector BodySize = BodyBounds.GetSize();
+	const double NaturalLength = FMath::Max3<double>(BodySize.X, BodySize.Y, 1.0);
+	const float Scale = static_cast<float>(
+		FMath::Clamp(480.0 / NaturalLength, 0.45, 1.4));
+	const FVector RelativeScale(Scale);
+	const FVector RelativeLocation(0.f, 0.f, -62.f - BodyBounds.Min.Z * Scale);
+	const FRotator RelativeRotation(0.f, 90.f, 0.f);
+
+	TArray<FVector> Centers;
+	for (UStaticMesh* Wheel : Wheels)
+	{
+		Centers.Add(Wheel->GetBoundingBox().GetCenter());
+	}
+	SetExternalVehicleParts(Bodies, Wheels, Centers,
+		RelativeLocation, RelativeRotation, RelativeScale);
+}
+
+void ASprawlCar::MaintainUpright(float DeltaSeconds)
+{
+	(void)DeltaSeconds;
 	if (!Hull)
+	{
+		return;
+	}
+	if (CrashUprightGraceRemaining > 0.f)
 	{
 		return;
 	}
@@ -511,6 +797,92 @@ void ASprawlCar::MaintainUpright()
 	Hull->SetPhysicsLinearVelocity(LinearVelocity);
 }
 
+void ASprawlCar::HandleHullHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
+	UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit)
+{
+	(void)HitComponent;
+	(void)OtherActor;
+	(void)OtherComponent;
+	if (!Hull || Hit.ImpactNormal.Z > 0.75f)
+	{
+		return;
+	}
+
+	const float Speed = Hull->GetPhysicsLinearVelocity().Size();
+	if (Speed >= CrashSpeedThreshold && NormalImpulse.Size() >= CrashImpulseThreshold)
+	{
+		CrashUprightGraceRemaining = FMath::Max(
+			CrashUprightGraceRemaining, CrashUprightGraceSeconds);
+		UE_LOG(LogTemp, Log, TEXT("[Car] Crash response active for %s (speed=%.0f impulse=%.0f)"),
+			*GetName(), Speed, NormalImpulse.Size());
+	}
+}
+
+void ASprawlCar::UpdateSafeRecoveryTransform()
+{
+	if (!Hull || CrashUprightGraceRemaining > 0.f)
+	{
+		return;
+	}
+	const FVector Location = GetActorLocation();
+	const float UprightDot = FVector::DotProduct(GetActorUpVector(), FVector::UpVector);
+	if (Location.Z >= 20.f && Location.Z <= 400.f && UprightDot >= 0.98f
+		&& Grid::IsNearDrivableRoad(Location.X, Location.Y))
+	{
+		LastSafeTransform = GetActorTransform();
+		bHasLastSafeTransform = true;
+	}
+}
+
+void ASprawlCar::EnforceCityBoundary()
+{
+	if (IsWithinCityBounds())
+	{
+		return;
+	}
+
+	ReleaseIntersectionReservation();
+	FTransform Recovery = LastSafeTransform;
+	if (!bHasLastSafeTransform)
+	{
+		const FVector Location = GetActorLocation();
+		const ESprawlHeading Heading = Grid::HeadingFromYaw(GetActorRotation().Yaw);
+		const bool bNorthSouth = Grid::IsNorthSouth(Heading);
+		const int32 RoadIndex = Grid::NearestRoadIndex(bNorthSouth ? Location.X : Location.Y);
+		FVector SafeLocation = Location;
+		if (bNorthSouth)
+		{
+			SafeLocation.X = Grid::LaneCenter(RoadIndex, Heading);
+			SafeLocation.Y = FMath::Clamp(SafeLocation.Y,
+				-Grid::CityBoundaryHalfExtent + 500.f, Grid::CityBoundaryHalfExtent - 500.f);
+		}
+		else
+		{
+			SafeLocation.Y = Grid::LaneCenter(RoadIndex, Heading);
+			SafeLocation.X = FMath::Clamp(SafeLocation.X,
+				-Grid::CityBoundaryHalfExtent + 500.f, Grid::CityBoundaryHalfExtent - 500.f);
+		}
+		SafeLocation.Z = 130.f;
+		Recovery = FTransform(FRotator(0.f, Grid::HeadingYaw(Heading), 0.f), SafeLocation);
+	}
+
+	FVector Forward = Recovery.GetRotation().GetForwardVector();
+	Forward.Z = 0.f;
+	const float Yaw = Forward.Normalize() ? Forward.Rotation().Yaw : GetActorRotation().Yaw;
+	Recovery.SetRotation(FRotator(0.f, Yaw, 0.f).Quaternion());
+	Recovery.SetScale3D(GetActorScale3D());
+	SetActorTransform(Recovery, false, nullptr, ETeleportType::TeleportPhysics);
+	if (Hull)
+	{
+		Hull->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		Hull->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+	}
+	CrashUprightGraceRemaining = 0.f;
+	bAIStateSeeded = false;
+	AIDecidedCrossing = -1;
+	UE_LOG(LogTemp, Warning, TEXT("[Car] Restored %s inside the city boundary"), *GetName());
+}
+
 void ASprawlCar::ResolveMove(ESprawlHeading InHeading, int32 InRoadIndex, int32 CrossingRoadIndex,
 	int32 Turn, ESprawlHeading& OutHeading, int32& OutRoadIndex)
 {
@@ -521,8 +893,9 @@ void ASprawlCar::ResolveMove(ESprawlHeading InHeading, int32 InRoadIndex, int32 
 		return;
 	}
 
-	// Headings follow increasing yaw (East, North, West, South). In UE,
-	// +90 yaw is a right turn, so right = +1 step and left = +3 (== -1 mod 4).
+	// Headings follow Unreal's increasing yaw (East, North, West, South).
+	// At yaw zero the actor's local right is world +Y, so a right turn steps
+	// +1 and remains consistent with LaneCenter's right-hand-lane convention.
 	const int32 Steps = (Turn > 0) ? 1 : 3;
 	OutHeading = static_cast<ESprawlHeading>((static_cast<int32>(InHeading) + Steps) % 4);
 	// After turning we travel along what was the crossing road.
@@ -591,6 +964,7 @@ float ASprawlCar::SenseObstacleAhead(float SenseLength) const
 	FCollisionObjectQueryParams ObjectParams;
 	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);        // pedestrians, characters
 	ObjectParams.AddObjectTypesToQuery(ECC_PhysicsBody); // other cars' hulls
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldStatic); // parked cars / road obstructions
 
 	FCollisionQueryParams Params(FName(TEXT("SprawlCarSense")), false, this);
 
@@ -602,12 +976,92 @@ float ASprawlCar::SenseObstacleAhead(float SenseLength) const
 	return bHit ? FMath::Max(0.f, Hit.Distance) : -1.f;
 }
 
+bool ASprawlCar::IsIntersectionPathClear(
+	const FVector2D& Center, int32 CrossingRoadIndex) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
+	ObjectParams.AddObjectTypesToQuery(ECC_PhysicsBody);
+	FCollisionQueryParams Params(FName(TEXT("SprawlIntersectionClearance")), false, this);
+
+	auto HasOtherVehicle = [&](const FVector& TestLocation, const FQuat& TestRotation,
+		const FVector& HalfExtent) -> bool
+	{
+		TArray<FOverlapResult> Overlaps;
+		if (!World->OverlapMultiByObjectType(Overlaps, TestLocation, TestRotation,
+			ObjectParams, FCollisionShape::MakeBox(HalfExtent), Params))
+		{
+			return false;
+		}
+		for (const FOverlapResult& Overlap : Overlaps)
+		{
+			if (Overlap.GetActor() != this && Cast<ASprawlCar>(Overlap.GetActor()))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
+	const FVector BoxCenter(Center.X, Center.Y, GetActorLocation().Z);
+	if (HasOtherVehicle(BoxCenter, FQuat::Identity, FVector(330.f, 330.f, 100.f)))
+	{
+		return false;
+	}
+
+	ESprawlHeading ExitHeading;
+	int32 ExitRoadIndex = 0;
+	ResolveMove(AIHeading, AIRoadIndex, CrossingRoadIndex, AIPendingTurn,
+		ExitHeading, ExitRoadIndex);
+	const FVector ExitDirection = Grid::HeadingVector(ExitHeading);
+	FVector ExitCenter = BoxCenter + ExitDirection * 900.f;
+	const float ExitLaneCenter = Grid::LaneCenter(ExitRoadIndex, ExitHeading);
+	if (Grid::IsNorthSouth(ExitHeading))
+	{
+		ExitCenter.X = ExitLaneCenter;
+	}
+	else
+	{
+		ExitCenter.Y = ExitLaneCenter;
+	}
+	const FQuat ExitRotation = FRotator(0.f, Grid::HeadingYaw(ExitHeading), 0.f).Quaternion();
+	return !HasOtherVehicle(ExitCenter, ExitRotation, FVector(360.f, 115.f, 100.f));
+}
+
+void ASprawlCar::ReleaseIntersectionReservation()
+{
+	if (AIReservedIntersectionX < 0 || AIReservedIntersectionY < 0)
+	{
+		return;
+	}
+	if (USprawlCityGridSubsystem* GridSub = GetWorld()
+		? GetWorld()->GetSubsystem<USprawlCityGridSubsystem>() : nullptr)
+	{
+		GridSub->ReleaseIntersection(
+			AIReservedIntersectionX, AIReservedIntersectionY, this);
+	}
+	AIReservedIntersectionX = -1;
+	AIReservedIntersectionY = -1;
+	bAIClearingIntersection = false;
+}
+
 void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 {
 	USprawlCityGridSubsystem* GridSub = GetWorld()
 		? GetWorld()->GetSubsystem<USprawlCityGridSubsystem>() : nullptr;
 
 	const FVector Loc = GetActorLocation();
+	if (bAIClearingIntersection
+		&& FVector2D::Distance(FVector2D(Loc.X, Loc.Y), AILastIntersection) > 700.f)
+	{
+		ReleaseIntersectionReservation();
+	}
 
 	// Seed driving state from the spawn transform: snap heading to the road
 	// grid and latch onto the nearest road for that axis.
@@ -641,6 +1095,7 @@ void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 	if (NextCrossing < 0)
 	{
 		// Ran out of road (past the last crossing): turn back toward the city.
+		ReleaseIntersectionReservation();
 		AIHeading = static_cast<ESprawlHeading>((static_cast<int32>(AIHeading) + 2) % 4);
 		AIDecidedCrossing = -1;
 		return;
@@ -662,21 +1117,51 @@ void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 
 	// --- Speed planning ---
 	float TargetSpeed = AICruiseSpeed;
+	const float CurSpeed = Hull ? Hull->GetPhysicsLinearVelocity().Size2D() : 0.f;
 
-	// Traffic signal: brake to the stop line on red, or on amber if we can
-	// still stop comfortably. Once we're at the line, hold at zero.
-	// 750 puts the front bumper just behind the painted crosswalk.
-	constexpr float StopLine = 750.f;
+	// Traffic signal + intersection lease: a car may enter only when its
+	// approach is served, the box is unoccupied, and its exit lane has room.
+	// Cars denied a lease queue at the same painted stop line as red traffic.
+	constexpr float StopLine = Grid::VehicleStopDistance;
+	constexpr float ReservationRequestDistance = 930.f;
 	if (GridSub && DistAhead > 300.f && DistAhead < DecisionDistance)
 	{
 		const int32 Ix = bNS ? AIRoadIndex : NextCrossing;
 		const int32 Iy = bNS ? NextCrossing : AIRoadIndex;
 		const ESprawlSignal Signal = GridSub->GetSignal(Ix, Iy, bNS);
-		const bool bMustStop = (Signal == ESprawlSignal::Red)
-			|| (Signal == ESprawlSignal::Amber && DistAhead > StopLine + 150.f);
+		bool bHasReservation = GridSub->HasIntersectionReservation(Ix, Iy, this);
+		const float RoomToLine = FMath::Max(0.f, DistAhead - StopLine);
+		constexpr float ComfortableBrakingDecel = 700.f;
+		constexpr float AmberReactionTime = 0.25f;
+		const float SafeStoppingDistance =
+			FMath::Square(CurSpeed) / (2.f * ComfortableBrakingDecel)
+			+ CurSpeed * AmberReactionTime;
+		const bool bLateAmber = Signal == ESprawlSignal::Amber
+			&& CurSpeed > 80.f && RoomToLine <= SafeStoppingDistance;
+		const bool bSignalAllowsEntry = Signal == ESprawlSignal::Green || bLateAmber;
+
+		if (bHasReservation)
+		{
+			// Refresh the short lease while approaching or clearing the box.
+			GridSub->TryReserveIntersection(Ix, Iy, this);
+		}
+		else if (bSignalAllowsEntry && DistAhead <= ReservationRequestDistance
+			&& AIDecidedCrossing == NextCrossing
+			&& IsIntersectionPathClear(CrossingCenter, NextCrossing)
+			&& GridSub->TryReserveIntersection(Ix, Iy, this))
+		{
+			AIReservedIntersectionX = Ix;
+			AIReservedIntersectionY = Iy;
+			bHasReservation = true;
+		}
+
+		// Once admitted, the lease remains authoritative through amber/all-red:
+		// braking again after the phase changes would strand a car in the box and
+		// block the next approach. Cars without a lease still obey the live head.
+		const bool bMustStop = !bHasReservation && (!bSignalAllowsEntry
+			|| DistAhead <= ReservationRequestDistance);
 		if (bMustStop)
 		{
-			const float RoomToLine = FMath::Max(0.f, DistAhead - StopLine);
 			// Comfortable braking curve: v = sqrt(2 * a * d), a ~ 700 cm/s^2.
 			TargetSpeed = FMath::Min(TargetSpeed, FMath::Sqrt(2.f * 700.f * RoomToLine));
 			if (RoomToLine < 25.f)
@@ -693,7 +1178,6 @@ void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 	}
 
 	// Car / pedestrian ahead: match a safe gap, hard-stop when close.
-	const float CurSpeed = Hull ? Hull->GetPhysicsLinearVelocity().Size2D() : 0.f;
 	const float SenseLength = FMath::Max(450.f, CurSpeed * 1.1f);
 	const float ObstacleDist = SenseObstacleAhead(SenseLength);
 	if (ObstacleDist >= 0.f)
@@ -701,8 +1185,12 @@ void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 		TargetSpeed = FMath::Min(TargetSpeed, FMath::Max(0.f, (ObstacleDist - 160.f) * 2.2f));
 	}
 
-	// --- Execute the turn at the intersection center ---
-	if (AIDecidedCrossing == NextCrossing && DistAhead < 90.f)
+	// --- Execute the turn on the near-side lane center ---
+	// Beginning a turn only at the road center makes a 4.7m car overshoot the
+	// receiving lane and brush curbside parking. The lane-offset point gives
+	// the visual steering arc room to arrive centered without cutting the box.
+	const float CommitDistance = AIPendingTurn == 0 ? 90.f : Grid::LaneOffset;
+	if (AIDecidedCrossing == NextCrossing && DistAhead < CommitDistance)
 	{
 		ESprawlHeading NewHeading;
 		int32 NewRoad;
@@ -712,11 +1200,14 @@ void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 		AIDecidedCrossing = -1;
 		AIPendingTurn = 0;
 		AILastIntersection = CrossingCenter;
+		bAIClearingIntersection = true;
 	}
 
 	// --- Lane keeping: steer toward a lookahead point on the lane center ---
 	const float LaneCoord = Grid::LaneCenter(AIRoadIndex, AIHeading);
-	FVector LookAhead = Loc + Grid::HeadingVector(AIHeading) * 600.f;
+	// A compact lookahead recenters the car promptly after a turn without the
+	// long, shallow diagonal that can otherwise cross the center line.
+	FVector LookAhead = Loc + Grid::HeadingVector(AIHeading) * 360.f;
 	if (Grid::IsNorthSouth(AIHeading)) { LookAhead.X = LaneCoord; }
 	else                               { LookAhead.Y = LaneCoord; }
 

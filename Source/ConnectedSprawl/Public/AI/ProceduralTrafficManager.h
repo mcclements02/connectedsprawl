@@ -55,8 +55,29 @@ public:
 protected:
 	float TimeSinceEval = 0.f;
 	UPROPERTY() TArray<APawn*> ActiveTraffic;
+	bool bTrafficAuditEnabled = false;
+	bool bTrafficAuditComplete = false;
+	float TrafficAuditElapsed = 0.f;
+	float TrafficAuditMinSpacing = TNumericLimits<float>::Max();
+	int32 TrafficAuditMaxIntersectionOccupancy = 0;
+	int32 TrafficAuditMaxPedestrians = 0;
+	int32 TrafficAuditMaxRealAvatars = 0;
+	int32 TrafficAuditPeakCars = 0;
+	int32 TrafficAuditPeakTotalCars = 0;
+	int32 TrafficAuditMaxEnterableCars = 0;
+	int32 TrafficAuditMaxBoundaryViolations = 0;
+	int32 TrafficAuditMaxUprightViolations = 0;
+	int32 TrafficAuditUnauthorizedEntries = 0;
+	TMap<TWeakObjectPtr<APawn>, FVector> TrafficAuditStarts;
+	TMap<TWeakObjectPtr<APawn>, float> TrafficAuditLaneViolationDurations;
+	TSet<TWeakObjectPtr<APawn>> TrafficAuditMovedCars;
+	TSet<TWeakObjectPtr<APawn>> TrafficAuditWheelMotionCars;
+	TSet<TWeakObjectPtr<APawn>> TrafficAuditSignalStops;
+	TSet<TWeakObjectPtr<APawn>> TrafficAuditLaneViolators;
+	TSet<TWeakObjectPtr<APawn>> TrafficAuditCarsInIntersections;
 
 	void Evaluate();
 	void CullDistant(const FVector& PlayerLoc);
 	void SpawnNeeded(const FVector& PlayerLoc);
+	void RunTrafficAudit(float DeltaSeconds);
 };

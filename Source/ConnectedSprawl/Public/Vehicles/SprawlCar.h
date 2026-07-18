@@ -8,6 +8,7 @@
 #include "SprawlCar.generated.h"
 
 class UBoxComponent;
+class USceneComponent;
 class UStaticMeshComponent;
 class UCameraComponent;
 class USpringArmComponent;
@@ -17,6 +18,7 @@ class USkeletalMesh;
 class USkeletalMeshComponent;
 class UStaticMesh;
 class UMaterialInterface;
+class UPrimitiveComponent;
 class AZarriCharacter;
 struct FInputActionValue;
 
@@ -36,12 +38,23 @@ public:
 	ASprawlCar();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
 	virtual void PossessedBy(AController* NewController) override;
 
-	/** Set by ZarriCharacter when he climbs in, so the car can hand control back. */
-	void SetDriver(AZarriCharacter* InDriver) { Driver = InDriver; }
+	/** A stopped, unoccupied car can be entered, including parked and traffic cars. */
+	UFUNCTION(BlueprintPure, Category="Car")
+	bool CanBeEntered() const;
+
+	/** Claim the driver seat and suspend AI until the player exits. */
+	bool AssignDriver(AZarriCharacter* InDriver);
+
+	UFUNCTION(BlueprintPure, Category="Car|Safety")
+	bool IsCrashRecoveryActive() const { return CrashUprightGraceRemaining > 0.f; }
+
+	UFUNCTION(BlueprintPure, Category="Car|Safety")
+	bool IsWithinCityBounds() const;
 
 	/** Paint the body panels a given colour (called per-instance on spawn). */
 	UFUNCTION(BlueprintCallable, Category="Car")
@@ -52,6 +65,18 @@ public:
 	void SetExternalVehicleMesh(UStaticMesh* Mesh, FVector RelativeLocation,
 		FRotator RelativeRotation, FVector RelativeScale);
 
+	/**
+	 * Install separately imported body/detail meshes and four wheel meshes.
+	 * WheelMeshes and WheelCenters use FL, FR, RL, RR order; all geometry keeps
+	 * the FBX's local coordinates. This retains lights, glass, mirrors and
+	 * grilles while allowing true wheel spin and front-wheel steering.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Car")
+	void SetExternalVehicleParts(const TArray<UStaticMesh*>& ExternalBodyMeshes,
+		const TArray<UStaticMesh*>& ExternalWheelMeshes,
+		const TArray<FVector>& ExternalWheelCenters,
+		FVector RelativeLocation, FRotator RelativeRotation, FVector RelativeScale);
+
 	/** Replace the prototype kitbash with a marketplace/imported skeletal vehicle mesh. */
 	UFUNCTION(BlueprintCallable, Category="Car")
 	void SetExternalSkeletalVehicleMesh(USkeletalMesh* Mesh, FVector RelativeLocation,
@@ -60,6 +85,10 @@ public:
 	/** Return to the built-in lightweight prototype car pieces. */
 	UFUNCTION(BlueprintCallable, Category="Car")
 	void ClearExternalVehicleMesh();
+
+	UFUNCTION(BlueprintPure, Category="Car")
+	bool HasAnimatedWheelParts() const { return bUsingExternalWheelParts; }
+	float GetVisualWheelRotationDegrees() const { return WheelRotationDegrees; }
 
 	/** Step the driver back out onto the street. */
 	void RequestExit();
@@ -79,7 +108,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<UStaticMeshComponent> CabinMesh;
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> BodyPaintMeshes;
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> DetailMeshes;
+	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> ExternalBodyDetailMeshes;
+	UPROPERTY() TArray<TObjectPtr<USceneComponent>> WheelPivots;
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> WheelMeshes;
+	UPROPERTY() TObjectPtr<UStaticMesh> PrototypeWheelMesh;
 	UPROPERTY() TObjectPtr<UMaterialInterface> BodyPaintMaterial;
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<USpringArmComponent> SpringArm;
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<UCameraComponent> FollowCamera;
@@ -92,11 +124,28 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Car") float EngineForce = 2400000.f;
 	/** Yaw rate at speed, deg/s. */
 	UPROPERTY(EditAnywhere, Category="Car") float TurnRate = 62.f;
+	/** Visual tyre radius used to match spin rate to ground speed. */
+	UPROPERTY(EditAnywhere, Category="Car|Wheels") float VisualWheelRadius = 41.f;
+	/** Maximum visual steering angle of the front wheels. */
+	UPROPERTY(EditAnywhere, Category="Car|Wheels") float VisualSteeringAngle = 30.f;
+	/** Maximum speed at which a pedestrian may safely take the driver seat. */
+	UPROPERTY(EditAnywhere, Category="Car|Safety") float MaxEntrySpeed = 220.f;
+	/** Minimum impact impulse and speed that count as a crash. */
+	UPROPERTY(EditAnywhere, Category="Car|Safety") float CrashImpulseThreshold = 180000.f;
+	UPROPERTY(EditAnywhere, Category="Car|Safety") float CrashSpeedThreshold = 700.f;
+	/** Let a severe crash roll naturally for this long before self-righting. */
+	UPROPERTY(EditAnywhere, Category="Car|Safety") float CrashUprightGraceSeconds = 2.25f;
 
 	UPROPERTY() TObjectPtr<AZarriCharacter> Driver;
 
 	float ThrottleInput = 0.f;
 	float SteerInput = 0.f;
+	float WheelRotationDegrees = 0.f;
+	UPROPERTY() bool bUsingExternalWheelParts = false;
+	bool bResumeAutoDriveAfterExit = false;
+	float CrashUprightGraceRemaining = 0.f;
+	FTransform LastSafeTransform = FTransform::Identity;
+	bool bHasLastSafeTransform = false;
 
 	// --- AI driving state (lane-following on the city grid) ---
 	ESprawlHeading AIHeading = ESprawlHeading::North;
@@ -106,12 +155,24 @@ protected:
 	int32 AIPendingTurn = 0;          // -1 = left, 0 = straight, +1 = right
 	float AISmoothedSpeed = 0.f;      // smoothed speed command (cm/s)
 	FVector2D AILastIntersection = FVector2D(1.e9f, 1.e9f); // center of last crossing we executed
+	int32 AIReservedIntersectionX = -1;
+	int32 AIReservedIntersectionY = -1;
+	bool bAIClearingIntersection = false;
 
 	/** Lane-follow the road grid: keep lane, obey signals, avoid traffic. */
 	void RunAutoDrive(float DeltaSeconds);
 
-	/** Keep the arcade physics hull level and discard rollover angular velocity. */
-	void MaintainUpright();
+	/** Keep normal driving level, but allow a short physical reaction after a crash. */
+	void MaintainUpright(float DeltaSeconds);
+
+	/** Physical walls are primary; this restores a car if tunnelling escapes them. */
+	void EnforceCityBoundary();
+	void UpdateSafeRecoveryTransform();
+
+	UFUNCTION()
+	void HandleHullHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
+		UPrimitiveComponent* OtherComponent, FVector NormalImpulse,
+		const FHitResult& Hit);
 
 	/** Pick straight/left/right at the upcoming crossing, avoiding lake/map edge. */
 	void DecideIntersectionMove(int32 CrossingRoadIndex);
@@ -123,6 +184,18 @@ protected:
 	/** Distance to the nearest blocking car/pedestrian ahead, or -1 if clear. */
 	float SenseObstacleAhead(float SenseLength) const;
 
+	/** True when no vehicle occupies the intersection box or planned exit lane. */
+	bool IsIntersectionPathClear(const FVector2D& Center, int32 CrossingRoadIndex) const;
+
+	/** Drop the shared intersection lease, if this car owns one. */
+	void ReleaseIntersectionReservation();
+
+	/** Spin all four wheels from signed speed and steer the front pair. */
+	void UpdateWheelVisuals(float DeltaSeconds);
+
+	/** Use cooked split vehicle assets for runtime-spawned traffic when present. */
+	void TryApplyRuntimeVehicleParts();
+
 	void HandleMove(const FInputActionValue& Value);
 	void HandleMoveEnd(const FInputActionValue& Value);
 	void HandleExit(const FInputActionValue& Value);
@@ -131,4 +204,6 @@ protected:
 	void OnExitKey();
 
 	void SetKitbashVisible(bool bVisible);
+	void ClearExternalBodyDetails();
+	void ResetPrototypeWheels();
 };

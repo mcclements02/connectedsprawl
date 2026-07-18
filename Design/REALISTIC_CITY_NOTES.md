@@ -6,6 +6,86 @@
 
 ---
 
+## 2026-07-18 Enterable Parking and Vehicle Safety Pass
+
+- Parking authoring now tests each full 4.7-metre vehicle footprint against
+  blocking building and prop bounds. The saved map contains 36 non-overlapping
+  curbside `ASprawlCar` pawns instead of decorative static-mesh cars, and Zarri
+  starts 180 units from the nearest extra-clear player bay.
+- A stopped, unoccupied car can be entered. Possession suspends its autonomous
+  route and intersection lease; exiting restores prior traffic behavior when
+  applicable and chooses the first unobstructed driver, passenger, front, or
+  rear position.
+- Four invisible blocking walls define the prototype city perimeter. A
+  last-safe-road transform recovers a car only if it tunnels through a wall or
+  falls out of the world.
+- Normal driving is stabilized upright. A high-speed lateral collision receives
+  a 2.25-second physical reaction window so crashes can roll naturally before
+  the self-righting safeguard takes over.
+- Post-turn lane lookahead was tightened so traffic settles into its correct
+  right-hand lane before the straight-road audit envelope.
+
+### Automated Acceptance
+
+- UE 5.8 `ConnectedSprawlEditor Mac Development` compiled successfully.
+- The saved-map audit passed with 51 upright, in-bounds vehicles; 36 enterable
+  parked cars; four perimeter walls; zero building/prop or parked-car overlaps;
+  0.00 maximum authored lane error; 410-unit parking offset; 1850.68 minimum
+  traffic spacing; and a 180-unit player-to-car distance.
+- The 38-second runtime audit passed with 51 total cars, 50 simultaneously
+  enterable cars at peak, zero boundary/upright violations, all 14 traffic cars
+  moving with wheel animation, 12 signal stops, one-car maximum intersection
+  occupancy, zero unauthorized entries, 285.2 minimum spacing, and zero
+  persistent lane violators.
+
+---
+
+## 2026-07-17 Living Traffic and Character Pass
+
+This pass replaces the placeholder street population with a mobile-conscious,
+functional city layer:
+
+- Sixteen distinct pedestrians now use imported character meshes with complete
+  idle, walk, jog, talk, and formal-walk animation sets. Runtime selection only
+  uses an imported avatar when its required mesh and locomotion clips are all
+  present, preserving the existing fallback for incomplete content.
+- Ten split vehicle models provide a body, detail mesh, and four independently
+  animated wheels. Wheel spin follows true road speed and the front wheels steer
+  with the car instead of remaining static.
+- Traffic follows right-hand lanes, queues behind other vehicles, respects a
+  green/amber/all-red signal cycle, reserves intersections before entering,
+  checks that the far side is clear, and releases stale reservations. A
+  speed-aware stopping-distance rule lets a car already committed to a late
+  amber proceed instead of braking unrealistically inside the junction.
+- Parked cars use recessed curb bays at a 410-unit road-center offset. Runtime
+  spawning rejects overlaps with traffic, parked vehicles, pedestrians, and
+  solid world geometry so a replenished car cannot appear in an occupied lane.
+- Pedestrian routes use a 360-unit sidewalk inset and validate clearance before
+  accepting a destination, keeping crowds out of traffic and solid props.
+- The authored test map now contains 14 moving cars, 36 legally recessed parked
+  cars, one player car, 30 working signals, and a target crowd of 26. Decorative
+  collision that reached into travel lanes was removed or moved inward without
+  changing the visible city composition.
+
+The implementation retains the lightweight kinematic actor model instead of
+moving traffic to Chaos Vehicles, preserving the project's iPhone-first actor
+and pooling budget. The map authoring and audit scripts are idempotent so this
+layout can be rebuilt and checked after future city edits.
+
+### Automated Acceptance
+
+- The saved-map structural audit passed with 14 traffic cars, 36 parked cars,
+  30 signals, 26 pedestrians, zero lane-position error, a 410-unit parking
+  offset, 1850.68 minimum authored traffic spacing, and the player car 623.70
+  units from the nearest travel lane.
+- A 38-second headless runtime audit passed with all 14 cars moving, all 14
+  showing wheel motion, 10 observed signal stops, at most one car per
+  intersection box, zero unauthorized intersection entries, 326.0 minimum live
+  spacing, zero persistent lane violators, and all 26 pedestrians using real
+  avatars.
+
+---
+
 ## 2026-07-14 RPG Developer-Informed Pass
 
 This pass uses guidance from developers who shipped open-world games, rather
@@ -712,5 +792,5 @@ While planning major refactors, these can be done quickly:
 
 ---
 
-**Last Updated:** 2026-05-31
-**Next Review:** After Phase 1 completion
+**Last Updated:** 2026-07-17
+**Next Review:** Interactive editor and iPhone performance validation

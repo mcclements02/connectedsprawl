@@ -81,17 +81,16 @@ while spawned < TARGET and attempts < 600:
     if random.random() < 0.5:
         # On a north/south road
         rx = random.choice(vroads)
-        # bias a touch off the centerline so opposing directions don't collide head-on
-        lane = random.choice([-1, 1])
-        x = rx + lane * 80.0
+        heading_north = random.choice([False, True])
+        x = rx - 150.0 if heading_north else rx + 150.0
         y = cx(random.randint(0, N - 1)) + random.uniform(-450, 450)
-        yaw = 90.0 if lane > 0 else 270.0
+        yaw = 90.0 if heading_north else 270.0
     else:
         ry = random.choice(hroads)
-        lane = random.choice([-1, 1])
-        y = ry + lane * 80.0
+        heading_east = random.choice([False, True])
+        y = ry + 150.0 if heading_east else ry - 150.0
         x = cx(random.randint(0, N - 1)) + random.uniform(-450, 450)
-        yaw = 0.0 if lane > 0 else 180.0
+        yaw = 0.0 if heading_east else 180.0
     if over_lake(x, y):
         continue
     if math.hypot(x - SPAWN[0], y - SPAWN[1]) < SPAWN_CLEAR:
@@ -105,18 +104,21 @@ while spawned < TARGET and attempts < 600:
         unreal.Rotator(roll=0.0, pitch=0.0, yaw=yaw))
     car.set_actor_label("City_TrafficCar_{}".format(spawned))
     car.set_editor_property("auto_drive", True)
-    vehicle_realism.configure_drivable_car(car, spawned + 100, meshes, paints)
+    if not vehicle_realism.configure_animated_car(car, spawned + 100, paints):
+        vehicle_realism.configure_drivable_car(car, spawned + 100, meshes, paints)
 
     placed.append((x, y))
     spawned += 1
 
 # Always drop one nearby AI car ~1100 units down the street from spawn so
 # the player can immediately see it driving off.
+nearest_v = min(vroads, key=lambda value: abs(value - SPAWN[0]))
+nearest_h = min(hroads, key=lambda value: abs(value - SPAWN[1]))
 nearby_spots = [
-    (SPAWN[0] + 60.0, SPAWN[1] + 1100.0, 90.0),
-    (SPAWN[0] - 60.0, SPAWN[1] - 1100.0, 270.0),
-    (SPAWN[0] + 1100.0, SPAWN[1] - 60.0, 0.0),
-    (SPAWN[0] - 1100.0, SPAWN[1] + 60.0, 180.0),
+    (nearest_v - 150.0, SPAWN[1] + 1100.0, 90.0),
+    (nearest_v + 150.0, SPAWN[1] - 1100.0, 270.0),
+    (SPAWN[0] + 1100.0, nearest_h + 150.0, 0.0),
+    (SPAWN[0] - 1100.0, nearest_h - 150.0, 180.0),
 ]
 for nearby_x, nearby_y, nearby_yaw in nearby_spots:
     if over_lake(nearby_x, nearby_y) or not far_enough(nearby_x, nearby_y):
@@ -127,7 +129,8 @@ for nearby_x, nearby_y, nearby_yaw in nearby_spots:
         unreal.Rotator(roll=0.0, pitch=0.0, yaw=nearby_yaw))
     car.set_actor_label("City_TrafficCar_{}".format(spawned))
     car.set_editor_property("auto_drive", True)
-    vehicle_realism.configure_drivable_car(car, spawned + 100, meshes, paints)
+    if not vehicle_realism.configure_animated_car(car, spawned + 100, paints):
+        vehicle_realism.configure_drivable_car(car, spawned + 100, meshes, paints)
     placed.append((nearby_x, nearby_y))
     spawned += 1
     break

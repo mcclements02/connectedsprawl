@@ -11,6 +11,18 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnRepChanged, EFaction, Faction, i
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHeatChanged, int32, NewHeat);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMoralDebtChanged, int32, NewDebt);
 
+/** Faction values persisted independently of the subsystem's runtime object. */
+USTRUCT(BlueprintType)
+struct FFactionPersistentState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, SaveGame) int32 CorporateRep = 0;
+	UPROPERTY(BlueprintReadOnly, SaveGame) int32 StreetRep = 0;
+	UPROPERTY(BlueprintReadOnly, SaveGame) int32 PoliceHeat = 0;
+	UPROPERTY(BlueprintReadOnly, SaveGame) int32 MoralDebt = 0;
+};
+
 /**
  * FactionSubsystem
  * ----------------
@@ -64,6 +76,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Faction|Debt")
 	int32 GetMoralDebt() const { return MoralDebt; }
+
+	FFactionPersistentState CaptureState() const;
+	void RestoreState(const FFactionPersistentState& State);
+	void ResetProgress();
 
 	// --- Events ---
 	UPROPERTY(BlueprintAssignable) FOnRepChanged       OnReputationChanged;

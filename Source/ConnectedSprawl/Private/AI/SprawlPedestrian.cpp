@@ -142,6 +142,18 @@ void ASprawlPedestrian::InitializeAppearance()
 	const FString& Variant = Variants[FMath::RandRange(0, Variants.Num() - 1)];
 
 	USkeletalMesh* Mesh = FSprawlAvatarLibrary::LoadAvatarMesh(Variant);
+	UAnimSequence* LoadedIdle = FSprawlAvatarLibrary::LoadAvatarAnim(Variant, TEXT("Idle"));
+	UAnimSequence* LoadedWalk = FSprawlAvatarLibrary::LoadAvatarAnim(Variant,
+		FSprawlAvatarLibrary::UsesFormalWalk(Variant) ? TEXT("WalkFormal") : TEXT("Walk"));
+	UAnimSequence* LoadedJog = FSprawlAvatarLibrary::LoadAvatarAnim(Variant, TEXT("Jog"));
+	if (!Mesh || !LoadedIdle || !LoadedWalk || !LoadedJog)
+	{
+		// A partial art import must not replace the working mannequin with a
+		// frozen human mesh. Keep the complete fallback until every locomotion
+		// asset needed by this actor is available.
+		return;
+	}
+
 	const float Height = DesiredHeight * FMath::FRandRange(0.94f, 1.06f);
 	if (!FSprawlAvatarLibrary::ApplyAvatar(GetMesh(), Mesh, Height,
 		GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()))
@@ -149,10 +161,9 @@ void ASprawlPedestrian::InitializeAppearance()
 		return; // art not imported yet — keep the mannequin + its AnimBP
 	}
 
-	IdleAnim = FSprawlAvatarLibrary::LoadAvatarAnim(Variant, TEXT("Idle"));
-	WalkAnim = FSprawlAvatarLibrary::LoadAvatarAnim(Variant,
-		FSprawlAvatarLibrary::UsesFormalWalk(Variant) ? TEXT("WalkFormal") : TEXT("Walk"));
-	JogAnim  = FSprawlAvatarLibrary::LoadAvatarAnim(Variant, TEXT("Jog"));
+	IdleAnim = LoadedIdle;
+	WalkAnim = LoadedWalk;
+	JogAnim = LoadedJog;
 
 	// A few locals idle on the phone instead of just standing.
 	if (FMath::FRand() < 0.25f)
@@ -163,11 +174,8 @@ void ASprawlPedestrian::InitializeAppearance()
 		}
 	}
 
-	bHasAvatar = (IdleAnim && WalkAnim && JogAnim);
-	if (bHasAvatar)
-	{
-		FSprawlAvatarLibrary::PlayLoop(GetMesh(), IdleAnim, CurrentAnim);
-	}
+	bHasAvatar = true;
+	FSprawlAvatarLibrary::PlayLoop(GetMesh(), IdleAnim, CurrentAnim);
 }
 
 void ASprawlPedestrian::UpdateAnimation()

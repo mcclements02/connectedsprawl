@@ -9,6 +9,7 @@
 #include "SprawlRoadMarkings.generated.h"
 
 class UHierarchicalInstancedStaticMeshComponent;
+class UBoxComponent;
 
 /**
  * ASprawlRoadMarkings
@@ -38,6 +39,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category="Markings")
 	TObjectPtr<UHierarchicalInstancedStaticMeshComponent> PaintMesh;
 
+	/** Invisible collision walls keep vehicles inside the authored city. */
+	UPROPERTY(VisibleAnywhere, Category="Boundaries") TObjectPtr<UBoxComponent> NorthBoundary;
+	UPROPERTY(VisibleAnywhere, Category="Boundaries") TObjectPtr<UBoxComponent> SouthBoundary;
+	UPROPERTY(VisibleAnywhere, Category="Boundaries") TObjectPtr<UBoxComponent> EastBoundary;
+	UPROPERTY(VisibleAnywhere, Category="Boundaries") TObjectPtr<UBoxComponent> WestBoundary;
+
 	void BuildMarkings();
 	void AddStripe(const FVector& Center, float LengthX, float LengthY);
+	UBoxComponent* CreateBoundary(const TCHAR* Name, const FVector& Location,
+		const FVector& HalfExtent);
 };

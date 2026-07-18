@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 7 · **Last updated:** 2026-07-17 07:25 PDT · **Updated by:** claude
+**Version:** 10 · **Last updated:** 2026-07-18 09:33 PDT · **Updated by:** codex
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -20,12 +20,100 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 | Branch | Worktree | Agent | Status | Summary | Updated |
 |--------|----------|-------|--------|---------|---------|
-| main | /Users/matthewx/code/ConnectedSprawl | claude | current | Core loop + DW city merged (266c071); pushed | 2026-07-17 |
+| main | /Users/matthewx/code/ConnectedSprawl | codex | ready; uncommitted | UE 5.8 migration, saves, real avatars, animated ordered traffic, enterable building-clear parking, crash recovery, and city boundaries; Mac audits pass | 2026-07-18 |
 
 ## Log (append newest on top)
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-18 · main · codex
+- **Changed:** Converted all 36 authored parked vehicles from decorative static
+  meshes to stopped, enterable `ASprawlCar` pawns with real bodies and four
+  animated wheels. Parking generation now validates the complete car footprint
+  against buildings/props and other parking; the player starts beside an
+  extra-clear bay. Added safe entry-speed/occupancy checks, AI suspension and
+  resume around possession, obstruction-tested exit positions, four physical
+  perimeter walls, last-safe-road out-of-bounds recovery, and a severe-crash
+  grace window before self-righting. Tightened post-turn lane centering and
+  extended map/runtime audits for enterability, orientation, bounds, wheel
+  parts, and geometry overlaps.
+- **Validation:** UE 5.8 Mac editor builds passed after both source batches;
+  Python compilation passed for the two living-city scripts; the idempotent
+  map application saved 1 player + 14 traffic + 36 enterable parked cars. The
+  structural audit passed (`upright=51`, `enterable_parked=36`, `boundaries=4`,
+  `max_lane_error=0.00`, `parking_offset=410.00`,
+  `min_traffic_spacing=1850.68`, `player_car_distance=180.00`). The final
+  38-second runtime audit passed (`cars=14`, `total_cars=51`,
+  `enterable_cars=50`, `boundary_violators=0`, `upright_violators=0`,
+  `moved=14`, `signal_stops=12`, `wheel_cars=14`,
+  `max_box_occupancy=1`, `unauthorized_entries=0`, `min_spacing=285.2`,
+  `lane_violators=0`, `pedestrians=26`, `real_avatars=26`).
+- **Status:** implementation complete; changes remain unstaged and uncommitted
+  with the existing UE 5.8/persistence/living-city work pending user
+  authorization.
+- **Next:** run an interactive editor driving/crash playtest and an iPhone
+  performance profile after installing Epic's optional UE 5.8 iOS component;
+  commit the complete in-flight change set together when authorized.
+<!-- entry:enterable-parking-boundaries -->
+
+### 2026-07-18 · main · codex
+- **Changed:** Migrated the project association and targets to Unreal Engine
+  5.8 (`BuildSettingsVersion.V7` and 5.8 include order), made AssetRegistry an
+  explicit dependency, replaced the removed mobile virtual-texture CVar with
+  an iOS platform override, and disabled the irrelevant Android file-server
+  plugin so it no longer writes generated connection state. Added a versioned
+  progression system that persists founder finances and ledger, faction state,
+  resolved decision branches, map, player transform, and driving state;
+  autosaves after decisions/day advances/background/clean quit; exposes F5/F9
+  and Blueprint save/load/new-game APIs; rejects future schemas; prevents
+  duplicate decision rewards; and resumes the saved mission branch at its next
+  unresolved decision.
+- **Validation:** The initial 5.8 editor build correctly failed on legacy V6
+  shared-build settings; after migration, full editor builds passed (12 actions,
+  then 16 actions after persistence) and the final incremental build passed.
+  All 58 project Python scripts compiled. The progression audit passed
+  (`round_trip=true`, `future_version_rejected=true`, `day=4`, `cash=6821`,
+  `ledger=1`, `decisions=1`) and removed its temporary slots. The UE 5.8 saved
+  map audit passed with 0 map errors/warnings (`cars=1+14+36`, `signals=30`,
+  `crowd=26`, `max_lane_error=0.00`, `parking_offset=410.00`); the runtime
+  audit passed (`cars=14`, `moved=14`, `signal_stops=10`, `wheel_cars=14`,
+  `max_box_occupancy=1`, `unauthorized_entries=0`, `min_spacing=325.4`,
+  `lane_violators=0`, `pedestrians=26`, `real_avatars=26`). The iOS target
+  build could not start because this engine installation lacks Epic's optional
+  iOS component.
+- **Status:** implementation complete; all UE 5.8, persistence, and prior
+  living-city changes remain unstaged and uncommitted pending user
+  authorization.
+- **Next:** install the UE 5.8 iOS optional component, then run a signed iPhone
+  build/performance profile and an interactive editor playtest; commit the code,
+  assets, map, configuration, documentation, and ledger together when
+  authorized.
+<!-- entry:ue58-persistence -->
+
+### 2026-07-17 · main · codex
+- **Changed:** Added sixteen complete imported pedestrian avatar sets and ten
+  split animated vehicle models; made character fallback require a complete
+  locomotion set; added speed-driven wheel spin and steering; implemented
+  right-hand-lane routing, signal phases, intersection leases, queue and exit
+  clearance, speed-aware amber behavior, and collision-safe spawning. Authored
+  `TestMap` with 14 moving cars, 36 recessed parked cars, one player car, 30
+  signals, and a 26-person crowd; added idempotent import/apply/audit scripts;
+  synchronized legacy city scripts and cook paths; and cleared decorative
+  collision that intruded into traffic or pedestrian space.
+- **Validation:** `ConnectedSprawlEditor Mac Development` build passed (UHT + 7
+  actions); modified Python scripts compiled; saved-map audit passed
+  (`cars=1+14+36`, `signals=30`, `crowd=26`, `max_lane_error=0.00`,
+  `parking_offset=410.00`, `min_traffic_spacing=1850.68`); 38-second runtime
+  audit passed (`cars=14`, `moved=14`, `signal_stops=10`, `wheel_cars=14`,
+  `max_box_occupancy=1`, `unauthorized_entries=0`, `min_spacing=326.0`,
+  `lane_violators=0`, `pedestrians=26`, `real_avatars=26`).
+- **Status:** implementation complete; all changes remain unstaged and
+  uncommitted pending user authorization.
+- **Next:** inspect the result interactively in the editor and profile on an
+  iPhone target; commit the code, assets, map, documentation, and ledger
+  together when authorized.
+<!-- entry:living-traffic-characters -->
 
 ### 2026-07-17 · main · claude
 - **Changed:** Merged `pre-5.8-upgrade` into `main` (fast-forward to 266c071)

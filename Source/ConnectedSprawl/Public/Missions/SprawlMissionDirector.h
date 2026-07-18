@@ -11,6 +11,7 @@
 #include "SprawlMissionDirector.generated.h"
 
 class UStrategicDecision;
+class UDecisionSubsystem;
 
 /**
  * USprawlMissionDirector
@@ -56,6 +57,7 @@ private:
 	UFUNCTION() void AutoAnswer();
 
 	void IndexDecisions();
+	FName FindResumeDecisionId(const UDecisionSubsystem* Decisions) const;
 	void ScheduleDecisionCall(FName DecisionId, float Delay);
 	static FText ContactDisplayName(FName ContactId);
 

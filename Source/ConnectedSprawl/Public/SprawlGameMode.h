@@ -29,4 +29,6 @@ protected:
 private:
 	FTimerHandle DayTimerHandle;
 	void OnDayTick();
+	void ApplyLoadedPlayerState();
+	void RunProgressionAudit();
 };

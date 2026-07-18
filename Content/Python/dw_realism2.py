@@ -95,7 +95,9 @@ if car_meshes:
                     n_here = random.randint(1, 3)
                     for k in range(n_here):
                         along = random.uniform(-BLOCK / 2 + 250, BLOCK / 2 - 250)
-                        lane = BLOCK / 2 + 130  # just off the sidewalk, on the road
+                        # Recessed curb bay: center is 410cm from the road
+                        # center, leaving the ±150 travel lane unobstructed.
+                        lane = BLOCK / 2 - 110
                         if axis == "x":
                             px, py = bx + side * lane, by + along
                             yaw = 90 + (0 if side > 0 else 180)

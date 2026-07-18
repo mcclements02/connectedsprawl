@@ -8,6 +8,12 @@
 void UDecisionSubsystem::OfferDecision(UStrategicDecision* Decision)
 {
 	if (!Decision) return;
+	if (HasResolvedDecision(Decision->DecisionId))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[Decision] Ignoring already-resolved offer: %s"),
+			*Decision->DecisionId.ToString());
+		return;
+	}
 	UE_LOG(LogTemp, Log, TEXT("[Decision] Offered: %s"), *Decision->DecisionId.ToString());
 	OnDecisionOffered.Broadcast(Decision);
 }
@@ -15,6 +21,12 @@ void UDecisionSubsystem::OfferDecision(UStrategicDecision* Decision)
 void UDecisionSubsystem::ResolveDecision(UStrategicDecision* Decision, FName ChosenBranchId)
 {
 	if (!Decision) return;
+	if (HasResolvedDecision(Decision->DecisionId))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Decision] Refusing duplicate resolution: %s"),
+			*Decision->DecisionId.ToString());
+		return;
+	}
 
 	const FDecisionBranch* Branch = Decision->Branches.FindByPredicate(
 		[&](const FDecisionBranch& B) { return B.BranchId == ChosenBranchId; });
@@ -26,10 +38,35 @@ void UDecisionSubsystem::ResolveDecision(UStrategicDecision* Decision, FName Cho
 	}
 
 	ApplyBranchEffects(*Branch);
+	ResolvedBranches.Add(Decision->DecisionId, ChosenBranchId);
 	UE_LOG(LogTemp, Log, TEXT("[Decision] Resolved %s -> %s"),
 		*Decision->DecisionId.ToString(), *ChosenBranchId.ToString());
 
 	OnDecisionResolved.Broadcast(Decision, ChosenBranchId);
+}
+
+bool UDecisionSubsystem::HasResolvedDecision(FName DecisionId) const
+{
+	return ResolvedBranches.Contains(DecisionId);
+}
+
+FName UDecisionSubsystem::GetResolvedBranch(FName DecisionId) const
+{
+	if (const FName* Branch = ResolvedBranches.Find(DecisionId))
+	{
+		return *Branch;
+	}
+	return NAME_None;
+}
+
+void UDecisionSubsystem::RestoreResolvedDecisions(const TMap<FName, FName>& State)
+{
+	ResolvedBranches = State;
+}
+
+void UDecisionSubsystem::ResetProgress()
+{
+	ResolvedBranches.Reset();
 }
 
 void UDecisionSubsystem::ApplyBranchEffects(const FDecisionBranch& Branch)

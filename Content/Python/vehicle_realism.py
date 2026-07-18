@@ -21,6 +21,7 @@ VEHICLE_PAINT_PATHS = [spec[0] for spec in VEHICLE_PAINT_SPECS]
 TARGET_DRIVABLE_LEN = 480.0
 TARGET_PARKED_LEN = 470.0
 HULL_BOTTOM = -62.0
+ANIMATED_ROOT = "/Game/Vehicles/Animated"
 
 
 def load_vehicle_meshes():
@@ -48,7 +49,6 @@ def refresh_vehicle_paint_materials():
 
 
 def load_vehicle_paint_materials(fallback=None):
-    refresh_vehicle_paint_materials()
     materials = []
     for path in VEHICLE_PAINT_PATHS:
         material = unreal.load_asset(path)
@@ -62,7 +62,9 @@ def load_vehicle_paint_materials(fallback=None):
 def mesh_for_index(meshes, idx):
     if not meshes:
         return None
-    return meshes[(idx * 5) % len(meshes)]
+    # Seven is coprime to the ten-car set, so sequential actors use every
+    # model instead of alternating between only two variants.
+    return meshes[(idx * 7) % len(meshes)]
 
 
 def paint_for_index(materials, idx):
@@ -160,6 +162,64 @@ def configure_drivable_car(actor, idx, meshes, paint_materials):
     )
 
     external = find_component_by_name(actor, unreal.StaticMeshComponent, "ExternalVehicleMesh")
+    apply_paint_to_static_mesh_component(external, paint)
+    return True
+
+
+def load_animated_vehicle_parts(idx):
+    variant = (idx * 7) % 10 + 1
+    folder = "{}/Car_{}".format(ANIMATED_ROOT, variant)
+
+    def load(suffix):
+        return unreal.load_asset(
+            "{}/SM_Car_{}_{}".format(folder, variant, suffix)
+        )
+
+    bodies = [load("Body")]
+    for detail_index in range(32):
+        detail = load("Detail_{:02d}".format(detail_index))
+        if not detail:
+            break
+        bodies.append(detail)
+    wheels = [
+        load("Wheel_FL"), load("Wheel_FR"),
+        load("Wheel_RL"), load("Wheel_RR"),
+    ]
+    if not bodies[0] or any(not wheel for wheel in wheels):
+        return None
+    return bodies, wheels
+
+
+def configure_animated_car(actor, idx, paint_materials):
+    """Give an ASprawlCar a real body and four independently moving wheels."""
+    parts = load_animated_vehicle_parts(idx)
+    if not parts or not hasattr(actor, "set_external_vehicle_parts"):
+        return False
+
+    bodies, wheels = parts
+    body = bodies[0]
+    paint = paint_for_index(paint_materials, idx)
+    if paint and hasattr(actor, "set_body_material"):
+        actor.set_body_material(paint)
+
+    body_bounds = body.get_bounding_box()
+    scale = scale_for_mesh(body, TARGET_DRIVABLE_LEN)
+    rel_z = HULL_BOTTOM - body_bounds.min.z * scale
+    centers = []
+    for wheel in wheels:
+        bounds = wheel.get_bounding_box()
+        centers.append(bounds.min + (bounds.max - bounds.min) * 0.5)
+
+    actor.set_external_vehicle_parts(
+        bodies,
+        wheels,
+        centers,
+        unreal.Vector(0.0, 0.0, rel_z),
+        unreal.Rotator(roll=0.0, pitch=0.0, yaw=90.0),
+        unreal.Vector(scale, scale, scale),
+    )
+    external = find_component_by_name(
+        actor, unreal.StaticMeshComponent, "ExternalVehicleMesh")
     apply_paint_to_static_mesh_component(external, paint)
     return True
 

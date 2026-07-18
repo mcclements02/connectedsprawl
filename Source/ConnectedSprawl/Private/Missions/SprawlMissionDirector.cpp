@@ -5,6 +5,8 @@
 #include "Missions/DecisionSubsystem.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/World.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "TimerManager.h"
 
 bool USprawlMissionDirector::DoesSupportWorldType(const EWorldType::Type WorldType) const
@@ -25,14 +27,31 @@ void USprawlMissionDirector::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		Phone->OnRinging.AddDynamic(this, &USprawlMissionDirector::HandleRinging);
 	}
-	if (UDecisionSubsystem* Decisions = GI->GetSubsystem<UDecisionSubsystem>())
+	UDecisionSubsystem* Decisions = GI->GetSubsystem<UDecisionSubsystem>();
+	if (Decisions)
 	{
 		Decisions->OnDecisionResolved.AddDynamic(this, &USprawlMissionDirector::HandleResolved);
 	}
 
-	if (DecisionsById.Contains(OpeningDecisionId))
+	// The opt-in traffic audit needs an uninterrupted simulation window. Keep
+	// normal gameplay pacing unchanged while preventing the opening modal from
+	// pausing automated city validation.
+	if (FParse::Param(FCommandLine::Get(), TEXT("SprawlTrafficAudit")) ||
+		FParse::Param(FCommandLine::Get(), TEXT("SprawlProgressionAudit")))
 	{
-		ScheduleDecisionCall(OpeningDecisionId, OpeningCallDelaySeconds);
+		UE_LOG(LogTemp, Log, TEXT("[MissionDirector] Opening call suppressed for runtime audit"));
+	}
+	else if (Decisions)
+	{
+		const FName ResumeDecisionId = FindResumeDecisionId(Decisions);
+		if (!ResumeDecisionId.IsNone())
+		{
+			ScheduleDecisionCall(ResumeDecisionId, OpeningCallDelaySeconds);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("[MissionDirector] Saved decision chain is complete"));
+		}
 	}
 	else if (DecisionsById.Num() > 0)
 	{
@@ -40,6 +59,56 @@ void USprawlMissionDirector::OnWorldBeginPlay(UWorld& InWorld)
 			TEXT("[MissionDirector] Opening decision '%s' not found among %d indexed decisions"),
 			*OpeningDecisionId.ToString(), DecisionsById.Num());
 	}
+}
+
+FName USprawlMissionDirector::FindResumeDecisionId(const UDecisionSubsystem* Decisions) const
+{
+	if (!Decisions)
+	{
+		return NAME_None;
+	}
+
+	FName Candidate = OpeningDecisionId;
+	TSet<FName> Visited;
+	while (!Candidate.IsNone())
+	{
+		if (Visited.Contains(Candidate))
+		{
+			UE_LOG(LogTemp, Error, TEXT("[MissionDirector] Decision chain cycle at '%s'"),
+				*Candidate.ToString());
+			return NAME_None;
+		}
+		Visited.Add(Candidate);
+
+		const TObjectPtr<UStrategicDecision>* Found = DecisionsById.Find(Candidate);
+		if (!Found)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[MissionDirector] Decision '%s' is not indexed"),
+				*Candidate.ToString());
+			return NAME_None;
+		}
+		if (!Decisions->HasResolvedDecision(Candidate))
+		{
+			return Candidate;
+		}
+
+		const FName ChosenBranch = Decisions->GetResolvedBranch(Candidate);
+		const FDecisionBranch* Branch = (*Found)->Branches.FindByPredicate(
+			[ChosenBranch](const FDecisionBranch& Item)
+			{
+				return Item.BranchId == ChosenBranch;
+			});
+		if (!Branch)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[MissionDirector] Saved branch '%s' no longer exists on '%s'"),
+				*ChosenBranch.ToString(), *Candidate.ToString());
+			return NAME_None;
+		}
+		Candidate = Branch->UnlocksDecisionId;
+	}
+
+	return NAME_None;
 }
 
 void USprawlMissionDirector::IndexDecisions()
@@ -78,6 +147,13 @@ void USprawlMissionDirector::ScheduleDecisionCall(FName DecisionId, float Delay)
 	UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
 	UPhoneSubsystem* Phone = GI ? GI->GetSubsystem<UPhoneSubsystem>() : nullptr;
 	if (!Phone) return;
+	if (UDecisionSubsystem* Decisions = GI->GetSubsystem<UDecisionSubsystem>())
+	{
+		if (Decisions->HasResolvedDecision(DecisionId))
+		{
+			return;
+		}
+	}
 
 	UStrategicDecision* Decision = *Found;
 

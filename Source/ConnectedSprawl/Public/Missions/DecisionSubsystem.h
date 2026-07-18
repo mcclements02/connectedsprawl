@@ -34,9 +34,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Decisions")
 	void ResolveDecision(UStrategicDecision* Decision, FName ChosenBranchId);
 
+	UFUNCTION(BlueprintPure, Category="Decisions")
+	bool HasResolvedDecision(FName DecisionId) const;
+
+	UFUNCTION(BlueprintPure, Category="Decisions")
+	FName GetResolvedBranch(FName DecisionId) const;
+
+	TMap<FName, FName> CaptureResolvedDecisions() const { return ResolvedBranches; }
+	void RestoreResolvedDecisions(const TMap<FName, FName>& State);
+	void ResetProgress();
+
 	UPROPERTY(BlueprintAssignable) FOnDecisionOffered OnDecisionOffered;
 	UPROPERTY(BlueprintAssignable) FOnDecisionResolved OnDecisionResolved;
 
 private:
 	void ApplyBranchEffects(const FDecisionBranch& Branch);
+
+	/** Decision id -> chosen branch. Prevents repeat rewards after loading. */
+	UPROPERTY() TMap<FName, FName> ResolvedBranches;
 };

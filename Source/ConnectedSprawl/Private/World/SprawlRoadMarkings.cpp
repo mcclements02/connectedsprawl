@@ -2,6 +2,7 @@
 
 #include "World/SprawlRoadMarkings.h"
 #include "World/SprawlCityGridSubsystem.h"
+#include "Components/BoxComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
@@ -15,6 +16,8 @@ namespace
 constexpr float PaintZ = 1.5f;
 constexpr float PaintThickness = 0.03f; // cube scale -> 3cm
 constexpr float IntersectionHalf = Grid::RoadWidth * 0.5f; // 300
+constexpr float BoundaryThickness = 120.f;
+constexpr float BoundaryHalfHeight = 700.f;
 }
 
 ASprawlRoadMarkings::ASprawlRoadMarkings()
@@ -45,6 +48,37 @@ ASprawlRoadMarkings::ASprawlRoadMarkings()
 	{
 		PaintMesh->SetMaterial(0, FallbackMat.Object);
 	}
+
+	const float WallCenter = Grid::CityBoundaryHalfExtent + BoundaryThickness;
+	const float WallLength = Grid::CityBoundaryHalfExtent + BoundaryThickness * 2.f;
+	NorthBoundary = CreateBoundary(TEXT("CityBoundaryNorth"),
+		FVector(0.f, WallCenter, BoundaryHalfHeight),
+		FVector(WallLength, BoundaryThickness, BoundaryHalfHeight));
+	SouthBoundary = CreateBoundary(TEXT("CityBoundarySouth"),
+		FVector(0.f, -WallCenter, BoundaryHalfHeight),
+		FVector(WallLength, BoundaryThickness, BoundaryHalfHeight));
+	EastBoundary = CreateBoundary(TEXT("CityBoundaryEast"),
+		FVector(WallCenter, 0.f, BoundaryHalfHeight),
+		FVector(BoundaryThickness, WallLength, BoundaryHalfHeight));
+	WestBoundary = CreateBoundary(TEXT("CityBoundaryWest"),
+		FVector(-WallCenter, 0.f, BoundaryHalfHeight),
+		FVector(BoundaryThickness, WallLength, BoundaryHalfHeight));
+}
+
+UBoxComponent* ASprawlRoadMarkings::CreateBoundary(const TCHAR* Name,
+	const FVector& Location, const FVector& HalfExtent)
+{
+	UBoxComponent* Boundary = CreateDefaultSubobject<UBoxComponent>(Name);
+	Boundary->SetupAttachment(RootComponent);
+	Boundary->SetRelativeLocation(Location);
+	Boundary->SetBoxExtent(HalfExtent);
+	Boundary->SetCollisionProfileName(TEXT("BlockAll"));
+	Boundary->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	Boundary->SetGenerateOverlapEvents(false);
+	Boundary->SetHiddenInGame(true);
+	Boundary->SetCanEverAffectNavigation(false);
+	Boundary->ComponentTags.Add(TEXT("Sprawl.CityBoundary"));
+	return Boundary;
 }
 
 void ASprawlRoadMarkings::BeginPlay()
@@ -133,7 +167,7 @@ void ASprawlRoadMarkings::BuildMarkings()
 
 			// Stop lines: across the inbound lane only, just before the
 			// crosswalk. Right-hand traffic (see Grid::LaneCenter).
-			const float StopDist = BandCenter + 130.f; // 540 from center
+			const float StopDist = Grid::StopLineDistance;
 			// Northbound (lane on -X side) stops south of the intersection.
 			AddStripe(FVector(C.X - Grid::LaneOffset, C.Y - StopDist, PaintZ), 270.f, 30.f);
 			// Southbound (lane on +X side) stops north of the intersection.

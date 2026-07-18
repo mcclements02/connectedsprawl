@@ -1,5 +1,5 @@
 """Rebuild IMC_Default.default_key_mappings from scratch with correct
-per-key modifiers. UE 5.7 stores IMC data in `default_key_mappings`
+per-key modifiers. UE 5.8 stores IMC data in `default_key_mappings`
 (an InputMappingContextMappingData struct), not the deprecated `mappings`
 array, and map_key() returns a copy so modifiers set on it are lost.
 

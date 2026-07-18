@@ -33,12 +33,14 @@ public:
 	UPROPERTY(EditAnywhere, Category="Pedestrian") float MaxWalkSpeed = 175.f;
 	/** Speed when fleeing a dangerous car. */
 	UPROPERTY(EditAnywhere, Category="Pedestrian") float RunSpeed = 470.f;
-	/** Sidewalk walking line, inset from the block edge (cm from block center). */
-	UPROPERTY(EditAnywhere, Category="Pedestrian") float SidewalkInset = 120.f;
+	/** Sidewalk walking line inset from the block edge, behind recessed curb parking. */
+	UPROPERTY(EditAnywhere, Category="Pedestrian") float SidewalkInset = 360.f;
 	/** Chance of crossing the road on reaching a corner. */
 	UPROPERTY(EditAnywhere, Category="Pedestrian") float CrossChance = 0.30f;
 	/** Standing height (cm) the avatar mesh is scaled to (small per-ped variance added). */
 	UPROPERTY(EditAnywhere, Category="Pedestrian") float DesiredHeight = 165.f;
+	/** True after a complete imported human mesh + locomotion set is active. */
+	bool HasRealAvatar() const { return bHasAvatar; }
 
 private:
 	enum class EPedState : uint8 { WalkEdge, WaitToCross, Cross, Flee };

@@ -95,32 +95,46 @@ Rare "bridge missions" can raise **both** reputations. Finding them is the real 
 1. **Level Streaming** — Only ~1-mile radius around Zarri is loaded at full density. Everything beyond is a low-poly silhouette proxy.
 2. **Commute Loop** — Highway driving masks asset swaps. Crossing "The Arteries" at 85mph+ triggers aggressive pre-streaming of the next zone + motion blur.
 3. **Procedural Traffic** — Traffic "clumps" are generated around Zarri (not the whole city). Feels populated, costs nothing past the view distance.
-4. **Mobile Rendering** — Forward shader path, MobileHDR, no Lumen, static lighting on buildings with a small runtime light budget for vehicles and NPCs.
+4. **Mobile Rendering** — UE 5.8 mobile deferred path, MobileHDR, no Lumen, static lighting on buildings with a small runtime light budget for vehicles and NPCs. Device profiles keep optional screen-space effects scalable rather than making them a universal cost.
 
 ---
 
-## 5. System Architecture (Unreal 5.7, C++)
+## 5. System Architecture (Unreal 5.8, C++)
 
 ```
 GameInstance
  ├─ UFounderSubsystem   → Cash, Burn Rate, Runway, Ledger
  ├─ UFactionSubsystem   → Corporate Rep, Street Rep, Heat, Moral Debt
- └─ UDecisionSubsystem  → Strategic Decisions (offer → resolve → apply effects)
+ ├─ UDecisionSubsystem  → Strategic Decisions (offer → resolve → apply effects)
+ └─ USprawlSaveSubsystem → Versioned progression, map, transform, driving state
 
 World
- ├─ ASprawlGameMode     → Day timer, world setup
+ ├─ ASprawlGameMode      → Day timer, world setup, restored-player placement
+ ├─ USprawlMissionDirector → Calls, branch chaining, unresolved-mission resume
  ├─ AZonalStreamingManager → Loads/unloads zones based on player position & velocity
- └─ AMobileOfficeVehicle → Zarri's car, with office systems (calls, trunk cash, radio)
+ ├─ USprawlCityGridSubsystem → Lanes, signals, intersections, lake, city bounds
+ ├─ ASprawlRoadMarkings  → Paint plus physical perimeter boundaries
+ └─ ASprawlCar           → Enterable player/parked cars and ordered traffic AI
 
 Data Assets
  └─ UStrategicDecision  → Designer-authored decisions with N branches
 ```
 
 ### Why subsystems, not singletons
-All three core systems are `UGameInstanceSubsystem`s — they survive level transitions, are testable, auto-instantiated, and exposed to Blueprints cleanly.
+The four core state systems are `UGameInstanceSubsystem`s — they survive level
+transitions, are testable, auto-instantiated, and exposed to Blueprints cleanly.
 
 ### Why `UPrimaryDataAsset` for decisions
 Designers can stamp out a new mission in the editor without touching C++. Every decision is a row of data: prompt, branches, deltas.
+
+### Persistence contract
+
+The versioned save payload captures founder, faction, resolved-decision, map,
+transform, and vehicle-possession state. Decisions are idempotent: once a
+decision ID is resolved, it cannot be offered or paid again. Autosaves occur
+after decisions and day advances, plus app backgrounding and clean quit; F5/F9
+provide manual save/load during desktop development. Future schema versions are
+rejected without mutating the running session.
 
 ---
 
@@ -172,12 +186,14 @@ Branches:
 - [x] Mobile-tuned rendering config
 
 ### Phase 2 — Gray-box playable
-- [ ] Zarri character Blueprint (on-foot)
-- [ ] Enter/exit Mobile Office action
-- [ ] Gray-box Junction + one Artery + one Outskirt
-- [ ] 5 authored Strategic Decisions
-- [ ] UI: Cash/Runway HUD + Decision modal
-- [ ] Save/Load of founder state
+- [x] Zarri character Blueprint (on-foot)
+- [x] Enter/exit Mobile Office action
+- [x] Enterable curb parking, crash recovery, and city vehicle boundaries
+- [x] Right-hand traffic with signal and intersection ordering
+- [x] Gray-box Junction + one Artery + one Outskirt
+- [x] 5 authored Strategic Decisions
+- [x] UI: Cash/Runway HUD + Decision modal
+- [x] Versioned Save/Load of founder, faction, mission, and player state
 
 ### Phase 3 — Vertical slice
 - [ ] Procedural traffic MassEntity system

@@ -9,6 +9,8 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "SprawlCityGridSubsystem.generated.h"
 
+class AActor;
+
 /** Cardinal travel direction on the road grid. */
 UENUM(BlueprintType)
 enum class ESprawlHeading : uint8
@@ -53,7 +55,14 @@ public:
 	static constexpr float RoadWidth   = 600.f;   // cm
 	static constexpr float Step        = BlockSize + RoadWidth;       // 2600
 	static constexpr float Span        = NumBlocks * Step;            // 18200
+	/** Inner face of the invisible perimeter walls around the authored city. */
+	static constexpr float CityBoundaryHalfExtent = Span * 0.5f;      // 9100
 	static constexpr float LaneOffset  = 150.f;   // right-hand lane center from road centerline
+	/** Curbside parking center, recessed enough that a 210cm-wide car clears the live lane. */
+	static constexpr float ParkingOffset = 410.f;
+	/** Painted stop-line center and the matching safe vehicle-center hold distance. */
+	static constexpr float StopLineDistance = 540.f;
+	static constexpr float VehicleStopDistance = 790.f;
 	static constexpr int32 NumRoads    = NumBlocks - 1;               // roads per axis
 
 	/** Center of block index i (0..NumBlocks-1) on either axis. */
@@ -107,6 +116,31 @@ public:
 		const float Lo = RoadCenter(0) - Margin;
 		const float Hi = RoadCenter(NumRoads - 1) + Margin;
 		return X > Lo && X < Hi && Y > Lo && Y < Hi;
+	}
+
+	/** True while a point remains inside the physical city perimeter. */
+	static bool IsInsideCityBounds(float X, float Y, float ExtraMargin = 0.f)
+	{
+		const float Limit = CityBoundaryHalfExtent + FMath::Max(0.f, ExtraMargin);
+		return FMath::Abs(X) <= Limit && FMath::Abs(Y) <= Limit;
+	}
+
+	/** Roads plus their curbside parking shoulder, used for safe recovery anchors. */
+	static bool IsNearDrivableRoad(float X, float Y, float Shoulder = 180.f)
+	{
+		if (!IsInsideCityBounds(X, Y) || IsOverLake(X, Y, 50.f))
+		{
+			return false;
+		}
+
+		float NearestX = TNumericLimits<float>::Max();
+		float NearestY = TNumericLimits<float>::Max();
+		for (int32 RoadIndex = 0; RoadIndex < NumRoads; ++RoadIndex)
+		{
+			NearestX = FMath::Min(NearestX, FMath::Abs(X - RoadCenter(RoadIndex)));
+			NearestY = FMath::Min(NearestY, FMath::Abs(Y - RoadCenter(RoadIndex)));
+		}
+		return FMath::Min(NearestX, NearestY) <= RoadWidth * 0.5f + Shoulder;
 	}
 
 	/** Unit forward vector for a cardinal heading. */
@@ -174,10 +208,11 @@ public:
 
 	// --- Traffic signals -------------------------------------------------
 
-	/** Full signal cycle length in seconds. */
-	static constexpr float SignalCycle      = 16.f;
+	/** Full signal cycle: 7s green, 1s amber, 1s all-red clearance per axis. */
+	static constexpr float SignalCycle      = 18.f;
 	static constexpr float SignalGreenTime  = 7.f;
 	static constexpr float SignalAmberTime  = 1.f;
+	static constexpr float SignalClearanceTime = 1.f;
 
 	/**
 	 * Signal state for traffic on the given axis at an intersection.
@@ -189,4 +224,35 @@ public:
 
 	/** Seconds into this intersection's signal cycle. */
 	float GetCycleTime(int32 Ix, int32 Iy) const;
+
+	// --- Intersection right-of-way ---------------------------------------
+
+	/**
+	 * Conservatively lease an intersection to one vehicle at a time. Signals
+	 * still decide which approach may request it; the lease prevents turning
+	 * cars and a backed-up exit lane from blocking or colliding in the box.
+	 */
+	bool TryReserveIntersection(int32 Ix, int32 Iy, AActor* Vehicle);
+
+	/** Release a lease only when it belongs to Vehicle. */
+	void ReleaseIntersection(int32 Ix, int32 Iy, const AActor* Vehicle);
+
+	/** True when Vehicle currently owns the live lease. */
+	bool HasIntersectionReservation(int32 Ix, int32 Iy, const AActor* Vehicle) const;
+
+	virtual void Deinitialize() override;
+
+private:
+	struct FIntersectionReservation
+	{
+		TWeakObjectPtr<AActor> Vehicle;
+		float ExpiresAt = 0.f;
+	};
+
+	static int32 ReservationKey(int32 Ix, int32 Iy)
+	{
+		return Ix * NumRoads + Iy;
+	}
+
+	TMap<int32, FIntersectionReservation> IntersectionReservations;
 };

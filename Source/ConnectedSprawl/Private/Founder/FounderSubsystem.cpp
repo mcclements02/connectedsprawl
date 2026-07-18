@@ -5,11 +5,7 @@
 void UFounderSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-
-	// Baseline startup: modest rent + a part-time engineer.
-	RecurringDailyExpenses.Add(ECashFlowSource::OfficeRent,    40.f);  // $1200/mo shared desk in The Junction
-	RecurringDailyExpenses.Add(ECashFlowSource::Payroll,       120.f); // one part-time contractor
-	RecurringDailyExpenses.Add(ECashFlowSource::VehicleUpkeep, 15.f);  // gas, insurance, repairs
+	ResetProgress();
 
 	UE_LOG(LogTemp, Log, TEXT("[Founder] Initialized. Cash=$%.0f DailyBurn=$%.0f Runway=%.1f days"),
 		Cash, GetDailyBurn(), GetRunwayDays());
@@ -33,6 +29,7 @@ void UFounderSubsystem::AdvanceDay()
 		}
 	}
 
+	++CurrentDay;
 	BroadcastRunway();
 
 	if (Cash <= 0.f)
@@ -40,6 +37,8 @@ void UFounderSubsystem::AdvanceDay()
 		UE_LOG(LogTemp, Warning, TEXT("[Founder] BANKRUPT! Cash=$%.0f — forced dirty job incoming."), Cash);
 		OnStartupBankrupt.Broadcast();
 	}
+
+	OnDayAdvanced.Broadcast(CurrentDay);
 }
 
 void UFounderSubsystem::AddIncome(float Amount, ECashFlowSource Source, const FText& Note, bool bIsDirty)
@@ -75,6 +74,7 @@ void UFounderSubsystem::PayExpense(float Amount, ECashFlowSource Source, const F
 	Ledger.Add(Entry);
 
 	OnCashChanged.Broadcast(Cash);
+	BroadcastRunway();
 }
 
 void UFounderSubsystem::AddRecurringExpense(ECashFlowSource Source, float DailyAmount)
@@ -111,6 +111,43 @@ float UFounderSubsystem::GetRunwayDays() const
 	const float Burn = GetDailyBurn();
 	if (Burn <= KINDA_SMALL_NUMBER) return TNumericLimits<float>::Max();
 	return FMath::Max(Cash, 0.f) / Burn;
+}
+
+FFounderPersistentState UFounderSubsystem::CaptureState() const
+{
+	FFounderPersistentState State;
+	State.Cash = Cash;
+	State.CurrentDay = CurrentDay;
+	State.RecurringDailyExpenses = RecurringDailyExpenses;
+	State.Ledger = Ledger;
+	return State;
+}
+
+void UFounderSubsystem::RestoreState(const FFounderPersistentState& State)
+{
+	Cash = State.Cash;
+	CurrentDay = FMath::Max(1, State.CurrentDay);
+	RecurringDailyExpenses = State.RecurringDailyExpenses;
+	Ledger = State.Ledger;
+
+	OnCashChanged.Broadcast(Cash);
+	BroadcastRunway();
+}
+
+void UFounderSubsystem::ResetProgress()
+{
+	Cash = 2500.f;
+	CurrentDay = 1;
+	Ledger.Reset();
+	RecurringDailyExpenses.Reset();
+
+	// Baseline startup: modest rent + a part-time engineer.
+	RecurringDailyExpenses.Add(ECashFlowSource::OfficeRent, 40.f);
+	RecurringDailyExpenses.Add(ECashFlowSource::Payroll, 120.f);
+	RecurringDailyExpenses.Add(ECashFlowSource::VehicleUpkeep, 15.f);
+
+	OnCashChanged.Broadcast(Cash);
+	BroadcastRunway();
 }
 
 void UFounderSubsystem::BroadcastRunway()

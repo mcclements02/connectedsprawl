@@ -39,6 +39,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Zarri")
 	void EnterNearbyVehicle();
 
+	/** Possess a specific vehicle; used by interaction and save restoration. */
+	UFUNCTION(BlueprintCallable, Category="Zarri")
+	bool EnterVehicle(ASprawlCar* Vehicle);
+
 	/** Exit the vehicle back onto the sidewalk. Called by the vehicle side. */
 	UFUNCTION(BlueprintCallable, Category="Zarri")
 	void OnExitedVehicle(ASprawlCar* FromVehicle);

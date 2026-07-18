@@ -4,6 +4,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Missions/DecisionSubsystem.h"
 #include "Missions/StrategicDecision.h"
+#include "Save/SprawlSaveSubsystem.h"
 #include "UI/DecisionModalWidget.h"
 #include "UI/SprawlDecisionModal.h"
 
@@ -69,6 +70,8 @@ void ASprawlPlayerController::SetupInputComponent()
 		InputComponent->BindKey(EKeys::Zero, IE_Pressed, this, &ASprawlPlayerController::OnOnePressed);
 		InputComponent->BindKey(EKeys::E, IE_Pressed, this, &ASprawlPlayerController::OnInteractPressed);
 		InputComponent->BindKey(EKeys::F, IE_Pressed, this, &ASprawlPlayerController::OnInteractPressed);
+		InputComponent->BindKey(EKeys::F5, IE_Pressed, this, &ASprawlPlayerController::OnSavePressed);
+		InputComponent->BindKey(EKeys::F9, IE_Pressed, this, &ASprawlPlayerController::OnLoadPressed);
 	}
 }
 
@@ -95,8 +98,37 @@ void ASprawlPlayerController::OnEscapePressed()
 	{
 		return;
 	}
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (USprawlSaveSubsystem* Saves = GI->GetSubsystem<USprawlSaveSubsystem>())
+		{
+			Saves->SaveProgress();
+		}
+	}
 
 	UKismetSystemLibrary::QuitGame(GetWorld(), this, EQuitPreference::Quit, false);
+}
+
+void ASprawlPlayerController::OnSavePressed()
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (USprawlSaveSubsystem* Saves = GI->GetSubsystem<USprawlSaveSubsystem>())
+		{
+			Saves->SaveProgress();
+		}
+	}
+}
+
+void ASprawlPlayerController::OnLoadPressed()
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (USprawlSaveSubsystem* Saves = GI->GetSubsystem<USprawlSaveSubsystem>())
+		{
+			Saves->LoadProgressAndRestart();
+		}
+	}
 }
 
 void ASprawlPlayerController::OnOnePressed()

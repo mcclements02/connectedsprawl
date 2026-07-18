@@ -19,6 +19,8 @@ SCRIPT_ORDER = [
     "fix_cars.py",
     "import_artwork.py",
     "aaa_realism_overhaul.py",
+    "import_animated_vehicles.py",
+    "apply_living_city.py",
 ]
 
 
