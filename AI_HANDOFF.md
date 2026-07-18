@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 10 · **Last updated:** 2026-07-18 09:33 PDT · **Updated by:** codex
+**Version:** 11 · **Last updated:** 2026-07-18 10:16 PDT · **Updated by:** codex
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -20,12 +20,28 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 | Branch | Worktree | Agent | Status | Summary | Updated |
 |--------|----------|-------|--------|---------|---------|
-| main | /Users/matthewx/code/ConnectedSprawl | codex | ready; uncommitted | UE 5.8 migration, saves, real avatars, animated ordered traffic, enterable building-clear parking, crash recovery, and city boundaries; Mac audits pass | 2026-07-18 |
 
 ## Log (append newest on top)
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-18 · main · codex
+- **Changed:** Published the complete UE 5.8, progression-save, living-city,
+  real-character, animated-vehicle, enterable-parking, crash-recovery, and city
+  boundary change set as implementation commit `36355b6`. Repointed `origin`
+  from the prior Buckwick repository to the user-requested, previously empty
+  `mcclements02/connectedsprawl` repository and initialized its `main` branch
+  with the project's full existing history.
+- **Validation:** The pre-publish staged diff contained 490 intended files
+  (43 tracked updates and 447 new files), passed `git diff --cached --check`,
+  contained no sensitive filenames, and had no new file above 4.4 MB. GitHub
+  accepted `main`; it emitted only a size advisory for the already-versioned
+  91.29 MB RealKit jacaranda asset, which remains below GitHub's 100 MB limit.
+- **Status:** done; no active implementation work remains in this worktree.
+- **Next:** run the optional interactive driving/crash playtest and install the
+  UE 5.8 iOS component before signed-device build/performance validation.
+<!-- entry:publish-connectedsprawl -->
 
 ### 2026-07-18 · main · codex
 - **Changed:** Converted all 36 authored parked vehicles from decorative static
