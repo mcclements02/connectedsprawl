@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 11 · **Last updated:** 2026-07-18 10:16 PDT · **Updated by:** codex
+**Version:** 12 · **Last updated:** 2026-07-18 19:20 PDT · **Updated by:** codex
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -25,6 +25,24 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-18 · main · codex
+- **Changed:** Tuned the iPhone experience for faster, smoother character and
+  vehicle input; added analog drift filtering and response interpolation;
+  improved on-foot, standard-car, and Mobile Office camera framing and lag;
+  added `F` as a reliable enter/exit fallback; and introduced an iOS device
+  profile plus lower-cost rendering defaults for a steadier 60 FPS target.
+- **Validation:** The UE 5.8 `ConnectedSprawlEditor Mac Development` build
+  passed (5 actions). The signed `ConnectedSprawl IOS Development` build passed
+  (4 actions), including Xcode asset compilation, restored cooked-data sync,
+  provisioning, signing, and bundle validation. Epic's missing optional
+  MetalShaderConverter include and duplicate Vorbis-library messages remained
+  non-blocking engine warnings.
+- **Status:** done; validated mobile-control and performance tuning is published
+  with this ledger entry.
+- **Next:** install the newly compiled iOS executable over the validated cooked
+  payload and perform an interactive touch-driving and frame-rate playtest.
+<!-- entry:mobile-controls-performance -->
 
 ### 2026-07-18 · main · codex
 - **Changed:** Published the complete UE 5.8, progression-save, living-city,

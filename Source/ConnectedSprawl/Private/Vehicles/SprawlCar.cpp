@@ -226,20 +226,22 @@ ASprawlCar::ASprawlCar()
 	// --- Camera ---
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(Hull);
-	SpringArm->TargetArmLength = 720.f;
-	SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 140.f));
-	SpringArm->SetRelativeRotation(FRotator(-14.f, 0.f, 0.f));
+	SpringArm->TargetArmLength = 780.f;
+	SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 165.f));
+	SpringArm->SetRelativeRotation(FRotator(-12.f, 0.f, 0.f));
 	SpringArm->bUsePawnControlRotation = false;
 	SpringArm->bInheritPitch = false;
 	SpringArm->bInheritYaw = true;
 	SpringArm->bInheritRoll = false;
 	SpringArm->bEnableCameraLag = true;
-	SpringArm->CameraLagSpeed = 5.f;
+	SpringArm->CameraLagSpeed = 9.f;
+	SpringArm->bEnableCameraRotationLag = true;
+	SpringArm->CameraRotationLagSpeed = 10.f;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(SpringArm);
 	FollowCamera->bUsePawnControlRotation = false;
-	FollowCamera->SetFieldOfView(90.f);
+	FollowCamera->SetFieldOfView(86.f);
 
 	// --- Input assets ---
 	static ConstructorHelpers::FObjectFinder<UInputMappingContext> IMC(
@@ -591,6 +593,7 @@ void ASprawlCar::SetupPlayerInputComponent(UInputComponent* InputComponent)
 
 	// Legacy key binding — reliable exit even if Enhanced Input misbehaves.
 	InputComponent->BindKey(EKeys::E, IE_Pressed, this, &ASprawlCar::OnExitKey);
+	InputComponent->BindKey(EKeys::F, IE_Pressed, this, &ASprawlCar::OnExitKey);
 }
 
 void ASprawlCar::OnExitKey()
@@ -605,15 +608,20 @@ void ASprawlCar::RequestExit()
 
 void ASprawlCar::HandleMove(const FInputActionValue& Value)
 {
-	const FVector2D Axis = Value.Get<FVector2D>();
-	SteerInput    = Axis.X;
-	ThrottleInput = Axis.Y;
+	FVector2D Axis = Value.Get<FVector2D>();
+	if (Axis.SizeSquared() < FMath::Square(InputDeadZone))
+	{
+		Axis = FVector2D::ZeroVector;
+	}
+	Axis = Axis.GetClampedToMaxSize(1.f);
+	TargetSteerInput    = Axis.X;
+	TargetThrottleInput = Axis.Y;
 }
 
 void ASprawlCar::HandleMoveEnd(const FInputActionValue& /*Value*/)
 {
-	SteerInput = 0.f;
-	ThrottleInput = 0.f;
+	TargetSteerInput = 0.f;
+	TargetThrottleInput = 0.f;
 }
 
 void ASprawlCar::HandleExit(const FInputActionValue& /*Value*/)
@@ -623,6 +631,8 @@ void ASprawlCar::HandleExit(const FInputActionValue& /*Value*/)
 		AZarriCharacter* ExitingDriver = Driver;
 		ThrottleInput = 0.f;
 		SteerInput = 0.f;
+		TargetThrottleInput = 0.f;
+		TargetSteerInput = 0.f;
 		Driver = nullptr;
 		bAutoDrive = bResumeAutoDriveAfterExit;
 		bResumeAutoDriveAfterExit = false;
@@ -663,6 +673,10 @@ void ASprawlCar::Tick(float DeltaSeconds)
 	const FVector Fwd = GetActorForwardVector();
 	const FVector Vel = Hull->GetPhysicsLinearVelocity();
 	const float ForwardSpeed = FVector::DotProduct(Vel, Fwd);
+	ThrottleInput = FMath::FInterpTo(
+		ThrottleInput, TargetThrottleInput, DeltaSeconds, ThrottleResponse);
+	SteerInput = FMath::FInterpTo(
+		SteerInput, TargetSteerInput, DeltaSeconds, SteeringResponse);
 
 	// Throttle / reverse
 	if (FMath::Abs(ThrottleInput) > 0.05f)
@@ -673,7 +687,7 @@ void ASprawlCar::Tick(float DeltaSeconds)
 	// Steering — yaw rate scales with speed, flips sign in reverse.
 	if (FMath::Abs(SteerInput) > 0.05f && FMath::Abs(ForwardSpeed) > 25.f)
 	{
-		const float SpeedFactor = FMath::Clamp(FMath::Abs(ForwardSpeed) / 600.f, 0.25f, 1.f);
+		const float SpeedFactor = FMath::Clamp(FMath::Abs(ForwardSpeed) / 520.f, 0.35f, 1.f);
 		const float Dir = FMath::Sign(ForwardSpeed);
 		const float TargetYaw = SteerInput * Dir * TurnRate * SpeedFactor;
 		Hull->SetPhysicsAngularVelocityInDegrees(

@@ -121,9 +121,15 @@ protected:
 	UPROPERTY() TObjectPtr<UInputAction> IA_Interact;
 
 	/** Forward push, in centinewtons-ish; tuned by feel. */
-	UPROPERTY(EditAnywhere, Category="Car") float EngineForce = 2400000.f;
+	UPROPERTY(EditAnywhere, Category="Car") float EngineForce = 3200000.f;
 	/** Yaw rate at speed, deg/s. */
-	UPROPERTY(EditAnywhere, Category="Car") float TurnRate = 62.f;
+	UPROPERTY(EditAnywhere, Category="Car") float TurnRate = 78.f;
+	/** How quickly throttle follows stick/buttons; higher feels snappier. */
+	UPROPERTY(EditAnywhere, Category="Car|Input") float ThrottleResponse = 8.f;
+	/** How quickly steering follows stick/buttons; higher feels snappier. */
+	UPROPERTY(EditAnywhere, Category="Car|Input") float SteeringResponse = 11.f;
+	/** Small analog drift filter for touch/gamepad steering. */
+	UPROPERTY(EditAnywhere, Category="Car|Input") float InputDeadZone = 0.08f;
 	/** Visual tyre radius used to match spin rate to ground speed. */
 	UPROPERTY(EditAnywhere, Category="Car|Wheels") float VisualWheelRadius = 41.f;
 	/** Maximum visual steering angle of the front wheels. */
@@ -140,6 +146,8 @@ protected:
 
 	float ThrottleInput = 0.f;
 	float SteerInput = 0.f;
+	float TargetThrottleInput = 0.f;
+	float TargetSteerInput = 0.f;
 	float WheelRotationDegrees = 0.f;
 	UPROPERTY() bool bUsingExternalWheelParts = false;
 	bool bResumeAutoDriveAfterExit = false;

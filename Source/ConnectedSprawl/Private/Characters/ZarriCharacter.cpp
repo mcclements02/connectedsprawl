@@ -34,23 +34,28 @@ AZarriCharacter::AZarriCharacter()
 
 	UCharacterMovementComponent* Move = GetCharacterMovement();
 	Move->bOrientRotationToMovement = true;
-	Move->RotationRate              = FRotator(0.f, 720.f, 0.f);
+	Move->RotationRate              = FRotator(0.f, 900.f, 0.f);
 	Move->JumpZVelocity             = 620.f;
-	Move->MaxWalkSpeed              = 460.f;
-	Move->MinAnalogWalkSpeed        = 20.f;
-	Move->BrakingDecelerationWalking= 2000.f;
+	Move->MaxWalkSpeed              = 520.f;
+	Move->MinAnalogWalkSpeed        = 35.f;
+	Move->MaxAcceleration           = 3600.f;
+	Move->BrakingDecelerationWalking= 2600.f;
+	Move->GroundFriction            = 9.f;
 	Move->AirControl                = 0.35f;
 
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(RootComponent);
-	SpringArm->TargetArmLength       = 380.f;
+	SpringArm->TargetArmLength       = 430.f;
 	SpringArm->bUsePawnControlRotation = true;
 	SpringArm->bEnableCameraLag       = true;
+	SpringArm->CameraLagSpeed         = 11.f;
+	SpringArm->bEnableCameraRotationLag = true;
+	SpringArm->CameraRotationLagSpeed = 14.f;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(SpringArm);
 	FollowCamera->bUsePawnControlRotation = false;
-	FollowCamera->SetFieldOfView(90.f);
+	FollowCamera->SetFieldOfView(84.f);
 
 	MobileOfficeRigComponent = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("MobileOfficeRigComponent"));
 	MobileOfficeRigComponent->SetupAttachment(GetMesh());
@@ -235,11 +240,17 @@ void AZarriCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 
 	// Legacy key binding — reliable interact even if Enhanced Input misbehaves.
 	PlayerInputComponent->BindKey(EKeys::E, IE_Pressed, this, &AZarriCharacter::OnInteractKey);
+	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AZarriCharacter::OnInteractKey);
 }
 
 void AZarriCharacter::HandleMove(const FInputActionValue& Value)
 {
-	const FVector2D Axis = Value.Get<FVector2D>();
+	FVector2D Axis = Value.Get<FVector2D>();
+	if (Axis.SizeSquared() < FMath::Square(0.08f))
+	{
+		return;
+	}
+	Axis = Axis.GetClampedToMaxSize(1.f);
 	if (Controller && !Axis.IsNearlyZero())
 	{
 		const FRotator YawRot(0.f, Controller->GetControlRotation().Yaw, 0.f);
@@ -252,22 +263,22 @@ void AZarriCharacter::HandleMove(const FInputActionValue& Value)
 
 void AZarriCharacter::HandleLook(const FInputActionValue& Value)
 {
-	const FVector2D Axis = Value.Get<FVector2D>();
+	const FVector2D Axis = Value.Get<FVector2D>().GetClampedToMaxSize(1.f);
 	if (Controller)
 	{
-		AddControllerYawInput(Axis.X);
-		AddControllerPitchInput(Axis.Y);
+		AddControllerYawInput(Axis.X * 0.82f);
+		AddControllerPitchInput(Axis.Y * 0.68f);
 	}
 }
 
 void AZarriCharacter::HandleSprint(const FInputActionValue&)
 {
-	GetCharacterMovement()->MaxWalkSpeed = 820.f;
+	GetCharacterMovement()->MaxWalkSpeed = 760.f;
 }
 
 void AZarriCharacter::HandleStopSprint(const FInputActionValue&)
 {
-	GetCharacterMovement()->MaxWalkSpeed = 460.f;
+	GetCharacterMovement()->MaxWalkSpeed = 520.f;
 }
 
 void AZarriCharacter::HandleInteract(const FInputActionValue&)

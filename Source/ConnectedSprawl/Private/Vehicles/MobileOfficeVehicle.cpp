@@ -12,14 +12,16 @@ AMobileOfficeVehicle::AMobileOfficeVehicle()
 
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(GetMesh());
-	SpringArm->TargetArmLength = 450.f;
+	SpringArm->TargetArmLength = 560.f;
 	SpringArm->bUsePawnControlRotation = true;
 	SpringArm->bEnableCameraLag = true;
-	SpringArm->CameraLagSpeed = 6.f;
+	SpringArm->CameraLagSpeed = 9.f;
+	SpringArm->bEnableCameraRotationLag = true;
+	SpringArm->CameraRotationLagSpeed = 10.f;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(SpringArm);
-	FollowCamera->SetFieldOfView(85.f);
+	FollowCamera->SetFieldOfView(84.f);
 
 	RadioAudio = CreateDefaultSubobject<UAudioComponent>(TEXT("RadioAudio"));
 	RadioAudio->SetupAttachment(GetMesh());
@@ -62,14 +64,14 @@ void AMobileOfficeVehicle::UpdateHighwayFeel(float DeltaSeconds)
 
 	const float Speed = GetSpeedMph();
 
-	// Ramp from 85 FoV -> 105 FoV as speed crosses 60->120mph ("Artery Mode").
+	// Ramp from 84 FoV -> 100 FoV as speed crosses 60->120mph ("Artery Mode").
 	const float TargetFoV = FMath::GetMappedRangeValueClamped(
-		FVector2D(60.f, 120.f), FVector2D(85.f, 105.f), Speed);
+		FVector2D(60.f, 120.f), FVector2D(84.f, 100.f), Speed);
 	const float NewFoV = FMath::FInterpTo(FollowCamera->FieldOfView, TargetFoV, DeltaSeconds, 3.f);
 	FollowCamera->SetFieldOfView(NewFoV);
 
 	// Pull camera back at speed for the "cinematic highway" feel.
 	const float TargetArm = FMath::GetMappedRangeValueClamped(
-		FVector2D(60.f, 120.f), FVector2D(450.f, 650.f), Speed);
+		FVector2D(60.f, 120.f), FVector2D(560.f, 760.f), Speed);
 	SpringArm->TargetArmLength = FMath::FInterpTo(SpringArm->TargetArmLength, TargetArm, DeltaSeconds, 2.f);
 }
