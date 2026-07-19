@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 12 · **Last updated:** 2026-07-18 19:20 PDT · **Updated by:** codex
+**Version:** 15 · **Last updated:** 2026-07-19 11:40 PDT · **Updated by:** codex
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -25,6 +25,79 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-19 · main · codex
+- **Changed:** Finalized the complete living-city change set for the requested
+  clean local commit and added a dedicated Zarri hero variant: a lightweight
+  young Black male avatar with medium-deep skin, dark hair, tech-streetwear,
+  all seven animation clips, and seated-driver support. The focused importer
+  can now target named variants, configures `BP_Zarri`, and keeps Zarri out of
+  the ambient crowd pool. Raised the canonical exposure bias from `0.65` to
+  `0.70` to restore visual-audit headroom with the darker hero palette.
+- **Validation:** Zarri's Blender build changed 506,924 atlas pixels, passed a
+  clean FBX re-import (`1` rig, `1` embedded texture, `7` clips), and produced
+  reviewed Walk/Sit QA renders. Changed Python compiled and `git diff --check`
+  passed. The UE 5.8 Mac editor build passed (`9` actions, 36.82 s); the focused
+  Unreal import created `SK_Zarri`, material/texture/skeleton, and all seven
+  sequences, then bound `BP_Zarri`. The mobile texture pass and 22-variant
+  static audit passed. Final traffic audit passed (`cars=14`, `moved=14`,
+  `visible_drivers=14`, `missing_drivers=0`, `ped_offside=0`,
+  `lane_violators=0`), and the real-Metal visual audit passed at 1280×720
+  (`mean_luma=96.05`, `crushed=0.00%`, `clipped=0.26%`, `red_blue=1.007`). The
+  final canonical color-pass rerun was a true no-op (`map_changed=False`).
+- **Status:** complete and included in the user-authorized local cleanup
+  commit; no remote push was requested.
+- **Next:** push `main` when requested, then run the deferred interactive
+  editor and iPhone device playtests.
+<!-- entry:zarri-and-clean-local-main -->
+
+### 2026-07-19 · main · codex
+- **Changed:** Completed the living-city pass: 21 seven-clip pedestrian avatar
+  sets with new sprint/seated animation support; five new CC0 variants; visible
+  seated AI/player drivers; slow-car takeover with an ejected fleeing driver;
+  legal retirement/backfill and lease handling; sidewalk recovery, contained
+  fleeing, and signal-aware crossings; native HUD, repeatable clean-income gig,
+  dirty-bankruptcy bailout, second-bankruptcy loss, and persistent victory
+  sentinel; plus a deterministic, measured daylight/material pass and a clean
+  opening PlayerStart orientation. The real-RHI visual audit now saves the
+  exact scored PNG for human review.
+- **Validation:** Blender clean-reimport and Walk/Sit QA passed for all five new
+  avatars; Unreal imported 21 variants × 7 clips and the mobile texture budget
+  clamped 0 textures. Changed Python compiled. The final UE 5.8 Mac editor build
+  passed (UHT + 3 actions, 192.19 s). Gameplay authoring and the idempotent city
+  pass saved 1 player car + 14 traffic + 36 enterable parked cars, 30 signals,
+  and 26 humans. Static audit passed (`upright=51`, `avatars=21`, `clips=7`).
+  Final traffic audit passed (`visible_drivers=14`, `missing_drivers=0`,
+  `ped_offside=0`, `lane_violators=0`); carjack audit passed possession,
+  fleeing-driver, lease-free, retirement, and 14-car backfill gates; progression
+  audit passed save round-trip, `$400` gig payout, bailout, and victory. Two
+  consecutive 1280×720 real-Metal visual audits passed (`mean_luma=96.45/96.36`,
+  `crushed=0.00%`, `clipped=0.25%`, `red_blue=1.008/1.008`). The final color
+  pass rerun was a true no-op (`changed_materials=0`, `map_changed=False`).
+- **Status:** implementation complete and audit-green; all authored changes
+  remain unstaged and uncommitted per the user's explicit instruction.
+- **Next:** perform an interactive editor playtest and install Epic's optional
+  UE 5.8 iOS component before the deferred iPhone device build/profile; commit
+  code, assets, map, config, docs, and this ledger together only when authorized.
+  Preserve pristine legacy avatar sources before any future rebake to avoid
+  cumulative FBX round-tripping.
+<!-- entry:living-city-humanization-complete -->
+
+### 2026-07-19 · main · codex
+- **Changed:** Started the approved living-city humanization pass covering new
+  sprint/seated avatar clips and variants, visible vehicle occupants and
+  carjacking, stronger pedestrian boundaries, a balanced daylight/color pass,
+  and a native HUD plus repeatable earn/bankruptcy/victory loop.
+- **Validation:** Mandatory Git/worktree preflight and cross-worktree sync check
+  passed on a clean `main`; project, gameplay, and city design contracts were
+  read before implementation. Asset probe, builds, audits, and visual QA remain
+  pending.
+- **Status:** in progress; all work will remain unstaged and uncommitted per the
+  user's explicit instruction.
+- **Next:** download only the two approved CC0 sources, probe the animation rig,
+  validate retargeted walk/sit renders, then implement and audit each runtime
+  layer in phase order.
+<!-- entry:living-city-humanization-start -->
 
 ### 2026-07-18 · main · codex
 - **Changed:** Tuned the iPhone experience for faster, smoother character and

@@ -33,14 +33,20 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="HUD") int32 DisplayMoralDebt = 0;
 	UPROPERTY(BlueprintReadOnly, Category="HUD") int32 DisplayCorporateRep = 0;
 	UPROPERTY(BlueprintReadOnly, Category="HUD") int32 DisplayStreetRep = 0;
+	UPROPERTY(BlueprintReadOnly, Category="HUD") int32 DisplayDay = 1;
 
 	/** Fired when any value changes so UMG can refresh any bindings. */
 	UFUNCTION(BlueprintImplementableEvent, Category="HUD")
 	void OnHUDRefreshed();
 
 protected:
+	/** C++ widgets update here while the existing BP event remains compatible. */
+	virtual void NativeRefresh();
+	void RefreshHUD();
+
 	UFUNCTION() void OnCashChanged(float NewCash);
 	UFUNCTION() void OnRunwayChanged(float NewDays);
+	UFUNCTION() void OnDayAdvanced(int32 NewDay);
 	UFUNCTION() void OnHeatChanged(int32 NewHeat);
 	UFUNCTION() void OnMoralDebtChanged(int32 NewDebt);
 	UFUNCTION() void OnReputationChanged(EFaction Faction, int32 NewValue);

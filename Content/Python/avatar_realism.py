@@ -2,7 +2,7 @@
 import unreal
 
 
-HERO_MESH_PATH = "/Game/Pedestrians/Cappy/SK_Cappy"
+HERO_MESH_PATH = "/Game/Pedestrians/Zarri/SK_Zarri"
 MANNEQUIN_MESH_PATH = "/Game/Mannequin/Character/Mesh/SK_Mannequin.SK_Mannequin"
 MANNEQUIN_ANIM_BP_PATH = "/Game/Mannequin/Animations/ThirdPerson_AnimBP.ThirdPerson_AnimBP"
 

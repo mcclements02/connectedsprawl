@@ -25,6 +25,55 @@ void APedestrianCrowdManager::Tick(float DeltaSeconds)
 	Evaluate();
 }
 
+void APedestrianCrowdManager::AdoptExternalPedestrian(
+	ASprawlPedestrian* Pedestrian)
+{
+	if (!IsValid(Pedestrian) || ActivePeds.Contains(Pedestrian))
+	{
+		return;
+	}
+
+	// Keep the iPhone population cap stable. The ejected driver is beside the
+	// player, so recycle the farthest ordinary pedestrian when the ring is full.
+	if (TargetCount <= 0)
+	{
+		Pedestrian->SetLifeSpan(30.f);
+		return;
+	}
+	if (ActivePeds.Num() >= TargetCount)
+	{
+		const APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+		const FVector Focus = PC && PC->GetPawn()
+			? PC->GetPawn()->GetActorLocation() : Pedestrian->GetActorLocation();
+		int32 FarthestIndex = INDEX_NONE;
+		float FarthestDistanceSq = -1.f;
+		for (int32 Index = 0; Index < ActivePeds.Num(); ++Index)
+		{
+			if (!IsValid(ActivePeds[Index]))
+			{
+				FarthestIndex = Index;
+				break;
+			}
+			const float DistanceSq = FVector::DistSquared2D(
+				ActivePeds[Index]->GetActorLocation(), Focus);
+			if (DistanceSq > FarthestDistanceSq)
+			{
+				FarthestDistanceSq = DistanceSq;
+				FarthestIndex = Index;
+			}
+		}
+		if (ActivePeds.IsValidIndex(FarthestIndex))
+		{
+			if (IsValid(ActivePeds[FarthestIndex]))
+			{
+				ActivePeds[FarthestIndex]->Destroy();
+			}
+			ActivePeds.RemoveAtSwap(FarthestIndex);
+		}
+	}
+	ActivePeds.Add(Pedestrian);
+}
+
 bool APedestrianCrowdManager::FindSidewalkSpawnPoint(const FVector& PlayerLoc, FVector& OutPoint) const
 {
 	for (int32 Attempt = 0; Attempt < 12; ++Attempt)

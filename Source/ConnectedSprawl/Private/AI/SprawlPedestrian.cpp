@@ -139,7 +139,13 @@ void ASprawlPedestrian::BeginPlay()
 void ASprawlPedestrian::InitializeAppearance()
 {
 	const TArray<FString>& Variants = FSprawlAvatarLibrary::PedestrianVariants();
-	const FString& Variant = Variants[FMath::RandRange(0, Variants.Num() - 1)];
+	if (Variants.IsEmpty())
+	{
+		return;
+	}
+	const FString Variant = ForcedVariant.IsEmpty()
+		? Variants[FMath::RandRange(0, Variants.Num() - 1)]
+		: ForcedVariant;
 
 	USkeletalMesh* Mesh = FSprawlAvatarLibrary::LoadAvatarMesh(Variant);
 	UAnimSequence* LoadedIdle = FSprawlAvatarLibrary::LoadAvatarAnim(Variant, TEXT("Idle"));
@@ -164,6 +170,7 @@ void ASprawlPedestrian::InitializeAppearance()
 	IdleAnim = LoadedIdle;
 	WalkAnim = LoadedWalk;
 	JogAnim = LoadedJog;
+	ActiveVariant = Variant;
 
 	// A few locals idle on the phone instead of just standing.
 	if (FMath::FRand() < 0.25f)
@@ -246,15 +253,123 @@ bool ASprawlPedestrian::TryStartCrossing()
 			if (S == Want) { FarCorner = i; break; }
 		}
 
-		BlockX = NewBx;
-		BlockY = NewBy;
-		CornerIndex = FarCorner;
-		TargetPoint = CornerPoint(BlockX, BlockY, CornerIndex);
+		// Keep the current block authoritative while waiting at the curb. A
+		// danger response before the walk signal must flee inward, not toward
+		// the destination block across live traffic.
+		PendingBlockX = NewBx;
+		PendingBlockY = NewBy;
+		PendingCornerIndex = FarCorner;
+		TargetPoint = CornerPoint(NewBx, NewBy, FarCorner);
+		bCrossingAlongX = bAlongX;
+		const FVector Loc = GetActorLocation();
+		const FVector2D CrossMid(
+			(Loc.X + TargetPoint.X) * 0.5f,
+			(Loc.Y + TargetPoint.Y) * 0.5f);
+		CrossingIntersectionX = Grid::NearestRoadIndex(CrossMid.X);
+		CrossingIntersectionY = Grid::NearestRoadIndex(CrossMid.Y);
 		State = EPedState::WaitToCross;
 		CurbScanTimer = 0.f;
+		StateTimer = 0.f;
 		return true;
 	}
 	return false;
+}
+
+bool ASprawlPedestrian::HasPedestrianRightOfWay() const
+{
+	const USprawlCityGridSubsystem* GridSub = GetWorld()
+		? GetWorld()->GetSubsystem<USprawlCityGridSubsystem>() : nullptr;
+	if (!GridSub)
+	{
+		return false;
+	}
+
+	// Pedestrians move with the traffic axis parallel to their crossing. Requiring
+	// that axis to be actively green avoids stepping off during amber/all-red and
+	// leaves a complete, predictable window before conflicting traffic restarts.
+	const bool bParallelNorthSouthTraffic = !bCrossingAlongX;
+	if (GridSub->GetSignal(
+		CrossingIntersectionX, CrossingIntersectionY,
+		bParallelNorthSouthTraffic) != ESprawlSignal::Green)
+	{
+		return false;
+	}
+
+	const float CycleTime = GridSub->GetCycleTime(
+		CrossingIntersectionX, CrossingIntersectionY);
+	const float HalfCycle = Grid::SignalCycle * 0.5f;
+	const float ServedTime = bParallelNorthSouthTraffic
+		? CycleTime
+		: CycleTime - HalfCycle;
+	const float RemainingGreen = Grid::SignalGreenTime - ServedTime;
+	const float CrossingSpeed = FMath::Max(230.f, BaseSpeed * 1.45f);
+	const float RequiredTime = FVector::Dist2D(GetActorLocation(), TargetPoint)
+		/ CrossingSpeed + 0.25f;
+	return RemainingGreen >= RequiredTime;
+}
+
+void ASprawlPedestrian::StartFleeFrom(
+	const AActor* DangerActor, float DurationSeconds)
+{
+	const FVector DangerLocation = DangerActor
+		? DangerActor->GetActorLocation()
+		: GetActorLocation() - GetActorForwardVector();
+	FleeDir = (GetActorLocation() - DangerLocation).GetSafeNormal2D();
+	if (FleeDir.IsNearlyZero())
+	{
+		FleeDir = GetActorRightVector().GetSafeNormal2D();
+	}
+	State = EPedState::Flee;
+	StateTimer = FMath::Max(0.25f, DurationSeconds);
+	GetCharacterMovement()->MaxWalkSpeed = RunSpeed;
+	ContainFleeDirection();
+}
+
+void ASprawlPedestrian::ContainFleeDirection()
+{
+	const FVector Loc = GetActorLocation();
+	const FVector Sample = Loc + FleeDir * 250.f;
+	if (!Grid::IsOnRoadSurface(Sample.X, Sample.Y, -40.f))
+	{
+		return;
+	}
+
+	FVector TowardBlock(
+		Grid::BlockCenter(BlockX) - Loc.X,
+		Grid::BlockCenter(BlockY) - Loc.Y,
+		0.f);
+	TowardBlock = TowardBlock.GetSafeNormal2D();
+	if (!TowardBlock.IsNearlyZero())
+	{
+		FleeDir = (FleeDir * 0.2f + TowardBlock * 0.8f).GetSafeNormal2D();
+	}
+}
+
+void ASprawlPedestrian::EnforceSidewalkBoundary(float DeltaSeconds)
+{
+	if (State != EPedState::WalkEdge && State != EPedState::WaitToCross)
+	{
+		ContinuousOffRoadTime = 0.f;
+		return;
+	}
+
+	const FVector Loc = GetActorLocation();
+	if (!Grid::IsOnRoadSurface(Loc.X, Loc.Y, -40.f))
+	{
+		ContinuousOffRoadTime = 0.f;
+		return;
+	}
+
+	ContinuousOffRoadTime += DeltaSeconds;
+	if (ContinuousOffRoadTime <= 0.75f)
+	{
+		return;
+	}
+
+	AnchorToNearestCorner();
+	SetActorLocation(TargetPoint, false, nullptr, ETeleportType::TeleportPhysics);
+	GetCharacterMovement()->MaxWalkSpeed = BaseSpeed;
+	ContinuousOffRoadTime = 0.f;
 }
 
 bool ASprawlPedestrian::IsTrafficApproaching() const
@@ -316,6 +431,7 @@ void ASprawlPedestrian::CheckForDanger()
 		State = EPedState::Flee;
 		StateTimer = 2.2f;
 		GetCharacterMovement()->MaxWalkSpeed = RunSpeed;
+		ContainFleeDirection();
 		return;
 	}
 }
@@ -325,6 +441,7 @@ void ASprawlPedestrian::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	UpdateAnimation();
+	EnforceSidewalkBoundary(DeltaSeconds);
 
 	// Danger scan at ~5Hz keeps a big crowd cheap.
 	DangerScanTimer -= DeltaSeconds;
@@ -338,6 +455,7 @@ void ASprawlPedestrian::Tick(float DeltaSeconds)
 	{
 	case EPedState::Flee:
 	{
+		ContainFleeDirection();
 		AddMovementInput(FleeDir, 1.f);
 		StateTimer -= DeltaSeconds;
 		if (StateTimer <= 0.f)
@@ -350,16 +468,27 @@ void ASprawlPedestrian::Tick(float DeltaSeconds)
 
 	case EPedState::WaitToCross:
 	{
-		// Stand at the curb until the road is clear, then commit.
+		// Stand at the curb until the conflicting traffic has a red signal and
+		// the physical approach is clear, then commit without stopping mid-road.
+		StateTimer += DeltaSeconds;
+		if (StateTimer >= Grid::SignalCycle + 2.f)
+		{
+			GetCharacterMovement()->MaxWalkSpeed = BaseSpeed;
+			AnchorToNearestCorner();
+			return;
+		}
 		CurbScanTimer -= DeltaSeconds;
 		if (CurbScanTimer <= 0.f)
 		{
-			CurbScanTimer = 0.4f;
-			if (!IsTrafficApproaching())
+			CurbScanTimer = 0.25f;
+			if (HasPedestrianRightOfWay() && !IsTrafficApproaching())
 			{
+				BlockX = PendingBlockX;
+				BlockY = PendingBlockY;
+				CornerIndex = PendingCornerIndex;
 				State = EPedState::Cross;
 				// Cross briskly — nobody strolls across a live road.
-				GetCharacterMovement()->MaxWalkSpeed = BaseSpeed * 1.45f;
+				GetCharacterMovement()->MaxWalkSpeed = FMath::Max(230.f, BaseSpeed * 1.45f);
 			}
 		}
 		return;

@@ -2,6 +2,8 @@
 
 #include "AI/ProceduralTrafficManager.h"
 #include "AI/SprawlPedestrian.h"
+#include "Characters/ZarriCharacter.h"
+#include "Components/PrimitiveComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
@@ -9,6 +11,7 @@
 #include "EngineUtils.h"
 #include "Vehicles/SprawlCar.h"
 #include "World/SprawlCityGridSubsystem.h"
+#include "HAL/PlatformMisc.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 
@@ -41,6 +44,84 @@ bool IsTrafficSpawnClear(UWorld* World, const FVector& Location,
 // builds don't see a local declaration shadowing the global one).
 using Grid = USprawlCityGridSubsystem;
 
+namespace
+{
+ESprawlHeading OppositeHeading(ESprawlHeading Heading)
+{
+	switch (Heading)
+	{
+	case ESprawlHeading::East: return ESprawlHeading::West;
+	case ESprawlHeading::North: return ESprawlHeading::South;
+	case ESprawlHeading::West: return ESprawlHeading::East;
+	default: return ESprawlHeading::North;
+	}
+}
+
+bool TryParkRetiredCar(UWorld* World, ASprawlCar* Car)
+{
+	if (!World || !Car)
+	{
+		return false;
+	}
+
+	const FVector Current = Car->GetActorLocation();
+	const ESprawlHeading Heading = Grid::HeadingFromYaw(Car->GetActorRotation().Yaw);
+	const bool bNorthSouth = Grid::IsNorthSouth(Heading);
+	const int32 RoadIndex = Grid::NearestRoadIndex(bNorthSouth ? Current.X : Current.Y);
+	const int32 BlockIndex = Grid::NearestBlockIndex(bNorthSouth ? Current.Y : Current.X);
+	const float BlockCenter = Grid::BlockCenter(BlockIndex);
+	const float Along = FMath::Clamp(bNorthSouth ? Current.Y : Current.X,
+		BlockCenter - 600.f, BlockCenter + 600.f);
+	const float PreferredSide = (Heading == ESprawlHeading::North
+		|| Heading == ESprawlHeading::West) ? -1.f : 1.f;
+
+	TArray<TPair<FVector, ESprawlHeading>> Candidates;
+	for (int32 SideAttempt = 0; SideAttempt < 2; ++SideAttempt)
+	{
+		const float Side = SideAttempt == 0 ? PreferredSide : -PreferredSide;
+		FVector Candidate = Current;
+		if (bNorthSouth)
+		{
+			Candidate.X = Grid::RoadCenter(RoadIndex) + Side * Grid::ParkingOffset;
+			Candidate.Y = Along;
+		}
+		else
+		{
+			Candidate.X = Along;
+			Candidate.Y = Grid::RoadCenter(RoadIndex) + Side * Grid::ParkingOffset;
+		}
+		Candidate.Z = 180.f; // overlap-test above the ground, then let physics settle
+		Candidates.Emplace(Candidate,
+			SideAttempt == 0 ? Heading : OppositeHeading(Heading));
+	}
+
+	for (const TPair<FVector, ESprawlHeading>& Candidate : Candidates)
+	{
+		const FVector& Location = Candidate.Key;
+		const FQuat Rotation = FRotator(
+			0.f, Grid::HeadingYaw(Candidate.Value), 0.f).Quaternion();
+		if (!Grid::IsInsideCityBounds(Location.X, Location.Y)
+			|| Grid::IsOverLake(Location.X, Location.Y, 50.f)
+			|| Grid::IsOnRoadSurface(Location.X, Location.Y, -40.f)
+			|| !IsTrafficSpawnClear(World, Location, Rotation, Car))
+		{
+			continue;
+		}
+
+		Car->SetActorLocationAndRotation(Location, Rotation, false, nullptr,
+			ETeleportType::TeleportPhysics);
+		if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(
+			Car->GetRootComponent()))
+		{
+			RootPrimitive->SetPhysicsLinearVelocity(FVector::ZeroVector);
+			RootPrimitive->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+		}
+		return true;
+	}
+	return false;
+}
+}
+
 AProceduralTrafficManager::AProceduralTrafficManager()
 {
 	PrimaryActorTick.bCanEverTick     = true;
@@ -52,6 +133,8 @@ void AProceduralTrafficManager::BeginPlay()
 	Super::BeginPlay();
 	bTrafficAuditEnabled = FParse::Param(
 		FCommandLine::Get(), TEXT("SprawlTrafficAudit"));
+	bCarjackAuditEnabled = FParse::Param(
+		FCommandLine::Get(), TEXT("SprawlCarjackAudit"));
 
 	// Adopt authored traffic instead of blindly spawning another full fleet on
 	// top of it. Only cars already marked for auto-drive belong to this pool.
@@ -84,10 +167,28 @@ void AProceduralTrafficManager::Tick(float DeltaSeconds)
 	{
 		RunTrafficAudit(DeltaSeconds);
 	}
+	if (bCarjackAuditEnabled && !bCarjackAuditComplete)
+	{
+		RunCarjackAudit(DeltaSeconds);
+	}
 	TimeSinceEval += DeltaSeconds;
 	if (TimeSinceEval < EvaluateInterval) return;
 	TimeSinceEval = 0.f;
 	Evaluate();
+}
+
+void AProceduralTrafficManager::RequestAuditExitIfComplete()
+{
+	const bool bTrafficDone = !bTrafficAuditEnabled || bTrafficAuditComplete;
+	const bool bCarjackDone = !bCarjackAuditEnabled || bCarjackAuditComplete;
+	if (!bTrafficDone || !bCarjackDone)
+	{
+		return;
+	}
+	const bool bPassed = (!bTrafficAuditEnabled || bTrafficAuditPassed)
+		&& (!bCarjackAuditEnabled || bCarjackAuditPassed);
+	FPlatformMisc::RequestExitWithStatus(
+		true, bPassed ? 0 : 1, TEXT("SprawlTrafficRuntimeAudit"));
 }
 
 void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
@@ -108,6 +209,8 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 	int32 EnterableCarsThisSample = 0;
 	int32 BoundaryViolationsThisSample = 0;
 	int32 UprightViolationsThisSample = 0;
+	int32 VisibleDriversThisSample = 0;
+	int32 DriverReadyCarsThisSample = 0;
 	for (TActorIterator<ASprawlCar> It(World); It; ++It)
 	{
 		ASprawlCar* Car = *It;
@@ -128,6 +231,14 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 		if (!Car->bAutoDrive)
 		{
 			continue;
+		}
+		if (Car->HasAIDriver())
+		{
+			++DriverReadyCarsThisSample;
+			if (Car->HasVisibleDriver())
+			{
+				++VisibleDriversThisSample;
+			}
 		}
 		Cars.Add(Car);
 		const TWeakObjectPtr<APawn> CarKey(Car);
@@ -235,6 +346,14 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 		TrafficAuditMaxBoundaryViolations, BoundaryViolationsThisSample);
 	TrafficAuditMaxUprightViolations = FMath::Max(
 		TrafficAuditMaxUprightViolations, UprightViolationsThisSample);
+	TrafficAuditMaxVisibleDrivers = FMath::Max(
+		TrafficAuditMaxVisibleDrivers, VisibleDriversThisSample);
+	if (TrafficAuditElapsed >= 5.f)
+	{
+		TrafficAuditMaxMissingDriversAfterWarmup = FMath::Max(
+			TrafficAuditMaxMissingDriversAfterWarmup,
+			DriverReadyCarsThisSample - VisibleDriversThisSample);
+	}
 	for (const TPair<int32, int32>& Pair : IntersectionOccupancy)
 	{
 		TrafficAuditMaxIntersectionOccupancy = FMath::Max(
@@ -253,10 +372,27 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 	int32 RealAvatarCount = 0;
 	for (TActorIterator<ASprawlPedestrian> It(World); It; ++It)
 	{
+		ASprawlPedestrian* Pedestrian = *It;
 		++PedestrianCount;
-		if (It->HasRealAvatar())
+		if (Pedestrian->HasRealAvatar())
 		{
 			++RealAvatarCount;
+		}
+		const TWeakObjectPtr<ASprawlPedestrian> PedKey(Pedestrian);
+		float& OffRoadDuration = TrafficAuditPedOffRoadDurations.FindOrAdd(PedKey);
+		const FVector PedLocation = Pedestrian->GetActorLocation();
+		if (!Pedestrian->IsCrossingRoad() && !Pedestrian->IsFleeing()
+			&& Grid::IsOnRoadSurface(PedLocation.X, PedLocation.Y, -40.f))
+		{
+			OffRoadDuration += DeltaSeconds;
+			if (OffRoadDuration > 2.f)
+			{
+				TrafficAuditPedOffsideViolators.Add(PedKey);
+			}
+		}
+		else
+		{
+			OffRoadDuration = 0.f;
 		}
 	}
 	TrafficAuditMaxPedestrians = FMath::Max(TrafficAuditMaxPedestrians, PedestrianCount);
@@ -280,7 +416,11 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 		&& TrafficAuditMinSpacing >= 220.f
 		&& TrafficAuditLaneViolators.IsEmpty()
 		&& TrafficAuditMaxPedestrians >= 20
-		&& TrafficAuditMaxRealAvatars >= 20;
+		&& TrafficAuditMaxRealAvatars >= 20
+		&& TrafficAuditMaxVisibleDrivers >= 10
+		&& TrafficAuditMaxMissingDriversAfterWarmup == 0
+		&& TrafficAuditPedOffsideViolators.IsEmpty();
+	bTrafficAuditPassed = bPassed;
 	const TCHAR* Result = bPassed ? TEXT("PASS") : TEXT("FAIL");
 	if (bPassed)
 	{
@@ -288,14 +428,17 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 			TEXT("[TrafficAudit] %s cars=%d total_cars=%d enterable_cars=%d "
 				"boundary_violators=%d upright_violators=%d moved=%d signal_stops=%d wheel_cars=%d "
 				"max_box_occupancy=%d unauthorized_entries=%d min_spacing=%.1f "
-				"lane_violators=%d pedestrians=%d real_avatars=%d"),
+				"lane_violators=%d pedestrians=%d real_avatars=%d visible_drivers=%d "
+				"missing_drivers=%d ped_offside=%d"),
 			Result, TrafficAuditPeakCars, TrafficAuditPeakTotalCars,
 			TrafficAuditMaxEnterableCars, TrafficAuditMaxBoundaryViolations,
 			TrafficAuditMaxUprightViolations, TrafficAuditMovedCars.Num(),
 			TrafficAuditSignalStops.Num(), TrafficAuditWheelMotionCars.Num(),
 			TrafficAuditMaxIntersectionOccupancy, TrafficAuditUnauthorizedEntries,
 			TrafficAuditMinSpacing, TrafficAuditLaneViolators.Num(),
-			TrafficAuditMaxPedestrians, TrafficAuditMaxRealAvatars);
+			TrafficAuditMaxPedestrians, TrafficAuditMaxRealAvatars,
+			TrafficAuditMaxVisibleDrivers, TrafficAuditMaxMissingDriversAfterWarmup,
+			TrafficAuditPedOffsideViolators.Num());
 	}
 	else
 	{
@@ -303,15 +446,168 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 			TEXT("[TrafficAudit] %s cars=%d total_cars=%d enterable_cars=%d "
 				"boundary_violators=%d upright_violators=%d moved=%d signal_stops=%d wheel_cars=%d "
 				"max_box_occupancy=%d unauthorized_entries=%d min_spacing=%.1f "
-				"lane_violators=%d pedestrians=%d real_avatars=%d"),
+				"lane_violators=%d pedestrians=%d real_avatars=%d visible_drivers=%d "
+				"missing_drivers=%d ped_offside=%d"),
 			Result, TrafficAuditPeakCars, TrafficAuditPeakTotalCars,
 			TrafficAuditMaxEnterableCars, TrafficAuditMaxBoundaryViolations,
 			TrafficAuditMaxUprightViolations, TrafficAuditMovedCars.Num(),
 			TrafficAuditSignalStops.Num(), TrafficAuditWheelMotionCars.Num(),
 			TrafficAuditMaxIntersectionOccupancy, TrafficAuditUnauthorizedEntries,
 			TrafficAuditMinSpacing, TrafficAuditLaneViolators.Num(),
-			TrafficAuditMaxPedestrians, TrafficAuditMaxRealAvatars);
+			TrafficAuditMaxPedestrians, TrafficAuditMaxRealAvatars,
+			TrafficAuditMaxVisibleDrivers, TrafficAuditMaxMissingDriversAfterWarmup,
+			TrafficAuditPedOffsideViolators.Num());
 	}
+	RequestAuditExitIfComplete();
+}
+
+void AProceduralTrafficManager::RunCarjackAudit(float DeltaSeconds)
+{
+	CarjackAuditElapsed += DeltaSeconds;
+	UWorld* World = GetWorld();
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!World || !PC)
+	{
+		return;
+	}
+
+	if (!bCarjackAuditTriggered)
+	{
+		if (CarjackAuditElapsed < 2.f)
+		{
+			return; // allow lazy driver visuals to initialize
+		}
+
+		AZarriCharacter* Zarri = Cast<AZarriCharacter>(PC->GetPawn());
+		ASprawlCar* Candidate = nullptr;
+		for (APawn* Pawn : ActiveTraffic)
+		{
+			ASprawlCar* Car = Cast<ASprawlCar>(Pawn);
+			if (Car && Car->HasAIDriver() && Car->HasVisibleDriver()
+				&& !Car->HasActiveIntersectionReservation())
+			{
+				Candidate = Car;
+				break;
+			}
+		}
+
+		if (!Zarri || !Candidate)
+		{
+			if (CarjackAuditElapsed >= 20.f)
+			{
+				bCarjackAuditComplete = true;
+				UE_LOG(LogSprawlTrafficAudit, Error,
+					TEXT("[CarjackAudit] FAIL setup zarri=%d occupied_car=%d"),
+					Zarri != nullptr, Candidate != nullptr);
+				RequestAuditExitIfComplete();
+			}
+			return;
+		}
+
+		if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(
+			Candidate->GetRootComponent()))
+		{
+			RootPrimitive->SetPhysicsLinearVelocity(FVector::ZeroVector);
+			RootPrimitive->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+		}
+		FVector EntryPoint = Candidate->GetActorLocation()
+			- Candidate->GetActorRightVector() * 190.f + FVector(0.f, 0.f, 100.f);
+		if (!Candidate->FindClearSideExit(40.f, 92.f, EntryPoint, Zarri, true))
+		{
+			if (CarjackAuditElapsed >= 20.f)
+			{
+				bCarjackAuditComplete = true;
+				UE_LOG(LogSprawlTrafficAudit, Error,
+					TEXT("[CarjackAudit] FAIL no_clear_entry_point"));
+				RequestAuditExitIfComplete();
+			}
+			return;
+		}
+		Zarri->SetActorLocation(EntryPoint, false, nullptr, ETeleportType::TeleportPhysics);
+
+		CarjackAuditDriverVariant = Candidate->GetAIDriverVariant();
+		CarjackAuditPedestrianCountBefore = 0;
+		for (TActorIterator<ASprawlPedestrian> It(World); It; ++It)
+		{
+			++CarjackAuditPedestrianCountBefore;
+		}
+
+		if (!Candidate->CanBeCarjacked() || !Zarri->EnterVehicle(Candidate))
+		{
+			if (CarjackAuditElapsed >= 20.f)
+			{
+				bCarjackAuditComplete = true;
+				UE_LOG(LogSprawlTrafficAudit, Error,
+					TEXT("[CarjackAudit] FAIL takeover speed_or_entry_gate"));
+				RequestAuditExitIfComplete();
+			}
+			return;
+		}
+
+		CarjackAuditCar = Candidate;
+		CarjackAuditTriggerTime = CarjackAuditElapsed;
+		bCarjackAuditTriggered = true;
+		return;
+	}
+
+	if (CarjackAuditElapsed - CarjackAuditTriggerTime < 2.f)
+	{
+		return; // give Evaluate() time to retire/backfill the claimed car
+	}
+
+	ASprawlCar* ClaimedCar = CarjackAuditCar.Get();
+	int32 PedestrianCountAfter = 0;
+	for (TActorIterator<ASprawlPedestrian> It(World); It; ++It)
+	{
+		++PedestrianCountAfter;
+	}
+	ASprawlPedestrian* EjectedDriver = ClaimedCar
+		? ClaimedCar->GetLastEjectedDriver() : nullptr;
+	if (EjectedDriver && EjectedDriver->IsFleeing()
+		&& EjectedDriver->GetActiveVariant() == CarjackAuditDriverVariant)
+	{
+		bCarjackAuditSawFleeingDriver = true;
+	}
+	const bool bFleeingDriverFound = bCarjackAuditSawFleeingDriver;
+
+	const bool bPossessed = ClaimedCar && PC->GetPawn() == ClaimedCar;
+	const bool bRetired = ClaimedCar && !ActiveTraffic.Contains(ClaimedCar)
+		&& RetiredTraffic.Contains(ClaimedCar);
+	const bool bLeaseFree = ClaimedCar
+		&& !ClaimedCar->HasActiveIntersectionReservation();
+	const bool bBackfilled = ActiveTraffic.Num() >= TargetActiveCount;
+	const bool bPedestrianStable = PedestrianCountAfter
+		>= CarjackAuditPedestrianCountBefore;
+	const bool bPassed = bPossessed && bRetired && bLeaseFree && bBackfilled
+		&& bFleeingDriverFound && bPedestrianStable
+		&& ClaimedCar && !ClaimedCar->bAutoDrive && !ClaimedCar->HasAIDriver();
+
+	if (!bPassed && CarjackAuditElapsed - CarjackAuditTriggerTime < 20.f)
+	{
+		return;
+	}
+
+	bCarjackAuditComplete = true;
+	bCarjackAuditPassed = bPassed;
+	if (bPassed)
+	{
+		UE_LOG(LogSprawlTrafficAudit, Display,
+			TEXT("[CarjackAudit] PASS possessed=%d fleeing_driver=%d lease_free=%d "
+				"retired=%d backfilled=%d active=%d target=%d peds_before=%d peds_after=%d"),
+			bPossessed, bFleeingDriverFound, bLeaseFree, bRetired, bBackfilled,
+			ActiveTraffic.Num(), TargetActiveCount,
+			CarjackAuditPedestrianCountBefore, PedestrianCountAfter);
+	}
+	else
+	{
+		UE_LOG(LogSprawlTrafficAudit, Error,
+			TEXT("[CarjackAudit] FAIL possessed=%d fleeing_driver=%d lease_free=%d "
+				"retired=%d backfilled=%d active=%d target=%d peds_before=%d peds_after=%d"),
+			bPossessed, bFleeingDriverFound, bLeaseFree, bRetired, bBackfilled,
+			ActiveTraffic.Num(), TargetActiveCount,
+			CarjackAuditPedestrianCountBefore, PedestrianCountAfter);
+	}
+	RequestAuditExitIfComplete();
 }
 
 void AProceduralTrafficManager::Evaluate()
@@ -335,12 +631,100 @@ void AProceduralTrafficManager::CullDistant(const FVector& PlayerLoc)
 			continue;
 		}
 
+		// A claimed traffic car leaves the managed lane/spacing population
+		// immediately. Keep it as a bounded abandoned-car object so stealing a
+		// car never destroys the vehicle under the player.
+		if (const ASprawlCar* Car = Cast<ASprawlCar>(P);
+			Car && (!Car->bAutoDrive || Cast<APlayerController>(Car->GetController())))
+		{
+			RetiredTraffic.AddUnique(P);
+			ActiveTraffic.RemoveAtSwap(i);
+			continue;
+		}
+
 		const float D = FVector::Dist(P->GetActorLocation(), PlayerLoc);
 		if (D > SpawnRadius)
 		{
 			P->Destroy();
 			ActiveTraffic.RemoveAtSwap(i);
 		}
+	}
+
+	for (int32 Index = RetiredTraffic.Num() - 1; Index >= 0; --Index)
+	{
+		APawn* Retired = RetiredTraffic[Index];
+		if (!IsValid(Retired))
+		{
+			RetiredTraffic.RemoveAtSwap(Index);
+			continue;
+		}
+		if (Cast<APlayerController>(Retired->GetController()))
+		{
+			continue;
+		}
+		const bool bTooFar = FVector::Dist(
+			Retired->GetActorLocation(), PlayerLoc) > SpawnRadius;
+		if (bTooFar)
+		{
+			Retired->Destroy();
+			RetiredTraffic.RemoveAtSwap(Index);
+			continue;
+		}
+
+		// Once the player leaves a stolen car, move it out of the live lane and
+		// align it with the nearest curb. If both legal shoulders are blocked,
+		// remove the abandoned car instead of letting it obstruct traffic.
+		const FVector Location = Retired->GetActorLocation();
+		if (Grid::IsOnRoadSurface(Location.X, Location.Y, -40.f))
+		{
+			ASprawlCar* RetiredCar = Cast<ASprawlCar>(Retired);
+			if (!RetiredCar || !TryParkRetiredCar(GetWorld(), RetiredCar))
+			{
+				Retired->Destroy();
+				RetiredTraffic.RemoveAtSwap(Index);
+			}
+		}
+	}
+
+	// Enforce the abandoned-car budget by removing the farthest unpossessed
+	// car first. The player's current car is never selected or destroyed.
+	const int32 RetiredBudget = FMath::Max(0, MaxRetiredTraffic);
+	int32 AbandonedCount = 0;
+	for (APawn* Retired : RetiredTraffic)
+	{
+		if (IsValid(Retired)
+			&& !Cast<APlayerController>(Retired->GetController()))
+		{
+			++AbandonedCount;
+		}
+	}
+	while (AbandonedCount > RetiredBudget)
+	{
+		int32 FarthestIndex = INDEX_NONE;
+		float FarthestDistanceSq = -1.f;
+		for (int32 Index = 0; Index < RetiredTraffic.Num(); ++Index)
+		{
+			APawn* Retired = RetiredTraffic[Index];
+			if (!IsValid(Retired)
+				|| Cast<APlayerController>(Retired->GetController()))
+			{
+				continue;
+			}
+			const float DistanceSq = FVector::DistSquared2D(
+				Retired->GetActorLocation(), PlayerLoc);
+			if (DistanceSq > FarthestDistanceSq)
+			{
+				FarthestDistanceSq = DistanceSq;
+				FarthestIndex = Index;
+			}
+		}
+		if (!RetiredTraffic.IsValidIndex(FarthestIndex))
+		{
+			break;
+		}
+		RetiredTraffic[FarthestIndex]->Destroy();
+		RetiredTraffic.RemoveAtSwap(FarthestIndex);
+		--AbandonedCount;
 	}
 }
 

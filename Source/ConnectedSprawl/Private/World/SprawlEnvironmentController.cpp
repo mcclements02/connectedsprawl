@@ -31,9 +31,12 @@ void ASprawlEnvironmentController::BeginPlay()
 void ASprawlEnvironmentController::FindSceneActors()
 {
 	UWorld* World = GetWorld();
-	for (TActorIterator<ADirectionalLight> It(World); It; ++It) { Sun = *It; break; }
-	for (TActorIterator<ASkyLight> It(World); It; ++It)         { Sky = *It; break; }
-	for (TActorIterator<AExponentialHeightFog> It(World); It; ++It) { Fog = *It; break; }
+	Sun = Cast<ADirectionalLight>(UGameplayStatics::GetActorOfClass(
+		World, ADirectionalLight::StaticClass()));
+	Sky = Cast<ASkyLight>(UGameplayStatics::GetActorOfClass(
+		World, ASkyLight::StaticClass()));
+	Fog = Cast<AExponentialHeightFog>(UGameplayStatics::GetActorOfClass(
+		World, AExponentialHeightFog::StaticClass()));
 
 	// The cycle needs to move the sun every frame.
 	if (Sun && Sun->GetLightComponent())
@@ -53,7 +56,14 @@ void ASprawlEnvironmentController::BuildLampPool()
 	{
 		if (It->ActorHasTag(TEXT("Streetlight")))
 		{
-			LampPositions.Add(It->GetActorLocation());
+			FVector BoundsOrigin = FVector::ZeroVector;
+			FVector BoundsExtent = FVector::ZeroVector;
+			It->GetActorBounds(false, BoundsOrigin, BoundsExtent);
+			// The tagged actor is the complete lamp-post mesh. Put the pooled
+			// point light just below its top fixture, independent of actor pivot.
+			LampPositions.Add(FVector(
+				BoundsOrigin.X, BoundsOrigin.Y,
+				BoundsOrigin.Z + BoundsExtent.Z - 40.f));
 		}
 	}
 
@@ -87,14 +97,16 @@ void ASprawlEnvironmentController::UpdateSunAndSky()
 	{
 		if (SunElevation > 0.f)
 		{
-			// Daytime sun: warm white at altitude, deep orange when low.
+			// Daytime sun: balanced warm light at altitude, richer only at the horizon.
 			Sun->SetActorRotation(FRotator(-SunElevation, SunYaw, 0.f));
 			const float LowSun = FMath::Clamp(SunElevation / 18.f, 0.f, 1.f);
 			const FLinearColor Color = FMath::Lerp(
 				FLinearColor(1.0f, 0.45f, 0.18f),   // horizon
-				FLinearColor(1.0f, 0.95f, 0.86f),   // noon
+				DaySunColor,                          // daytime target
 				LowSun);
-			const float Intensity = FMath::Lerp(2.2f, 9.5f, FMath::Clamp(SunElevation / 30.f, 0.f, 1.f));
+			const float Intensity = FMath::Lerp(
+				2.2f, DaySunIntensity,
+				FMath::Clamp(SunElevation / 30.f, 0.f, 1.f));
 			if (ULightComponent* L = Sun->GetLightComponent())
 			{
 				L->SetIntensity(Intensity);
@@ -119,7 +131,7 @@ void ASprawlEnvironmentController::UpdateSunAndSky()
 		if (USkyLightComponent* SkyComp = Cast<USkyLightComponent>(Sky->GetLightComponent()))
 		{
 			const float DayAmount = FMath::Clamp(SunElevation / 12.f, 0.f, 1.f);
-			SkyComp->SetIntensity(FMath::Lerp(0.25f, 1.4f, DayAmount));
+			SkyComp->SetIntensity(FMath::Lerp(0.25f, DaySkyIntensity, DayAmount));
 		}
 	}
 
@@ -129,7 +141,8 @@ void ASprawlEnvironmentController::UpdateSunAndSky()
 		const float DayAmount = FMath::Clamp(SunElevation / 12.f, 0.f, 1.f);
 		// Golden-hour haze: thickest right around sunrise/sunset.
 		const float Twilight = FMath::Clamp(1.f - FMath::Abs(SunElevation) / 10.f, 0.f, 1.f);
-		FogComp->SetFogDensity(0.010f + DayAmount * 0.002f + Twilight * 0.014f);
+		FogComp->SetFogDensity(
+			FMath::Lerp(0.010f, DayFogDensity, DayAmount) + Twilight * 0.008f);
 
 		const FLinearColor DayFog(0.45f, 0.55f, 0.72f);
 		const FLinearColor DuskFog(0.85f, 0.48f, 0.28f);
@@ -175,7 +188,7 @@ void ASprawlEnvironmentController::UpdateStreetlights(const FVector& PlayerLoc)
 		if (!Light) continue;
 		if (i < Order.Num())
 		{
-			Light->SetWorldLocation(LampPositions[Order[i]] + FVector(0, 0, -40.f));
+			Light->SetWorldLocation(LampPositions[Order[i]]);
 			Light->SetVisibility(true);
 		}
 		else

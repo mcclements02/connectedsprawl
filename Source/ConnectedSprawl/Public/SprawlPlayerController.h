@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Founder/SprawlGameFlowSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "SprawlPlayerController.generated.h"
 
@@ -21,6 +22,7 @@ class CONNECTEDSPRAWL_API ASprawlPlayerController : public APlayerController
 
 public:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/** Root HUD widget (cash/runway/heat). Assigned in BP subclass. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="UI")
@@ -30,11 +32,18 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="UI")
 	TSubclassOf<UUserWidget> DecisionModalClass;
 
+	/** Optional override; native end-game UI is the default. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="UI")
+	TSubclassOf<UUserWidget> EndGameModalClass;
+
 	UPROPERTY(BlueprintReadOnly, Category="UI")
 	TObjectPtr<UUserWidget> HUDWidget;
 
 	UPROPERTY(BlueprintReadOnly, Category="UI")
 	TObjectPtr<UUserWidget> DecisionWidget;
+
+	UPROPERTY(BlueprintReadOnly, Category="UI")
+	TObjectPtr<UUserWidget> EndGameWidget;
 
 protected:
 	virtual void SetupInputComponent() override;
@@ -51,4 +60,11 @@ protected:
 
 	UFUNCTION()
 	void HandleDecisionOffered(class UStrategicDecision* Decision);
+
+	UFUNCTION()
+	void HandleRunEnded(const FSprawlEndGameInfo& Info);
+
+	void PresentPendingEndGame();
+	FSprawlEndGameInfo PendingEndGameInfo;
+	bool bHasPendingEndGame = false;
 };

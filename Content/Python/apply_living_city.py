@@ -615,9 +615,9 @@ else:
     new_player_start = unreal.Vector(
         player_spot[0], player_spot[1] + away * start_distance,
         player_start.z)
-start_yaw = math.degrees(math.atan2(
-    player_spot[1] - new_player_start.y,
-    player_spot[0] - new_player_start.x))
+# Face along the sidewalk. Facing directly toward the car put the third-person
+# boom into the building behind Zarri and made the opening view a wall.
+start_yaw = player_spot[2]
 starts[0].set_actor_location(new_player_start, False, False)
 starts[0].set_actor_rotation(
     unreal.Rotator(roll=0.0, pitch=0.0, yaw=start_yaw), False)
@@ -644,7 +644,15 @@ for index, spot in enumerate(parking):
         parked += 1
 
 
-blockers = blocking_actor_bounds()
+# Keep the authored-world blockers captured before vehicle spawning, then add
+# the known physics-hull footprints explicitly. Actor bounds also include the
+# new non-colliding seated-driver skeletal mesh, which must not make a valid
+# lane look blocked during this deterministic authoring pass.
+blockers = list(world_blockers)
+for label, spot in [("City_DriveCar_0", player_spot)] + [
+        ("City_ParkedCar_{}".format(index), spot)
+        for index, spot in enumerate(parking)]:
+    blockers.append((label,) + vehicle_rect(spot[0], spot[1], spot[2]))
 
 
 def traffic_spot_is_clear(x, y, yaw):

@@ -6,8 +6,10 @@
 #include "Characters/ZarriCharacter.h"
 #include "Factions/FactionSubsystem.h"
 #include "Founder/FounderSubsystem.h"
+#include "Founder/SprawlGameFlowSubsystem.h"
 #include "Missions/DecisionSubsystem.h"
 #include "Missions/StrategicDecision.h"
+#include "Phone/PhoneSubsystem.h"
 #include "Vehicles/SprawlCar.h"
 
 #include "Engine/World.h"
@@ -27,6 +29,8 @@ void USprawlSaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	UFounderSubsystem* Founder = Collection.InitializeDependency<UFounderSubsystem>();
 	Collection.InitializeDependency<UFactionSubsystem>();
 	UDecisionSubsystem* Decisions = Collection.InitializeDependency<UDecisionSubsystem>();
+	USprawlGameFlowSubsystem* GameFlow =
+		Collection.InitializeDependency<USprawlGameFlowSubsystem>();
 
 	if (Founder)
 	{
@@ -36,6 +40,11 @@ void USprawlSaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	{
 		Decisions->OnDecisionResolved.AddDynamic(
 			this, &USprawlSaveSubsystem::HandleDecisionResolved);
+	}
+	if (GameFlow)
+	{
+		GameFlow->OnFlowCheckpoint.AddDynamic(
+			this, &USprawlSaveSubsystem::HandleGameFlowCheckpoint);
 	}
 
 	BackgroundDelegateHandle =
@@ -62,6 +71,12 @@ void USprawlSaveSubsystem::Deinitialize()
 		{
 			Decisions->OnDecisionResolved.RemoveDynamic(
 				this, &USprawlSaveSubsystem::HandleDecisionResolved);
+		}
+		if (USprawlGameFlowSubsystem* GameFlow =
+			GI->GetSubsystem<USprawlGameFlowSubsystem>())
+		{
+			GameFlow->OnFlowCheckpoint.RemoveDynamic(
+				this, &USprawlSaveSubsystem::HandleGameFlowCheckpoint);
 		}
 	}
 
@@ -125,6 +140,15 @@ bool USprawlSaveSubsystem::StartNewGame()
 	if (UDecisionSubsystem* Decisions = GI->GetSubsystem<UDecisionSubsystem>())
 	{
 		Decisions->ResetProgress();
+	}
+	if (USprawlGameFlowSubsystem* GameFlow =
+		GI->GetSubsystem<USprawlGameFlowSubsystem>())
+	{
+		GameFlow->ResetProgress();
+	}
+	if (UPhoneSubsystem* Phone = GI->GetSubsystem<UPhoneSubsystem>())
+	{
+		Phone->ResetRuntimeState();
 	}
 
 	bHasPendingPlayerTransform = false;
@@ -224,9 +248,12 @@ bool USprawlSaveSubsystem::LoadProgressFromSlot(
 		return false;
 	}
 
-	if (UFounderSubsystem* Founder = GI->GetSubsystem<UFounderSubsystem>())
+	USprawlGameFlowSubsystem* GameFlow =
+		GI->GetSubsystem<USprawlGameFlowSubsystem>();
+	bIsRestoringProgress = true;
+	if (GameFlow)
 	{
-		Founder->RestoreState(Save->Founder);
+		GameFlow->BeginProgressRestore();
 	}
 	if (UFactionSubsystem* Factions = GI->GetSubsystem<UFactionSubsystem>())
 	{
@@ -235,6 +262,15 @@ bool USprawlSaveSubsystem::LoadProgressFromSlot(
 	if (UDecisionSubsystem* Decisions = GI->GetSubsystem<UDecisionSubsystem>())
 	{
 		Decisions->RestoreResolvedDecisions(Save->ResolvedDecisionBranches);
+	}
+	if (UFounderSubsystem* Founder = GI->GetSubsystem<UFounderSubsystem>())
+	{
+		Founder->RestoreState(Save->Founder);
+	}
+	bIsRestoringProgress = false;
+	if (GameFlow)
+	{
+		GameFlow->EndProgressRestore(false);
 	}
 
 	if (bRestorePlayerState)
@@ -393,6 +429,11 @@ bool USprawlSaveSubsystem::RunRoundTripAudit(FString& OutSummary)
 	Founder->RestoreState(OriginalFounder);
 	Factions->RestoreState(OriginalFactions);
 	Decisions->RestoreResolvedDecisions(OriginalDecisions);
+	if (USprawlGameFlowSubsystem* GameFlow =
+		GI->GetSubsystem<USprawlGameFlowSubsystem>())
+	{
+		GameFlow->RefreshAfterLoad(false);
+	}
 
 	OutSummary = FString::Printf(
 		TEXT("round_trip=%s future_version_rejected=%s day=%d cash=%.0f ledger=%d decisions=%d"),
@@ -423,6 +464,14 @@ void USprawlSaveSubsystem::HandleDayAdvanced(int32 NewDay)
 	}
 }
 
+void USprawlSaveSubsystem::HandleGameFlowCheckpoint()
+{
+	if (!ShouldSuppressAutomaticPersistence())
+	{
+		SaveProgress();
+	}
+}
+
 void USprawlSaveSubsystem::HandleApplicationWillEnterBackground()
 {
 	if (bAutosaveOnBackground && !ShouldSuppressAutomaticPersistence())
@@ -433,9 +482,12 @@ void USprawlSaveSubsystem::HandleApplicationWillEnterBackground()
 
 bool USprawlSaveSubsystem::ShouldSuppressAutomaticPersistence() const
 {
-	return FParse::Param(FCommandLine::Get(), TEXT("NoSprawlAutoLoad")) ||
+	return bIsRestoringProgress ||
+		FParse::Param(FCommandLine::Get(), TEXT("NoSprawlAutoLoad")) ||
 		FParse::Param(FCommandLine::Get(), TEXT("SprawlTrafficAudit")) ||
-		FParse::Param(FCommandLine::Get(), TEXT("SprawlProgressionAudit"));
+		FParse::Param(FCommandLine::Get(), TEXT("SprawlProgressionAudit")) ||
+		FParse::Param(FCommandLine::Get(), TEXT("SprawlCarjackAudit")) ||
+		FParse::Param(FCommandLine::Get(), TEXT("SprawlVisualAudit"));
 }
 
 FString USprawlSaveSubsystem::ResolveSlotName(const FString& SlotName) const

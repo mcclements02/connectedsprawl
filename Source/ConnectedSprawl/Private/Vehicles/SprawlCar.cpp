@@ -1,7 +1,12 @@
 // The Connected Sprawl - A drivable physics car.
 
 #include "Vehicles/SprawlCar.h"
+#include "AI/PedestrianCrowdManager.h"
+#include "AI/SprawlPedestrian.h"
+#include "Characters/SprawlAvatarLibrary.h"
 #include "Characters/ZarriCharacter.h"
+#include "Phone/PhoneSubsystem.h"
+#include "Animation/AnimSequence.h"
 #include "Components/BoxComponent.h"
 #include "Components/MeshComponent.h"
 #include "Components/SceneComponent.h"
@@ -17,6 +22,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -156,6 +162,21 @@ ASprawlCar::ASprawlCar()
 	FullSkeletalBodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	FullSkeletalBodyMesh->SetVisibility(false, true);
 	FullSkeletalBodyMesh->SetHiddenInGame(true);
+
+	DriverMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("DriverMesh"));
+	DriverMesh->SetupAttachment(Hull);
+	DriverMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	DriverMesh->SetGenerateOverlapEvents(false);
+	DriverMesh->SetCastShadow(false);
+	DriverMesh->bCastDynamicShadow = false;
+	DriverMesh->bCastStaticShadow = false;
+	DriverMesh->SetReceivesDecals(false);
+	DriverMesh->VisibilityBasedAnimTickOption =
+		EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+	DriverMesh->bEnableUpdateRateOptimizations = true;
+	DriverMesh->SetCullDistance(5000.f);
+	DriverMesh->SetVisibility(false, true);
+	DriverMesh->SetHiddenInGame(true);
 
 	BodyMesh = MakePanel(TEXT("BodyMesh"), Cube, FVector(0.f, 0.f, -8.f),
 	                     FVector(4.8f, 1.96f, 0.70f), BodyMaterial);
@@ -541,12 +562,23 @@ void ASprawlCar::PossessedBy(AController* NewController)
 
 bool ASprawlCar::CanBeEntered() const
 {
-	if (Driver || Cast<APlayerController>(GetController()))
+	if (Driver || bAutoDrive || bHasAIDriver || Cast<APlayerController>(GetController()))
 	{
 		return false;
 	}
 	const float Speed = Hull ? Hull->GetPhysicsLinearVelocity().Size2D() : GetVelocity().Size2D();
 	return Speed <= MaxEntrySpeed && IsWithinCityBounds();
+}
+
+bool ASprawlCar::CanBeCarjacked() const
+{
+	if (!bHasAIDriver || !bAutoDrive || Driver
+		|| Cast<APlayerController>(GetController()) || HasActiveIntersectionReservation())
+	{
+		return false;
+	}
+	const float Speed = Hull ? Hull->GetPhysicsLinearVelocity().Size2D() : GetVelocity().Size2D();
+	return Speed <= MaxCarjackSpeed && IsWithinCityBounds();
 }
 
 bool ASprawlCar::AssignDriver(AZarriCharacter* InDriver)
@@ -555,16 +587,305 @@ bool ASprawlCar::AssignDriver(AZarriCharacter* InDriver)
 	{
 		return false;
 	}
+	return AssignDriverInternal(InDriver, bAutoDrive);
+}
 
-	bResumeAutoDriveAfterExit = bAutoDrive;
+bool ASprawlCar::AssignDriverInternal(AZarriCharacter* InDriver, bool bResumeAIOnExit)
+{
+	if (!InDriver || Driver || Cast<APlayerController>(GetController()))
+	{
+		return false;
+	}
+
+	bResumeAutoDriveAfterExit = bResumeAIOnExit;
 	bAutoDrive = false;
 	ReleaseIntersectionReservation();
 	Driver = InDriver;
+	ShowSeatedDriver(InDriver->GetActiveHeroVariant());
 	if (Hull)
 	{
 		Hull->WakeAllRigidBodies();
 	}
 	return true;
+}
+
+bool ASprawlCar::CarjackDriver(AZarriCharacter* InDriver)
+{
+	if (!InDriver || !CanBeCarjacked())
+	{
+		return false;
+	}
+
+	if (Hull)
+	{
+		Hull->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		Hull->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+	}
+
+	bPendingCarjack = true;
+	PendingCarjackVariant = AIDriverVariant;
+	LastEjectedDriver.Reset();
+	bHasAIDriver = false;
+	AIDriverVariant.Reset();
+	HideDriverVisual();
+	ReleaseIntersectionReservation();
+	bAutoDrive = false;
+	bAIStateSeeded = false;
+	if (!AssignDriverInternal(InDriver, false))
+	{
+		RestorePendingCarjack();
+		return false;
+	}
+	return true;
+}
+
+void ASprawlCar::ConfirmDriverEntry()
+{
+	if (bPendingCarjack && Driver && Cast<APlayerController>(GetController()))
+	{
+		CompletePendingCarjack();
+	}
+}
+
+void ASprawlCar::CompletePendingCarjack()
+{
+	if (!bPendingCarjack)
+	{
+		return;
+	}
+
+	const FString EjectedVariant = PendingCarjackVariant;
+
+	FVector EjectLocation = GetActorLocation()
+		- GetActorRightVector() * 190.f + FVector(0.f, 0.f, 100.f);
+	if (!FindClearSideExit(40.f, 92.f, EjectLocation, Driver, true))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[Carjack] Could not find a safe sidewalk exit for %s"), *GetName());
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		const FTransform SpawnTransform(
+			FRotator(0.f, GetActorRotation().Yaw, 0.f), EjectLocation, FVector::OneVector);
+		ASprawlPedestrian* EjectedPedestrian = World->SpawnActorDeferred<ASprawlPedestrian>(
+			ASprawlPedestrian::StaticClass(), SpawnTransform, this, nullptr,
+			ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+		if (EjectedPedestrian)
+		{
+			EjectedPedestrian->SetForcedVariant(EjectedVariant);
+			UGameplayStatics::FinishSpawningActor(EjectedPedestrian, SpawnTransform);
+			if (!IsValid(EjectedPedestrian))
+			{
+				UE_LOG(LogTemp, Error,
+					TEXT("[Carjack] Failed to finish spawning the driver from %s"), *GetName());
+				return;
+			}
+			EjectedPedestrian->StartFleeFrom(this, 4.f);
+			LastEjectedDriver = EjectedPedestrian;
+			APedestrianCrowdManager* CrowdManager = Cast<APedestrianCrowdManager>(
+				UGameplayStatics::GetActorOfClass(
+					World, APedestrianCrowdManager::StaticClass()));
+			if (CrowdManager)
+			{
+				CrowdManager->AdoptExternalPedestrian(EjectedPedestrian);
+			}
+			else
+			{
+				EjectedPedestrian->SetLifeSpan(45.f);
+			}
+			bPendingCarjack = false;
+			PendingCarjackVariant.Reset();
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[Carjack] Failed to spawn the driver from %s"), *GetName());
+		}
+	}
+}
+
+void ASprawlCar::RestorePendingCarjack()
+{
+	if (!bPendingCarjack)
+	{
+		return;
+	}
+
+	bHasAIDriver = true;
+	AIDriverVariant = PendingCarjackVariant;
+	bAutoDrive = true;
+	bAIStateSeeded = false;
+	bDriverVisualInitializationAttempted = false;
+	bPendingCarjack = false;
+	PendingCarjackVariant.Reset();
+}
+
+bool ASprawlCar::FindClearSideExit(float CapsuleRadius, float CapsuleHalfHeight,
+	FVector& OutLocation, const AActor* ActorToIgnore, bool bPreferDriverSide) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	const FVector CarLocation = GetActorLocation();
+	const FVector DriverSide = -GetActorRightVector() * 190.f;
+	const FVector PassengerSide = GetActorRightVector() * 190.f;
+	const FVector FarDriverSide = -GetActorRightVector() * 360.f;
+	const FVector FarPassengerSide = GetActorRightVector() * 360.f;
+	const FVector Rear = -GetActorForwardVector() * 300.f;
+	const FVector Front = GetActorForwardVector() * 300.f;
+	const FVector PreferredSide = bPreferDriverSide ? DriverSide : PassengerSide;
+	const FVector OtherSide = bPreferDriverSide ? PassengerSide : DriverSide;
+	const FVector PreferredFarSide = bPreferDriverSide ? FarDriverSide : FarPassengerSide;
+	const FVector OtherFarSide = bPreferDriverSide ? FarPassengerSide : FarDriverSide;
+	TArray<FVector> Candidates = {
+		CarLocation + PreferredSide, CarLocation + OtherSide,
+		CarLocation + PreferredFarSide, CarLocation + OtherFarSide,
+		CarLocation + Rear, CarLocation + Front,
+	};
+
+	// If nearby props or parked cars block both doors, search every authored
+	// sidewalk corner rather than falling back into a road, lake, or map edge.
+	TArray<FVector> SidewalkCorners;
+	const float Reach = Grid::BlockSize * 0.5f - 360.f;
+	for (int32 BlockX = 0; BlockX < Grid::NumBlocks; ++BlockX)
+	{
+		for (int32 BlockY = 0; BlockY < Grid::NumBlocks; ++BlockY)
+		{
+			if (Grid::IsOverLake(Grid::BlockCenter(BlockX), Grid::BlockCenter(BlockY), 0.f))
+			{
+				continue;
+			}
+			for (float SignX : { -1.f, 1.f })
+			{
+				for (float SignY : { -1.f, 1.f })
+				{
+					SidewalkCorners.Add(FVector(
+						Grid::BlockCenter(BlockX) + SignX * Reach,
+						Grid::BlockCenter(BlockY) + SignY * Reach,
+						CarLocation.Z));
+				}
+			}
+		}
+	}
+	SidewalkCorners.Sort([&](const FVector& A, const FVector& B)
+	{
+		return FVector::DistSquared2D(A, CarLocation) < FVector::DistSquared2D(B, CarLocation);
+	});
+	Candidates.Append(SidewalkCorners);
+
+	FCollisionQueryParams Params(FName(TEXT("SprawlVehicleExit")), false, ActorToIgnore);
+	Params.AddIgnoredActor(this);
+	if (ActorToIgnore)
+	{
+		Params.AddIgnoredActor(ActorToIgnore);
+	}
+	const FCollisionShape Capsule = FCollisionShape::MakeCapsule(
+		CapsuleRadius, CapsuleHalfHeight);
+
+	for (FVector TestLocation : Candidates)
+	{
+		if (!Grid::IsInsideCityBounds(TestLocation.X, TestLocation.Y)
+			|| Grid::IsOverLake(TestLocation.X, TestLocation.Y, 60.f)
+			|| Grid::IsOnRoadSurface(TestLocation.X, TestLocation.Y, -40.f))
+		{
+			continue;
+		}
+		TestLocation.Z = CarLocation.Z + CapsuleHalfHeight + 8.f;
+		if (!World->OverlapBlockingTestByChannel(
+			TestLocation, FQuat::Identity, ECC_Pawn, Capsule, Params))
+		{
+			OutLocation = TestLocation;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ASprawlCar::HasVisibleDriver() const
+{
+	return DriverMesh && DriverMesh->IsVisible()
+		&& DriverMesh->GetSkeletalMeshAsset() != nullptr;
+}
+
+void ASprawlCar::InitializeAIDriverVisual()
+{
+	if (bDriverVisualInitializationAttempted || !bAutoDrive || Driver
+		|| Cast<APlayerController>(GetController()))
+	{
+		return;
+	}
+	bDriverVisualInitializationAttempted = true;
+
+	const TArray<FString>& Variants = FSprawlAvatarLibrary::PedestrianVariants();
+	if (Variants.IsEmpty())
+	{
+		return;
+	}
+	const int32 StartIndex = static_cast<int32>(GetTypeHash(GetFName()) % Variants.Num());
+	bHasAIDriver = true; // logical occupancy survives a partial/missing art import
+	for (int32 Offset = 0; Offset < Variants.Num(); ++Offset)
+	{
+		const FString& Candidate = Variants[(StartIndex + Offset) % Variants.Num()];
+		if (ApplySeatedDriverVariant(Candidate))
+		{
+			AIDriverVariant = Candidate;
+			return;
+		}
+	}
+	AIDriverVariant = Variants[StartIndex];
+	HideDriverVisual();
+}
+
+void ASprawlCar::ShowSeatedDriver(const FString& VariantName)
+{
+	if (ApplySeatedDriverVariant(VariantName))
+	{
+		return;
+	}
+	if (VariantName != TEXT("Cappy")
+		&& ApplySeatedDriverVariant(TEXT("Cappy")))
+	{
+		return;
+	}
+	HideDriverVisual();
+}
+
+bool ASprawlCar::ApplySeatedDriverVariant(const FString& VariantName)
+{
+	USkeletalMesh* Mesh = FSprawlAvatarLibrary::LoadAvatarMesh(VariantName);
+	UAnimSequence* Sit = FSprawlAvatarLibrary::LoadAvatarAnim(VariantName, TEXT("Sit"));
+	UAnimSequence* Idle = FSprawlAvatarLibrary::LoadAvatarAnim(VariantName, TEXT("Idle"));
+	UAnimSequence* Walk = FSprawlAvatarLibrary::LoadAvatarAnim(VariantName,
+		FSprawlAvatarLibrary::UsesFormalWalk(VariantName) ? TEXT("WalkFormal") : TEXT("Walk"));
+	UAnimSequence* Jog = FSprawlAvatarLibrary::LoadAvatarAnim(VariantName, TEXT("Jog"));
+	if (!Mesh || !Sit || !Idle || !Walk || !Jog || !DriverMesh
+		|| !FSprawlAvatarLibrary::ApplyAvatar(
+			DriverMesh, Mesh, DriverVisualHeight, 0.f))
+	{
+		return false;
+	}
+	DriverMesh->SetRelativeLocationAndRotation(DriverSeatLocation, DriverSeatRotation);
+	DriverCurrentAnim = nullptr;
+	FSprawlAvatarLibrary::PlayLoop(DriverMesh, Sit, DriverCurrentAnim);
+	DriverMesh->SetVisibility(true, true);
+	DriverMesh->SetHiddenInGame(false);
+	return true;
+}
+
+void ASprawlCar::HideDriverVisual()
+{
+	if (DriverMesh)
+	{
+		DriverMesh->Stop();
+		DriverMesh->SetVisibility(false, true);
+		DriverMesh->SetHiddenInGame(true);
+	}
+	DriverCurrentAnim = nullptr;
 }
 
 bool ASprawlCar::IsWithinCityBounds() const
@@ -603,7 +924,7 @@ void ASprawlCar::OnExitKey()
 
 void ASprawlCar::RequestExit()
 {
-	HandleExit(FInputActionValue());
+	ExitDriver();
 }
 
 void ASprawlCar::HandleMove(const FInputActionValue& Value)
@@ -626,6 +947,20 @@ void ASprawlCar::HandleMoveEnd(const FInputActionValue& /*Value*/)
 
 void ASprawlCar::HandleExit(const FInputActionValue& /*Value*/)
 {
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UPhoneSubsystem* Phone = GI->GetSubsystem<UPhoneSubsystem>();
+			Phone && Phone->TryAnswerRingingCall())
+		{
+			return;
+		}
+	}
+
+	RequestExit();
+}
+
+void ASprawlCar::ExitDriver()
+{
 	if (Driver)
 	{
 		AZarriCharacter* ExitingDriver = Driver;
@@ -634,9 +969,22 @@ void ASprawlCar::HandleExit(const FInputActionValue& /*Value*/)
 		TargetThrottleInput = 0.f;
 		TargetSteerInput = 0.f;
 		Driver = nullptr;
-		bAutoDrive = bResumeAutoDriveAfterExit;
-		bResumeAutoDriveAfterExit = false;
-		bAIStateSeeded = false;
+		HideDriverVisual();
+		if (bPendingCarjack)
+		{
+			bResumeAutoDriveAfterExit = false;
+			RestorePendingCarjack();
+		}
+		else
+		{
+			bAutoDrive = bResumeAutoDriveAfterExit;
+			bResumeAutoDriveAfterExit = false;
+			bAIStateSeeded = false;
+			if (bAutoDrive)
+			{
+				bDriverVisualInitializationAttempted = false;
+			}
+		}
 		ExitingDriver->OnExitedVehicle(this);
 	}
 }
@@ -657,6 +1005,10 @@ void ASprawlCar::Tick(float DeltaSeconds)
 	UpdateWheelVisuals(DeltaSeconds);
 
 	const bool bPlayerDriving = Cast<APlayerController>(GetController()) != nullptr;
+	if (bAutoDrive && !bPlayerDriving)
+	{
+		InitializeAIDriverVisual();
+	}
 	if (!bPlayerDriving && !bAutoDrive)
 	{
 		// Parked, unpossessed cars just sit.

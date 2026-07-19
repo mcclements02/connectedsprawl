@@ -125,6 +125,24 @@ public:
 		return FMath::Abs(X) <= Limit && FMath::Abs(Y) <= Limit;
 	}
 
+	/** True when XY lies on a live road/intersection surface (parking shoulder excluded). */
+	static bool IsOnRoadSurface(float X, float Y, float Margin = 0.f)
+	{
+		if (!IsInsideCityBounds(X, Y))
+		{
+			return false;
+		}
+		float NearestX = TNumericLimits<float>::Max();
+		float NearestY = TNumericLimits<float>::Max();
+		for (int32 RoadIndex = 0; RoadIndex < NumRoads; ++RoadIndex)
+		{
+			NearestX = FMath::Min(NearestX, FMath::Abs(X - RoadCenter(RoadIndex)));
+			NearestY = FMath::Min(NearestY, FMath::Abs(Y - RoadCenter(RoadIndex)));
+		}
+		const float SurfaceHalfWidth = FMath::Max(0.f, RoadWidth * 0.5f + Margin);
+		return FMath::Min(NearestX, NearestY) <= SurfaceHalfWidth;
+	}
+
 	/** Roads plus their curbside parking shoulder, used for safe recovery anchors. */
 	static bool IsNearDrivableRoad(float X, float Y, float Shoulder = 180.f)
 	{

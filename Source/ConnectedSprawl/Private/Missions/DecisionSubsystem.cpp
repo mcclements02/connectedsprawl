@@ -69,6 +69,15 @@ void UDecisionSubsystem::ResetProgress()
 	ResolvedBranches.Reset();
 }
 
+void UDecisionSubsystem::MarkResolvedSentinel(FName SentinelId, FName SentinelValue)
+{
+	if (SentinelId.IsNone() || SentinelValue.IsNone())
+	{
+		return;
+	}
+	ResolvedBranches.FindOrAdd(SentinelId) = SentinelValue;
+}
+
 void UDecisionSubsystem::ApplyBranchEffects(const FDecisionBranch& Branch)
 {
 	UGameInstance* GI = GetGameInstance();

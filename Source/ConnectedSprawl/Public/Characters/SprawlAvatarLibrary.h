@@ -15,7 +15,7 @@ class UAnimSequence;
  * The art pipeline (Tools/retarget_avatars.py + Content/Python/import_artwork.py)
  * produces one folder per character under /Game/Pedestrians/<Name>/ containing
  * a skeletal mesh SK_<Name> and AnimSequences <Name>_Idle/_Walk/_Jog/_Talk/
- * _WalkFormal. These helpers load them at runtime and fit the mesh onto a
+ * _WalkFormal/_Sprint/_Sit. These helpers load them at runtime and fit the mesh onto a
  * character capsule. Every load is fallback-safe: if the art import hasn't run
  * yet, callers keep whatever mesh they already had (the UE4 mannequin).
  */

@@ -49,6 +49,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Phone")
 	void AnswerCall();
 
+	/** Answer only a call that is actively ringing; true also for this input frame. */
+	UFUNCTION(BlueprintCallable, Category="Phone")
+	bool TryAnswerRingingCall();
+
 	UFUNCTION(BlueprintCallable, Category="Phone")
 	void DeclineCall();
 
@@ -56,7 +60,7 @@ public:
 	void EndCall();
 
 	UFUNCTION(BlueprintPure, Category="Phone")
-	bool IsRinging() const { return bHasPending; }
+	bool IsRinging() const { return bIsRinging; }
 
 	UFUNCTION(BlueprintPure, Category="Phone")
 	bool IsOnCall() const { return bIsOnCall; }
@@ -64,10 +68,15 @@ public:
 	UPROPERTY(BlueprintAssignable) FOnPhoneRinging  OnRinging;
 	UPROPERTY(BlueprintAssignable) FOnPhoneAnswered OnAnswered;
 
+	/** Clear ephemeral call/timer state when starting a new run. */
+	void ResetRuntimeState();
+
 private:
 	FPhoneCall PendingCall;
 	bool bHasPending = false;
+	bool bIsRinging = false;
 	bool bIsOnCall = false;
+	uint64 LastAnsweredInputFrame = MAX_uint64;
 	FTimerHandle RingTimer;
 
 	void FireRing();

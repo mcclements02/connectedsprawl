@@ -15,10 +15,12 @@ void USprawlHUDWidget::NativeConstruct()
 	{
 		Founder->OnCashChanged.AddDynamic(this, &USprawlHUDWidget::OnCashChanged);
 		Founder->OnRunwayChanged.AddDynamic(this, &USprawlHUDWidget::OnRunwayChanged);
+		Founder->OnDayAdvanced.AddDynamic(this, &USprawlHUDWidget::OnDayAdvanced);
 
 		// Seed initial values.
 		DisplayCash = Founder->GetCash();
 		DisplayRunwayDays = Founder->GetRunwayDays();
+		DisplayDay = Founder->GetCurrentDay();
 	}
 
 	if (UFactionSubsystem* Factions = GI->GetSubsystem<UFactionSubsystem>())
@@ -33,7 +35,7 @@ void USprawlHUDWidget::NativeConstruct()
 		DisplayStreetRep    = Factions->GetReputation(EFaction::Street);
 	}
 
-	OnHUDRefreshed();
+	RefreshHUD();
 }
 
 void USprawlHUDWidget::NativeDestruct()
@@ -44,6 +46,7 @@ void USprawlHUDWidget::NativeDestruct()
 		{
 			Founder->OnCashChanged.RemoveDynamic(this, &USprawlHUDWidget::OnCashChanged);
 			Founder->OnRunwayChanged.RemoveDynamic(this, &USprawlHUDWidget::OnRunwayChanged);
+			Founder->OnDayAdvanced.RemoveDynamic(this, &USprawlHUDWidget::OnDayAdvanced);
 		}
 		if (UFactionSubsystem* Factions = GI->GetSubsystem<UFactionSubsystem>())
 		{
@@ -55,14 +58,25 @@ void USprawlHUDWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-void USprawlHUDWidget::OnCashChanged(float NewCash)     { DisplayCash = NewCash;         OnHUDRefreshed(); }
-void USprawlHUDWidget::OnRunwayChanged(float NewDays)   { DisplayRunwayDays = NewDays;   OnHUDRefreshed(); }
-void USprawlHUDWidget::OnHeatChanged(int32 NewHeat)     { DisplayHeat = NewHeat;         OnHUDRefreshed(); }
-void USprawlHUDWidget::OnMoralDebtChanged(int32 NewDbt) { DisplayMoralDebt = NewDbt;     OnHUDRefreshed(); }
+void USprawlHUDWidget::NativeRefresh()
+{
+}
+
+void USprawlHUDWidget::RefreshHUD()
+{
+	NativeRefresh();
+	OnHUDRefreshed();
+}
+
+void USprawlHUDWidget::OnCashChanged(float NewCash)     { DisplayCash = NewCash;         RefreshHUD(); }
+void USprawlHUDWidget::OnRunwayChanged(float NewDays)   { DisplayRunwayDays = NewDays;   RefreshHUD(); }
+void USprawlHUDWidget::OnDayAdvanced(int32 NewDay)      { DisplayDay = NewDay;           RefreshHUD(); }
+void USprawlHUDWidget::OnHeatChanged(int32 NewHeat)     { DisplayHeat = NewHeat;         RefreshHUD(); }
+void USprawlHUDWidget::OnMoralDebtChanged(int32 NewDbt) { DisplayMoralDebt = NewDbt;     RefreshHUD(); }
 
 void USprawlHUDWidget::OnReputationChanged(EFaction Faction, int32 NewValue)
 {
 	if (Faction == EFaction::Corporate) DisplayCorporateRep = NewValue;
 	else if (Faction == EFaction::Street) DisplayStreetRep = NewValue;
-	OnHUDRefreshed();
+	RefreshHUD();
 }

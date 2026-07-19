@@ -7,6 +7,7 @@
 #include "SprawlPedestrian.generated.h"
 
 class UAnimSequence;
+class AActor;
 
 /**
  * ASprawlPedestrian
@@ -21,6 +22,8 @@ UCLASS()
 class CONNECTEDSPRAWL_API ASprawlPedestrian : public ACharacter
 {
 	GENERATED_BODY()
+
+	enum class EPedState : uint8 { WalkEdge, WaitToCross, Cross, Flee };
 
 public:
 	ASprawlPedestrian();
@@ -42,13 +45,26 @@ public:
 	/** True after a complete imported human mesh + locomotion set is active. */
 	bool HasRealAvatar() const { return bHasAvatar; }
 
-private:
-	enum class EPedState : uint8 { WalkEdge, WaitToCross, Cross, Flee };
+	/** Must be called before BeginPlay (deferred spawn) to preserve an ejected driver's look. */
+	void SetForcedVariant(const FString& VariantName) { ForcedVariant = VariantName; }
 
+	/** Immediately leave normal navigation and flee from a danger source. */
+	void StartFleeFrom(const AActor* DangerActor, float DurationSeconds = 4.f);
+
+	bool IsCrossingRoad() const { return State == EPedState::Cross; }
+	bool IsFleeing() const { return State == EPedState::Flee; }
+	bool IsWaitingToCross() const { return State == EPedState::WaitToCross; }
+	float GetContinuousOffRoadTime() const { return ContinuousOffRoadTime; }
+	const FString& GetActiveVariant() const { return ActiveVariant; }
+
+private:
 	EPedState State = EPedState::WalkEdge;
 	int32 BlockX = 0;
 	int32 BlockY = 0;
 	int32 CornerIndex = 0;   // corner we're heading to (0..3)
+	int32 PendingBlockX = 0;
+	int32 PendingBlockY = 0;
+	int32 PendingCornerIndex = 0;
 	int32 WalkDir = 1;       // +1 / -1: direction around the block perimeter
 	FVector TargetPoint = FVector::ZeroVector;
 	FVector FleeDir = FVector::ForwardVector;
@@ -57,12 +73,18 @@ private:
 	float DangerScanTimer = 0.f;
 	float CurbScanTimer = 0.f;
 	float StuckTimer = 0.f;
+	float ContinuousOffRoadTime = 0.f;
+	bool bCrossingAlongX = false;
+	int32 CrossingIntersectionX = 0;
+	int32 CrossingIntersectionY = 0;
 
 	// --- Imported human avatar (mesh + looping clips, single-node mode) ---
 	UPROPERTY() TObjectPtr<UAnimSequence> IdleAnim;
 	UPROPERTY() TObjectPtr<UAnimSequence> WalkAnim;
 	UPROPERTY() TObjectPtr<UAnimSequence> JogAnim;
 	UPROPERTY() TObjectPtr<UAnimSequence> CurrentAnim;
+	UPROPERTY() FString ForcedVariant;
+	UPROPERTY() FString ActiveVariant;
 	bool bHasAvatar = false;
 
 	/** Pick a random avatar variant and apply its mesh + animation set. */
@@ -86,5 +108,8 @@ private:
 	void OnReachedCorner();
 	bool TryStartCrossing();
 	bool IsTrafficApproaching() const;
+	bool HasPedestrianRightOfWay() const;
+	void EnforceSidewalkBoundary(float DeltaSeconds);
+	void ContainFleeDirection();
 	void CheckForDanger();
 };

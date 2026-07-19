@@ -31,4 +31,11 @@ private:
 	void OnDayTick();
 	void ApplyLoadedPlayerState();
 	void RunProgressionAudit();
+	void BeginVisualAudit();
+	void CaptureVisualAudit();
+	void HandleVisualScreenshot(
+		int32 Width, int32 Height, const TArray<FColor>& Colors);
+	void HandleVisualAuditTimeout();
+	FDelegateHandle VisualAuditScreenshotHandle;
+	FTimerHandle VisualAuditTimeoutHandle;
 };

@@ -122,11 +122,13 @@ unresolved call instead of paying the same reward twice.
 
 The streets are walked by real humans now, not mannequins:
 
-- **16 human characters** (faces, hair, clothes — a suit guy, an old man,
+- **22 human characters** (faces, hair, clothes — a suit guy, an old man,
   women in streetwear, a mafia don, kids in hoodies…) from the CC0
   **[100 Avatars](https://github.com/madjin/100avatars)** packs by
-  **Polygonal Mind**. Zarri's hero look is *Cappy* (cap + hoodie).
-- **Locomotion animations** (idle, walk, formal walk, jog, phone-talk) from
+  **Polygonal Mind**. Zarri has a dedicated young Black male derivative of
+  *Cappy*, with medium-deep skin, dark hair, and tech-streetwear colors.
+- **Locomotion animations** (idle, walk, formal walk, jog, sprint, seated,
+  phone-talk) from
   the CC0 **Universal Animation Library** by **Quaternius**, retargeted onto
   every avatar's Mixamo rig by `Tools/retarget_avatars.py` (headless Blender:
   world-space rotation transfer with per-bone rest alignment) and baked into

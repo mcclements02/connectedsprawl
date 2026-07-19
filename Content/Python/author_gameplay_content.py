@@ -1,7 +1,7 @@
 """Author the core-loop gameplay content (safe under -nullrhi, no spawns).
 
 Creates/updates:
-  1. Five UStrategicDecision data assets in /Game/Missions/Decisions —
+  1. Six UStrategicDecision data assets in /Game/Missions/Decisions —
      the GDD's FirstVC opener plus a branching chain across both factions,
      converging on the BlockPartyGig bridge mission.
   2. /Game/Materials/M_SignalGlow — unlit emissive with a GlowColor param
@@ -140,6 +140,22 @@ DECISIONS = [
             branch("HeadlineIt", "Get on the mic yourself.",
                    "No invoice. Just you, home, loud.",
                    cash=5000, street=20, heat=5),
+        ],
+    },
+    {
+        "asset": "DA_DirtyBailout",
+        "id": "DirtyBailout",
+        "title": "Last Money on the Table",
+        "prompt": ("The account is empty. Marcus can float one dirty job, "
+                   "or Zarri can shut the company down cleanly."),
+        "contact": "Marcus_Lows",
+        "faction": "street",
+        "branches": [
+            branch("TakeDirtyJob", "Take the emergency street job.",
+                   "Two thousand now. Heat, obligation, and no second rescue.",
+                   cash=2000, street=5, heat=12, debt=15, dirty=True),
+            branch("ShutDown", "Shut the company down.",
+                   "No dirty debt. No startup. This run ends here."),
         ],
     },
 ]

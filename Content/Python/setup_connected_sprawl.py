@@ -116,12 +116,13 @@ bp_controller = create_blueprint("BP_SprawlPlayerController", "/Game/Core", CLS_
 wbp_hud       = create_widget_blueprint("WBP_SprawlHUD",      "/Game/UI",   CLS_HUDWidget)
 
 # ------------------------------------------------------------------
-# 4. Configure BP_Zarri — prefer imported Cappy, fall back to mannequin
+# 4. Configure BP_Zarri — prefer the dedicated Zarri avatar
 # ------------------------------------------------------------------
 # Set on the ZarriCharacter CDO's Mesh component default value.
 # The cleanest way from Python is to modify the Blueprint's class defaults after load.
 bp_zarri_loaded = EAS.load_asset("/Game/Core/BP_Zarri")
 cdo = unreal.get_default_object(bp_zarri_loaded.generated_class())
+cdo.set_editor_property("hero_variant", "Zarri")
 mesh_comp = cdo.get_editor_property("mesh")
 configured, source = avatar_realism.apply_hero_mesh_defaults(mesh_comp)
 if configured:
@@ -239,7 +240,7 @@ except Exception as e:
 log("=" * 50)
 log("✅ SETUP COMPLETE")
 log("Now press the ▶ PLAY button in the editor.")
-log("Expected: Zarri uses imported Cappy when artwork exists.")
+log("Expected: Zarri uses his dedicated imported avatar when artwork exists.")
 log("Fallback: mannequin if the avatar art has not been imported yet.")
 log("Startup log should show:")
 log("   [Founder] Initialized. Cash=$2500 DailyBurn=$175 Runway=14.3 days")

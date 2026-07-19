@@ -16,10 +16,12 @@ class UInputAction;
 class UInputMappingContext;
 class USkeletalMesh;
 class USkeletalMeshComponent;
+class UAnimSequence;
 class UStaticMesh;
 class UMaterialInterface;
 class UPrimitiveComponent;
 class AZarriCharacter;
+class ASprawlPedestrian;
 struct FInputActionValue;
 
 /**
@@ -43,12 +45,45 @@ public:
 	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
 	virtual void PossessedBy(AController* NewController) override;
 
-	/** A stopped, unoccupied car can be entered, including parked and traffic cars. */
+	/** A stopped, unoccupied parked car can be entered directly. */
 	UFUNCTION(BlueprintPure, Category="Car")
 	bool CanBeEntered() const;
 
+	/** A slow occupied traffic car can be taken after it has safely stopped. */
+	UFUNCTION(BlueprintPure, Category="Car")
+	bool CanBeCarjacked() const;
+
 	/** Claim the driver seat and suspend AI until the player exits. */
 	bool AssignDriver(AZarriCharacter* InDriver);
+
+	/** Eject the visible AI driver, retire the traffic car, and seat Zarri. */
+	bool CarjackDriver(AZarriCharacter* InDriver);
+
+	/** Finalize side effects only after the player controller owns this car. */
+	void ConfirmDriverEntry();
+
+	UFUNCTION(BlueprintPure, Category="Car|Occupant")
+	bool HasAIDriver() const { return bHasAIDriver; }
+
+	UFUNCTION(BlueprintPure, Category="Car|Occupant")
+	bool HasVisibleDriver() const;
+
+	const FString& GetAIDriverVariant() const { return AIDriverVariant; }
+	ASprawlPedestrian* GetLastEjectedDriver() const
+	{
+		return LastEjectedDriver.Get();
+	}
+
+	bool HasActiveIntersectionReservation() const
+	{
+		return AIReservedIntersectionX >= 0 || AIReservedIntersectionY >= 0
+			|| bAIClearingIntersection;
+	}
+
+	/** Shared obstruction-tested side-door exit used by Zarri and ejected drivers. */
+	bool FindClearSideExit(float CapsuleRadius, float CapsuleHalfHeight,
+		FVector& OutLocation, const AActor* ActorToIgnore = nullptr,
+		bool bPreferDriverSide = true) const;
 
 	UFUNCTION(BlueprintPure, Category="Car|Safety")
 	bool IsCrashRecoveryActive() const { return CrashUprightGraceRemaining > 0.f; }
@@ -90,7 +125,7 @@ public:
 	bool HasAnimatedWheelParts() const { return bUsingExternalWheelParts; }
 	float GetVisualWheelRotationDegrees() const { return WheelRotationDegrees; }
 
-	/** Step the driver back out onto the street. */
+	/** Unconditionally step the driver out; input-facing phone handling lives elsewhere. */
 	void RequestExit();
 
 	/** If true and no player is in the seat, the car drives itself around the grid. */
@@ -106,6 +141,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<USkeletalMeshComponent> FullSkeletalBodyMesh;
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<UStaticMeshComponent> BodyMesh;
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<UStaticMeshComponent> CabinMesh;
+	/** Lightweight pose-only visible occupant; never owns collision or gameplay. */
+	UPROPERTY(VisibleAnywhere, Category="Car|Occupant") TObjectPtr<USkeletalMeshComponent> DriverMesh;
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> BodyPaintMeshes;
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> DetailMeshes;
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> ExternalBodyDetailMeshes;
@@ -136,6 +173,11 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Car|Wheels") float VisualSteeringAngle = 30.f;
 	/** Maximum speed at which a pedestrian may safely take the driver seat. */
 	UPROPERTY(EditAnywhere, Category="Car|Safety") float MaxEntrySpeed = 220.f;
+	/** Maximum speed for pulling an AI driver from a traffic car. */
+	UPROPERTY(EditAnywhere, Category="Car|Safety") float MaxCarjackSpeed = 260.f;
+	UPROPERTY(EditAnywhere, Category="Car|Occupant") FVector DriverSeatLocation = FVector(10.f, -45.f, -20.f);
+	UPROPERTY(EditAnywhere, Category="Car|Occupant") FRotator DriverSeatRotation = FRotator(0.f, -90.f, 0.f);
+	UPROPERTY(EditAnywhere, Category="Car|Occupant") float DriverVisualHeight = 168.f;
 	/** Minimum impact impulse and speed that count as a crash. */
 	UPROPERTY(EditAnywhere, Category="Car|Safety") float CrashImpulseThreshold = 180000.f;
 	UPROPERTY(EditAnywhere, Category="Car|Safety") float CrashSpeedThreshold = 700.f;
@@ -143,6 +185,13 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Car|Safety") float CrashUprightGraceSeconds = 2.25f;
 
 	UPROPERTY() TObjectPtr<AZarriCharacter> Driver;
+	UPROPERTY() TObjectPtr<UAnimSequence> DriverCurrentAnim;
+	UPROPERTY() FString AIDriverVariant;
+	UPROPERTY() bool bHasAIDriver = false;
+	UPROPERTY() TWeakObjectPtr<ASprawlPedestrian> LastEjectedDriver;
+	bool bDriverVisualInitializationAttempted = false;
+	bool bPendingCarjack = false;
+	FString PendingCarjackVariant;
 
 	float ThrottleInput = 0.f;
 	float SteerInput = 0.f;
@@ -169,6 +218,16 @@ protected:
 
 	/** Lane-follow the road grid: keep lane, obey signals, avoid traffic. */
 	void RunAutoDrive(float DeltaSeconds);
+
+	/** Lazily attach one deterministic seated pedestrian to an active traffic car. */
+	void InitializeAIDriverVisual();
+	void ShowSeatedDriver(const FString& VariantName);
+	bool ApplySeatedDriverVariant(const FString& VariantName);
+	void HideDriverVisual();
+	bool AssignDriverInternal(AZarriCharacter* InDriver, bool bResumeAIOnExit);
+	void CompletePendingCarjack();
+	void RestorePendingCarjack();
+	void ExitDriver();
 
 	/** Keep normal driving level, but allow a short physical reaction after a crash. */
 	void MaintainUpright(float DeltaSeconds);

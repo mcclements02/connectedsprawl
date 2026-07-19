@@ -66,6 +66,7 @@ public:
 private:
 	UFUNCTION() void HandleDecisionResolved(UStrategicDecision* Decision, FName ChosenBranch);
 	UFUNCTION() void HandleDayAdvanced(int32 NewDay);
+	UFUNCTION() void HandleGameFlowCheckpoint();
 	void HandleApplicationWillEnterBackground();
 	bool ShouldSuppressAutomaticPersistence() const;
 	FString ResolveSlotName(const FString& SlotName) const;
@@ -75,4 +76,5 @@ private:
 	FName PendingMapName = NAME_None;
 	bool bHasPendingPlayerTransform = false;
 	bool bPendingWasDriving = false;
+	bool bIsRestoringProgress = false;
 };

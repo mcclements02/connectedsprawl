@@ -141,7 +141,7 @@ def build_master(name, facade_mode, defaults):
 
     rough_mul = MEL.create_material_expression(mat, unreal.MaterialExpressionScalarParameter, -420, 380)
     rough_mul.set_editor_property("parameter_name", "RoughnessMul")
-    rough_mul.set_editor_property("default_value", 1.0)
+    rough_mul.set_editor_property("default_value", 0.90)
     mul_rough = MEL.create_material_expression(mat, unreal.MaterialExpressionMultiply, -160, 300)
     MEL.connect_material_expressions(rough, "", mul_rough, "A")
     MEL.connect_material_expressions(rough_mul, "", mul_rough, "B")
@@ -167,6 +167,14 @@ for ad in ar.get_assets_by_class(
 
 facade = build_master("M_RealFacade2", True, texture_set("Bricks085"))
 ground = build_master("M_RealGround", False, texture_set("Ground037"))
+
+# These five authored instances can predate the rebuilt master and serialize
+# Parent=None. Recover them explicitly; dependency discovery cannot see orphans.
+for name in ("MI_Facade_Tan", "MI_Facade_Pale", "MI_Facade_Slate",
+             "MI_Facade_Teal", "MI_Facade_Warm"):
+    pkg = "/Game/CityArt/{}".format(name)
+    if pkg not in dependents["M_RealFacade2"]:
+        dependents["M_RealFacade2"].append(pkg)
 
 refreshed = 0
 for master, paths in (("M_RealFacade2", dependents["M_RealFacade2"]),

@@ -303,17 +303,20 @@ player_distance = math.hypot(
 assert player_distance <= 800.0, "player car is too far away: {}".format(player_distance)
 assert drive[0].get_editor_property("auto_drive") is False
 
-# Every imported character has a mesh and all five behavior clips.
+# Every imported character has a mesh and all seven behavior clips.
 variants = [
     "Baldman", "BizDude", "Cappy", "Chill", "Erika", "Jennifer", "Jimmy",
     "Kate", "Kyle", "Lydia", "Mafiossini", "OldMoustache", "Olivia", "Rose",
-    "Samuela", "Shiro",
+    "Samuela", "Shiro", "Bruno", "CursedAmy", "Eugenia", "Jenny", "Juanita",
+    "Zarri",
 ]
 for variant in variants:
     root = "/Game/Pedestrians/{0}".format(variant)
     expected = ["SK_{}".format(variant)] + [
         "{}_{}".format(variant, clip)
-        for clip in ("Idle", "Walk", "Jog", "Talk", "WalkFormal")
+        for clip in (
+            "Idle", "Walk", "Jog", "Talk", "WalkFormal", "Sprint", "Sit"
+        )
     ]
     for asset_name in expected:
         assert unreal.EditorAssetLibrary.does_asset_exist(
@@ -323,6 +326,7 @@ for variant in variants:
 unreal.log(
     "[LivingCityAudit] PASS: cars=1+14+36 signals=30 crowd=26 "
     "max_lane_error={:.2f} parking_offset={:.2f} min_traffic_spacing={:.2f} "
-    "player_car_distance={:.2f} upright={} enterable_parked=36 boundaries=4".format(
+    "player_car_distance={:.2f} upright={} enterable_parked=36 boundaries=4 "
+    "avatars=22 clips=7".format(
         max(lane_errors), min(parking_offsets), min_spacing, player_distance,
         len(all_cars)))

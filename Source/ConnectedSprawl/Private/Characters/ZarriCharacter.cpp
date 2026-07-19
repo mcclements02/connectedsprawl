@@ -19,6 +19,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimSequence.h"
 #include "Characters/SprawlAvatarLibrary.h"
+#include "Phone/PhoneSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 
 AZarriCharacter::AZarriCharacter()
@@ -34,7 +35,7 @@ AZarriCharacter::AZarriCharacter()
 
 	UCharacterMovementComponent* Move = GetCharacterMovement();
 	Move->bOrientRotationToMovement = true;
-	Move->RotationRate              = FRotator(0.f, 900.f, 0.f);
+	Move->RotationRate              = FRotator(0.f, 720.f, 0.f);
 	Move->JumpZVelocity             = 620.f;
 	Move->MaxWalkSpeed              = 520.f;
 	Move->MinAnalogWalkSpeed        = 35.f;
@@ -145,21 +146,38 @@ void AZarriCharacter::Tick(float DeltaSeconds)
 
 void AZarriCharacter::InitializeHeroAvatar()
 {
-	USkeletalMesh* Mesh = FSprawlAvatarLibrary::LoadAvatarMesh(HeroVariant);
-	UAnimSequence* LoadedIdle = FSprawlAvatarLibrary::LoadAvatarAnim(HeroVariant, TEXT("Idle"));
-	UAnimSequence* LoadedWalk = FSprawlAvatarLibrary::LoadAvatarAnim(HeroVariant, TEXT("Walk"));
-	UAnimSequence* LoadedJog = FSprawlAvatarLibrary::LoadAvatarAnim(HeroVariant, TEXT("Jog"));
-	if (!Mesh || !LoadedIdle || !LoadedWalk || !LoadedJog)
+	TArray<FString> Candidates = { HeroVariant };
+	if (HeroVariant != TEXT("Cappy"))
 	{
-		// Preserve the complete mannequin fallback when an avatar import is
-		// missing any of the clips needed by the native locomotion driver.
-		return;
+		Candidates.Add(TEXT("Cappy"));
 	}
 
-	if (!FSprawlAvatarLibrary::ApplyAvatar(GetMesh(), Mesh, HeroHeight,
-		GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()))
+	USkeletalMesh* Mesh = nullptr;
+	UAnimSequence* LoadedIdle = nullptr;
+	UAnimSequence* LoadedWalk = nullptr;
+	UAnimSequence* LoadedJog = nullptr;
+	for (const FString& Candidate : Candidates)
 	{
-		return; // art not imported yet — keep the mannequin + ThirdPerson_AnimBP
+		Mesh = FSprawlAvatarLibrary::LoadAvatarMesh(Candidate);
+		LoadedIdle = FSprawlAvatarLibrary::LoadAvatarAnim(Candidate, TEXT("Idle"));
+		LoadedWalk = FSprawlAvatarLibrary::LoadAvatarAnim(Candidate, TEXT("Walk"));
+		LoadedJog = FSprawlAvatarLibrary::LoadAvatarAnim(Candidate, TEXT("Jog"));
+		if (!Mesh || !LoadedIdle || !LoadedWalk || !LoadedJog)
+		{
+			continue;
+		}
+		if (!FSprawlAvatarLibrary::ApplyAvatar(GetMesh(), Mesh, HeroHeight,
+			GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()))
+		{
+			continue;
+		}
+		ActiveHeroVariant = Candidate;
+		break;
+	}
+	if (!Mesh || !LoadedIdle || !LoadedWalk || !LoadedJog
+		|| GetMesh()->GetSkeletalMeshAsset() != Mesh)
+	{
+		return; // complete mannequin fallback
 	}
 
 	// The equipment sockets were named for the mannequin skeleton; retarget
@@ -183,6 +201,8 @@ void AZarriCharacter::InitializeHeroAvatar()
 	HeroIdleAnim = LoadedIdle;
 	HeroWalkAnim = LoadedWalk;
 	HeroJogAnim = LoadedJog;
+	HeroSprintAnim = FSprawlAvatarLibrary::LoadAvatarAnim(
+		ActiveHeroVariant, TEXT("Sprint"));
 	bHasHeroAvatar = true;
 	FSprawlAvatarLibrary::PlayLoop(GetMesh(), HeroIdleAnim, HeroCurrentAnim);
 }
@@ -195,7 +215,14 @@ void AZarriCharacter::UpdateHeroAnimation()
 	}
 
 	const float Speed = GetVelocity().Size2D();
-	if (Speed > 320.f)
+	if (Speed > 560.f)
+	{
+		UAnimSequence* Sprint = HeroSprintAnim ? HeroSprintAnim : HeroJogAnim;
+		const float ReferenceSpeed = HeroSprintAnim ? 610.f : 330.f;
+		FSprawlAvatarLibrary::PlayLoop(GetMesh(), Sprint, HeroCurrentAnim,
+			FMath::Clamp(Speed / ReferenceSpeed, 0.85f, HeroSprintAnim ? 1.35f : 1.8f));
+	}
+	else if (Speed > 320.f)
 	{
 		FSprawlAvatarLibrary::PlayLoop(GetMesh(), HeroJogAnim, HeroCurrentAnim,
 			FMath::Clamp(Speed / 330.f, 0.9f, 1.6f));
@@ -283,12 +310,28 @@ void AZarriCharacter::HandleStopSprint(const FInputActionValue&)
 
 void AZarriCharacter::HandleInteract(const FInputActionValue&)
 {
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UPhoneSubsystem* Phone = GI->GetSubsystem<UPhoneSubsystem>();
+			Phone && Phone->TryAnswerRingingCall())
+		{
+			return;
+		}
+	}
 	UE_LOG(LogTemp, Warning, TEXT("[Zarri] Interact pressed"));
 	EnterNearbyVehicle();
 }
 
 void AZarriCharacter::OnInteractKey()
 {
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UPhoneSubsystem* Phone = GI->GetSubsystem<UPhoneSubsystem>();
+			Phone && Phone->TryAnswerRingingCall())
+		{
+			return;
+		}
+	}
 	UE_LOG(LogTemp, Warning, TEXT("[Zarri] OnInteractKey (BindKey)"));
 	EnterNearbyVehicle();
 }
@@ -309,17 +352,36 @@ bool AZarriCharacter::EnterVehicle(ASprawlCar* Vehicle)
 	}
 
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC || !Vehicle->AssignDriver(this))
+	if (!PC)
+	{
+		return false;
+	}
+
+	const bool bCarjacking = Vehicle->CanBeCarjacked();
+	const bool bAssigned = bCarjacking
+		? Vehicle->CarjackDriver(this)
+		: Vehicle->AssignDriver(this);
+	if (!bAssigned)
 	{
 		return false;
 	}
 
 	PC->Possess(Vehicle);
-	UE_LOG(LogTemp, Warning, TEXT("[Zarri] possessed car"));
+	if (PC->GetPawn() != Vehicle)
+	{
+		Vehicle->RequestExit();
+		if (PC->GetPawn() != this)
+		{
+			PC->Possess(this);
+		}
+		return false;
+	}
 	// Hide Zarri but keep him in the world so we can teleport him to a door on exit.
 	SetActorHiddenInGame(true);
 	SetActorEnableCollision(false);
 	GetCharacterMovement()->DisableMovement();
+	Vehicle->ConfirmDriverEntry();
+	UE_LOG(LogTemp, Warning, TEXT("[Zarri] possessed car"));
 	return true;
 }
 
@@ -327,34 +389,18 @@ void AZarriCharacter::OnExitedVehicle(ASprawlCar* FromVehicle)
 {
 	if (!FromVehicle) return;
 
-	// Prefer the driver side, then try the passenger side and front/rear. This
-	// keeps exiting reliable when a curb, building wall, or another car blocks
-	// the nominal door position.
-	const FVector CarLocation = FromVehicle->GetActorLocation();
-	const FVector Side = FromVehicle->GetActorRightVector() * 190.f;
-	const FVector End = FromVehicle->GetActorForwardVector() * 275.f;
-	const FVector Candidates[] = {
-		CarLocation - Side, CarLocation + Side,
-		CarLocation - End, CarLocation + End,
-	};
-	FVector Exit = CarLocation - Side + FVector(0.f, 0.f, 30.f);
-	if (UWorld* World = GetWorld())
+	FVector Exit = FromVehicle->GetActorLocation()
+		- FromVehicle->GetActorRightVector() * 190.f + FVector(0.f, 0.f, 100.f);
+	if (!FromVehicle->FindClearSideExit(
+		GetCapsuleComponent()->GetScaledCapsuleRadius(),
+		GetCapsuleComponent()->GetScaledCapsuleHalfHeight(), Exit, this))
 	{
-		FCollisionQueryParams Params(FName(TEXT("ZarriVehicleExit")), false, this);
-		Params.AddIgnoredActor(FromVehicle);
-		const FCollisionShape Capsule = FCollisionShape::MakeCapsule(
-			GetCapsuleComponent()->GetScaledCapsuleRadius(),
-			GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
-		for (const FVector& Candidate : Candidates)
-		{
-			const FVector TestLocation = Candidate + FVector(0.f, 0.f, 100.f);
-			if (!World->OverlapBlockingTestByChannel(
-				TestLocation, FQuat::Identity, ECC_Pawn, Capsule, Params))
-			{
-				Exit = TestLocation;
-				break;
-			}
-		}
+		// Exhaustive sidewalk candidates should make this unreachable. Keep a
+		// visible, collision-safe last resort instead of stranding a hidden pawn.
+		Exit = FromVehicle->GetActorLocation() + FVector(0.f, 0.f, 350.f);
+		UE_LOG(LogTemp, Error,
+			TEXT("[Zarri] No clear sidewalk exit for %s; using roof fallback"),
+			*FromVehicle->GetName());
 	}
 	SetActorLocation(Exit, /*bSweep*/ false, nullptr, ETeleportType::TeleportPhysics);
 
@@ -380,7 +426,7 @@ ASprawlCar* AZarriCharacter::FindNearbyVehicle() const
 	for (AActor* Actor : Found)
 	{
 		ASprawlCar* Car = Cast<ASprawlCar>(Actor);
-		if (!Car || !Car->CanBeEntered())
+		if (!Car || (!Car->CanBeEntered() && !Car->CanBeCarjacked()))
 		{
 			continue;
 		}

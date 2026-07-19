@@ -44,6 +44,9 @@ public:
 	void RestoreResolvedDecisions(const TMap<FName, FName>& State);
 	void ResetProgress();
 
+	/** Persist a one-shot system flag through the existing resolved-decision map. */
+	void MarkResolvedSentinel(FName SentinelId, FName SentinelValue);
+
 	UPROPERTY(BlueprintAssignable) FOnDecisionOffered OnDecisionOffered;
 	UPROPERTY(BlueprintAssignable) FOnDecisionResolved OnDecisionResolved;
 

@@ -317,10 +317,10 @@ def tune_lighting(eas):
         class_name = actor.get_class().get_name()
         if label == "FixDirectionalLight" or class_name == "DirectionalLight":
             actor.set_actor_rotation(
-                unreal.Rotator(pitch=-24.0, yaw=-38.0, roll=0.0), False)
+                unreal.Rotator(pitch=-32.0, yaw=-38.0, roll=0.0), False)
             component = actor.light_component
-            component.set_editor_property("intensity", 4.6)
-            component.set_light_color(unreal.LinearColor(1.0, 0.73, 0.52, 1.0))
+            component.set_editor_property("intensity", 5.2)
+            component.set_light_color(unreal.LinearColor(1.0, 0.86, 0.70, 1.0))
             component.set_editor_property("atmosphere_sun_light", True)
             tuned.append("sun")
             break
@@ -329,32 +329,33 @@ def tune_lighting(eas):
         label = actor.get_actor_label()
         if label == "FixSkyLight":
             component = actor.light_component
-            component.set_editor_property("intensity", 1.30)
+            component.set_editor_property("intensity", 1.85)
             component.set_editor_property("real_time_capture", False)
             skylight = component
             tuned.append("sky")
         elif label == "FixHeightFog":
             component = actor.get_component_by_class(unreal.ExponentialHeightFogComponent)
             if component:
-                component.set_editor_property("fog_density", 0.008)
+                component.set_editor_property("fog_density", 0.006)
                 component.set_editor_property("fog_height_falloff", 0.16)
                 component.set_editor_property("start_distance", 1200.0)
                 tuned.append("fog")
         elif label == "FixPostProcess":
             settings = actor.settings
             values = {
-                "auto_exposure_bias": -0.35,
+                "auto_exposure_bias": 0.70,
                 "auto_exposure_min_brightness": 1.0,
                 "auto_exposure_max_brightness": 1.0,
-                "ambient_occlusion_intensity": 0.58,
+                "ambient_occlusion_intensity": 0.50,
                 "ambient_occlusion_radius": 150.0,
                 "bloom_intensity": 0.14,
                 "film_grain_intensity": 0.0,
                 "lens_flare_intensity": 0.12,
-                "vignette_intensity": 0.20,
-                "white_temp": 5550.0,
-                "color_contrast": unreal.Vector4(1.05, 1.04, 1.03, 1.0),
-                "color_saturation": unreal.Vector4(1.04, 1.03, 1.02, 1.0),
+                "vignette_intensity": 0.15,
+                "white_temp": 6200.0,
+                "color_contrast": unreal.Vector4(1.03, 1.03, 1.03, 1.0),
+                "color_saturation": unreal.Vector4(1.02, 1.02, 1.02, 1.0),
+                "scene_color_tint": unreal.LinearColor(1.06, 1.0, 0.94, 1.0),
             }
             for name, value in values.items():
                 settings.set_editor_property("override_" + name, True)

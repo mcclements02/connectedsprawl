@@ -45,6 +45,11 @@ public:
 	/** Seconds between population passes. */
 	UPROPERTY(EditAnywhere, Category="Crowd") float EvaluateInterval = 1.5f;
 
+	/** Bring a deferred-spawned ejected driver into the normal recycle ring. */
+	void AdoptExternalPedestrian(ASprawlPedestrian* Pedestrian);
+
+	int32 GetActivePedestrianCount() const { return ActivePeds.Num(); }
+
 protected:
 	float TimeSinceEval = 0.f;
 	UPROPERTY() TArray<TObjectPtr<ASprawlPedestrian>> ActivePeds;

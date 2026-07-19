@@ -47,6 +47,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Zarri")
 	void OnExitedVehicle(ASprawlCar* FromVehicle);
 
+	/** Imported avatar currently used by Zarri and his in-car seat visual. */
+	const FString& GetActiveHeroVariant() const { return ActiveHeroVariant; }
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USpringArmComponent> SpringArm;
@@ -109,16 +112,18 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> CommDeviceMID;
 
-	// --- Hero avatar (imported "Cappy" look; mannequin fallback) ---
+	// --- Hero avatar (dedicated Zarri look; Cappy/mannequin fallbacks) ---
 	/** Avatar variant folder under /Game/Pedestrians/ used for Zarri's look. */
-	UPROPERTY(EditAnywhere, Category="Zarri|Appearance") FString HeroVariant = TEXT("Cappy");
+	UPROPERTY(EditAnywhere, Category="Zarri|Appearance") FString HeroVariant = TEXT("Zarri");
 	/** Standing height (cm) the hero mesh is scaled to. */
 	UPROPERTY(EditAnywhere, Category="Zarri|Appearance") float HeroHeight = 178.f;
 
 	UPROPERTY() TObjectPtr<UAnimSequence> HeroIdleAnim;
 	UPROPERTY() TObjectPtr<UAnimSequence> HeroWalkAnim;
 	UPROPERTY() TObjectPtr<UAnimSequence> HeroJogAnim;
+	UPROPERTY() TObjectPtr<UAnimSequence> HeroSprintAnim;
 	UPROPERTY() TObjectPtr<UAnimSequence> HeroCurrentAnim;
+	FString ActiveHeroVariant = TEXT("Zarri");
 	bool bHasHeroAvatar = false;
 
 	/** Swap in the imported hero avatar if the art has been imported. */

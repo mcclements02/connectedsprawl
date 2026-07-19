@@ -6,6 +6,50 @@
 
 ---
 
+## 2026-07-19 Living-City Humanization and Authentic Daylight
+
+- The avatar library now carries 22 lightweight variants and seven clips per
+  variant (`Idle`, `Walk`, `Jog`, `Talk`, `WalkFormal`, `Sprint`, `Sit`). The
+  player uses a dedicated young Black male Zarri avatar and a real sprint band,
+  and moving traffic lazily creates a seated,
+  cullable driver with no collision or shadow cost. Parked cars remain empty.
+- Slow occupied traffic can be carjacked: the driver is ejected at a clear
+  sidewalk-side point, keeps the same visual identity, flees, and rejoins the
+  crowd manager while the stolen car leaves the autonomous traffic pool.
+- Pedestrians wait for the signal phase parallel to their crossing, require
+  enough green time to finish, abandon a blocked curb after 12 seconds, and
+  recover to a sidewalk corner if ordinary walking drifts onto a road. Flee
+  paths turn back toward the current block instead of lingering in traffic.
+- The native HUD, repeatable clean-income city gigs, one-time dirty bailout,
+  second-bankruptcy loss, and `$25,000` victory checkpoint close the playable
+  earn → burn → win/lose loop without requiring Widget Blueprint bindings or a
+  new save schema.
+
+`Content/Python/city_color_pass.py` is the canonical final look writer and must
+run after the RealKit and city authoring passes. Its authored daytime target is:
+
+- directional sun: intensity `5.2`, color `(1.00, 0.86, 0.70)`, rotation
+  `pitch=-32`, `yaw=-38`;
+- captured skylight: intensity `1.85` with one final recapture;
+- fixed mobile exposure bias `0.70`, white temperature `6200 K`, subtle
+  warm-neutral scene tint `(1.06,1.00,0.94)`, AO `0.50`, vignette `0.15`,
+  saturation `1.02`, and contrast `1.03`;
+- height fog density `0.006`; and
+- facade palette: brick `(0.45,0.26,0.20)`, tan `(0.58,0.47,0.36)`, warm grey
+  `(0.48,0.46,0.43)`, cream `(0.64,0.58,0.48)`, with asphalt
+  `(0.16,0.16,0.17)`, sidewalk `(0.42,0.42,0.40)`, and `RoughnessMul=0.90`.
+
+The matching runtime environment controller starts at `08:04` game time, which
+reproduces the authored `-32°` sun elevation before continuing the day/night
+cycle. It pools at most 22 shadowless streetlights and never adds per-lamp tick
+or collision work, preserving the iPhone-first budget.
+
+The final real-RHI 1280×720 audit with Zarri and exposure bias `0.70` measured
+mean Rec.709 luma `96.05`, crushed pixels `0.00%`, clipped pixels `0.26%`, and
+red:blue `1.007`.
+
+---
+
 ## 2026-07-18 Enterable Parking and Vehicle Safety Pass
 
 - Parking authoring now tests each full 4.7-metre vehicle footprint against

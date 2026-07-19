@@ -4,20 +4,45 @@
 #include "Blueprint/UserWidget.h"
 #include "Missions/DecisionSubsystem.h"
 #include "Missions/StrategicDecision.h"
+#include "Founder/SprawlGameFlowSubsystem.h"
 #include "Save/SprawlSaveSubsystem.h"
+#include "Phone/PhoneSubsystem.h"
 #include "UI/DecisionModalWidget.h"
 #include "UI/SprawlDecisionModal.h"
+#include "UI/SprawlEndGameModal.h"
+#include "UI/SprawlNativeHUD.h"
 
 #include "Kismet/KismetSystemLibrary.h"
 #include "Components/InputComponent.h"
 #include "Vehicles/SprawlCar.h"
 #include "Characters/ZarriCharacter.h"
 #include "GameFramework/Pawn.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 void ASprawlPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 	EnsureUIInitialized();
+}
+
+void ASprawlPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UDecisionSubsystem* Decisions = GI->GetSubsystem<UDecisionSubsystem>())
+		{
+			Decisions->OnDecisionOffered.RemoveDynamic(
+				this, &ASprawlPlayerController::HandleDecisionOffered);
+		}
+		if (USprawlGameFlowSubsystem* Flow =
+			GI->GetSubsystem<USprawlGameFlowSubsystem>())
+		{
+			Flow->OnRunEnded.RemoveDynamic(
+				this, &ASprawlPlayerController::HandleRunEnded);
+		}
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void ASprawlPlayerController::EnsureUIInitialized()
@@ -37,10 +62,37 @@ void ASprawlPlayerController::EnsureUIInitialized()
 	{
 		DecisionModalClass = USprawlDecisionModal::StaticClass();
 	}
+	if (!HUDWidgetClass)
+	{
+		HUDWidgetClass = USprawlNativeHUD::StaticClass();
+	}
+	if (!EndGameModalClass)
+	{
+		EndGameModalClass = USprawlEndGameModal::StaticClass();
+	}
 
 	if (HUDWidgetClass)
 	{
 		HUDWidget = CreateWidget<UUserWidget>(this, HUDWidgetClass);
+		if (USprawlNativeHUD* NativeHUD = Cast<USprawlNativeHUD>(HUDWidget))
+		{
+			NativeHUD->BuildUI();
+		}
+		// The currently authored WBP is an empty placeholder. Preserve any real
+		// designer HUD, but recover to the complete native HUD when its tree has
+		// no root and would otherwise render nothing.
+		if (HUDWidget && !HUDWidget->GetRootWidget())
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Sprawl] HUD class %s has no root; using native HUD"),
+				*HUDWidgetClass->GetName());
+			HUDWidgetClass = USprawlNativeHUD::StaticClass();
+			HUDWidget = CreateWidget<UUserWidget>(this, HUDWidgetClass);
+			if (USprawlNativeHUD* NativeHUD = Cast<USprawlNativeHUD>(HUDWidget))
+			{
+				NativeHUD->BuildUI();
+			}
+		}
 		if (HUDWidget) HUDWidget->AddToViewport(0);
 	}
 	UE_LOG(LogTemp, Warning, TEXT("[Sprawl] UI init: HUD=%s modal=%s"),
@@ -52,6 +104,17 @@ void ASprawlPlayerController::EnsureUIInitialized()
 		if (UDecisionSubsystem* Decisions = GI->GetSubsystem<UDecisionSubsystem>())
 		{
 			Decisions->OnDecisionOffered.AddDynamic(this, &ASprawlPlayerController::HandleDecisionOffered);
+		}
+		if (USprawlGameFlowSubsystem* Flow =
+			GI->GetSubsystem<USprawlGameFlowSubsystem>())
+		{
+			Flow->OnRunEnded.AddDynamic(
+				this, &ASprawlPlayerController::HandleRunEnded);
+			Flow->RefreshAfterLoad(true);
+			if (Flow->IsGameOver())
+			{
+				HandleRunEnded(Flow->GetCurrentEndGameInfo());
+			}
 		}
 	}
 }
@@ -77,6 +140,15 @@ void ASprawlPlayerController::SetupInputComponent()
 
 void ASprawlPlayerController::OnInteractPressed()
 {
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UPhoneSubsystem* Phone = GI->GetSubsystem<UPhoneSubsystem>();
+			Phone && Phone->TryAnswerRingingCall())
+		{
+			return;
+		}
+	}
+
 	APawn* P = GetPawn();
 	UE_LOG(LogTemp, Warning, TEXT("[Sprawl] Interact pressed, pawn=%s"),
 		P ? *P->GetName() : TEXT("NULL"));
@@ -94,7 +166,8 @@ void ASprawlPlayerController::OnInteractPressed()
 void ASprawlPlayerController::OnEscapePressed()
 {
 	// If a decision popup is currently active on screen, don't force quit on the first Esc press
-	if (DecisionWidget && DecisionWidget->IsInViewport())
+	if ((DecisionWidget && DecisionWidget->IsInViewport()) ||
+		(EndGameWidget && EndGameWidget->IsInViewport()))
 	{
 		return;
 	}
@@ -166,6 +239,51 @@ void ASprawlPlayerController::HandleDecisionOffered(UStrategicDecision* Decision
 		Modal->PresentDecision(Decision);
 	}
 	DecisionWidget->AddToViewport(100);
+	SetPause(true);
+	bShowMouseCursor = true;
+	SetInputMode(FInputModeUIOnly());
+}
+
+void ASprawlPlayerController::HandleRunEnded(const FSprawlEndGameInfo& Info)
+{
+	PendingEndGameInfo = Info;
+	bHasPendingEndGame = true;
+	if (UWorld* World = GetWorld())
+	{
+		// Decision resolution unpauses immediately after broadcasting. Present on
+		// the next tick so a bailout shutdown cannot undo this modal's pause.
+		World->GetTimerManager().SetTimerForNextTick(
+			FTimerDelegate::CreateUObject(
+				this, &ASprawlPlayerController::PresentPendingEndGame));
+	}
+}
+
+void ASprawlPlayerController::PresentPendingEndGame()
+{
+	if (!bHasPendingEndGame || !IsLocalController())
+	{
+		return;
+	}
+	bHasPendingEndGame = false;
+
+	if (!EndGameModalClass)
+	{
+		EndGameModalClass = USprawlEndGameModal::StaticClass();
+	}
+	if (EndGameWidget)
+	{
+		EndGameWidget->RemoveFromParent();
+	}
+	EndGameWidget = CreateWidget<UUserWidget>(this, EndGameModalClass);
+	if (!EndGameWidget)
+	{
+		return;
+	}
+	if (USprawlEndGameModal* Modal = Cast<USprawlEndGameModal>(EndGameWidget))
+	{
+		Modal->PresentEndGame(PendingEndGameInfo);
+	}
+	EndGameWidget->AddToViewport(200);
 	SetPause(true);
 	bShowMouseCursor = true;
 	SetInputMode(FInputModeUIOnly());

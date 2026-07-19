@@ -9,6 +9,8 @@
 #include "ProceduralTrafficManager.generated.h"
 
 class APawn;
+class ASprawlPedestrian;
+class ASprawlCar;
 
 /**
  * AProceduralTrafficManager
@@ -52,11 +54,26 @@ public:
 	/** Throttle in seconds between spawn/cull passes. */
 	UPROPERTY(EditAnywhere, Category="Traffic") float EvaluateInterval = 1.0f;
 
+	/** Bounded pool of abandoned stolen cars retained near the player. */
+	UPROPERTY(EditAnywhere, Category="Traffic") int32 MaxRetiredTraffic = 8;
+
 protected:
 	float TimeSinceEval = 0.f;
 	UPROPERTY() TArray<APawn*> ActiveTraffic;
+	UPROPERTY() TArray<APawn*> RetiredTraffic;
 	bool bTrafficAuditEnabled = false;
 	bool bTrafficAuditComplete = false;
+	bool bTrafficAuditPassed = false;
+	bool bCarjackAuditEnabled = false;
+	bool bCarjackAuditComplete = false;
+	bool bCarjackAuditPassed = false;
+	bool bCarjackAuditTriggered = false;
+	float CarjackAuditElapsed = 0.f;
+	float CarjackAuditTriggerTime = 0.f;
+	TWeakObjectPtr<ASprawlCar> CarjackAuditCar;
+	FString CarjackAuditDriverVariant;
+	int32 CarjackAuditPedestrianCountBefore = 0;
+	bool bCarjackAuditSawFleeingDriver = false;
 	float TrafficAuditElapsed = 0.f;
 	float TrafficAuditMinSpacing = TNumericLimits<float>::Max();
 	int32 TrafficAuditMaxIntersectionOccupancy = 0;
@@ -67,6 +84,8 @@ protected:
 	int32 TrafficAuditMaxEnterableCars = 0;
 	int32 TrafficAuditMaxBoundaryViolations = 0;
 	int32 TrafficAuditMaxUprightViolations = 0;
+	int32 TrafficAuditMaxVisibleDrivers = 0;
+	int32 TrafficAuditMaxMissingDriversAfterWarmup = 0;
 	int32 TrafficAuditUnauthorizedEntries = 0;
 	TMap<TWeakObjectPtr<APawn>, FVector> TrafficAuditStarts;
 	TMap<TWeakObjectPtr<APawn>, float> TrafficAuditLaneViolationDurations;
@@ -75,9 +94,13 @@ protected:
 	TSet<TWeakObjectPtr<APawn>> TrafficAuditSignalStops;
 	TSet<TWeakObjectPtr<APawn>> TrafficAuditLaneViolators;
 	TSet<TWeakObjectPtr<APawn>> TrafficAuditCarsInIntersections;
+	TMap<TWeakObjectPtr<ASprawlPedestrian>, float> TrafficAuditPedOffRoadDurations;
+	TSet<TWeakObjectPtr<ASprawlPedestrian>> TrafficAuditPedOffsideViolators;
 
 	void Evaluate();
 	void CullDistant(const FVector& PlayerLoc);
 	void SpawnNeeded(const FVector& PlayerLoc);
 	void RunTrafficAudit(float DeltaSeconds);
+	void RunCarjackAudit(float DeltaSeconds);
+	void RequestAuditExitIfComplete();
 };

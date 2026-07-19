@@ -37,7 +37,9 @@ void USprawlMissionDirector::OnWorldBeginPlay(UWorld& InWorld)
 	// normal gameplay pacing unchanged while preventing the opening modal from
 	// pausing automated city validation.
 	if (FParse::Param(FCommandLine::Get(), TEXT("SprawlTrafficAudit")) ||
-		FParse::Param(FCommandLine::Get(), TEXT("SprawlProgressionAudit")))
+		FParse::Param(FCommandLine::Get(), TEXT("SprawlProgressionAudit")) ||
+		FParse::Param(FCommandLine::Get(), TEXT("SprawlCarjackAudit")) ||
+		FParse::Param(FCommandLine::Get(), TEXT("SprawlVisualAudit")))
 	{
 		UE_LOG(LogTemp, Log, TEXT("[MissionDirector] Opening call suppressed for runtime audit"));
 	}
@@ -198,6 +200,14 @@ void USprawlMissionDirector::AutoAnswer()
 void USprawlMissionDirector::HandleResolved(UStrategicDecision* Decision, FName ChosenBranch)
 {
 	if (!Decision) return;
+
+	if (UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+	{
+		if (UPhoneSubsystem* Phone = GI->GetSubsystem<UPhoneSubsystem>())
+		{
+			Phone->EndCall();
+		}
+	}
 
 	for (const FDecisionBranch& Branch : Decision->Branches)
 	{

@@ -9,12 +9,14 @@
 const TArray<FString>& FSprawlAvatarLibrary::PedestrianVariants()
 {
 	// Must match the folders created by Content/Python/import_artwork.py.
-	// Cappy is reserved for Zarri so the hero reads as unique on the street.
+	// Zarri is intentionally omitted so the hero remains unique on the street.
 	static const TArray<FString> Variants = {
-		TEXT("Baldman"), TEXT("BizDude"), TEXT("Chill"), TEXT("Erika"),
+		TEXT("Baldman"), TEXT("BizDude"), TEXT("Cappy"), TEXT("Chill"), TEXT("Erika"),
 		TEXT("Jennifer"), TEXT("Jimmy"), TEXT("Kate"), TEXT("Kyle"),
 		TEXT("Lydia"), TEXT("Mafiossini"), TEXT("OldMoustache"),
 		TEXT("Olivia"), TEXT("Rose"), TEXT("Samuela"), TEXT("Shiro"),
+		TEXT("Bruno"), TEXT("CursedAmy"), TEXT("Eugenia"),
+		TEXT("Jenny"), TEXT("Juanita"),
 	};
 	return Variants;
 }

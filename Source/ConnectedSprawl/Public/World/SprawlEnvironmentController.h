@@ -41,7 +41,7 @@ public:
 	UPROPERTY(EditAnywhere, Category="Environment") float DayLengthMinutes = 18.f;
 
 	/** Clock time at startup, in hours (0..24). */
-	UPROPERTY(EditAnywhere, Category="Environment") float StartHour = 10.5f;
+	UPROPERTY(EditAnywhere, Category="Environment") float StartHour = 8.071530f;
 
 	/** Freeze the clock (for screenshots / missions). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Environment") bool bPaused = false;
@@ -50,7 +50,14 @@ public:
 	UPROPERTY(EditAnywhere, Category="Environment") float MaxSunElevation = 62.f;
 
 	/** Compass yaw the sun travels along. */
-	UPROPERTY(EditAnywhere, Category="Environment") float SunYaw = -52.f;
+	UPROPERTY(EditAnywhere, Category="Environment") float SunYaw = -38.f;
+
+	/** Authentic balanced daytime targets shared with city_color_pass.py. */
+	UPROPERTY(EditAnywhere, Category="Environment|Daylight") float DaySunIntensity = 5.2f;
+	UPROPERTY(EditAnywhere, Category="Environment|Daylight")
+	FLinearColor DaySunColor = FLinearColor(1.f, 0.86f, 0.70f, 1.f);
+	UPROPERTY(EditAnywhere, Category="Environment|Daylight") float DaySkyIntensity = 1.85f;
+	UPROPERTY(EditAnywhere, Category="Environment|Daylight") float DayFogDensity = 0.006f;
 
 	/** Streetlights switched on near the player at night (point-light budget). */
 	UPROPERTY(EditAnywhere, Category="Environment") int32 MaxActiveStreetlights = 22;
@@ -74,7 +81,7 @@ protected:
 	/** Pooled point lights, repositioned onto the nearest lamps each update. */
 	UPROPERTY() TArray<TObjectPtr<UPointLightComponent>> LampLights;
 
-	float Hour = 10.5f;
+	float Hour = 8.071530f;
 	bool bNight = false;
 	float LampUpdateTimer = 0.f;
 

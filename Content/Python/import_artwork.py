@@ -1,11 +1,11 @@
-"""Import the CC0 artwork (human avatars + street props) and dress the city.
+"""Import the credited artwork (human avatars + street props) and dress the city.
 
 What it does:
   1. Imports every Content/Import/Pedestrians/<Name>.fbx as a skeletal mesh
      with its baked animation takes into /Game/Pedestrians/<Name>/ and renames
      the assets to the names the C++ expects:
          SK_<Name>, <Name>_Idle, <Name>_Walk, <Name>_Jog, <Name>_Talk,
-         <Name>_WalkFormal
+         <Name>_WalkFormal, <Name>_Sprint, <Name>_Sit
   2. Imports the KayKit street props into /Game/CityProps/.
   3. Scatters benches, hydrants, dumpsters, boxes, litter and park bushes
      along the sidewalks of TestMap (deterministic, idempotent).
@@ -25,7 +25,9 @@ PROP_SRC = os.path.join(PROJECT_CONTENT, "Import", "CityProps")
 EAL = unreal.EditorAssetLibrary
 atools = unreal.AssetToolsHelpers.get_asset_tools()
 
-ANIM_SUFFIXES = ["Idle", "Walk", "Jog", "Talk", "WalkFormal"]
+ANIM_SUFFIXES = [
+    "Idle", "Walk", "Jog", "Talk", "WalkFormal", "Sprint", "Sit"
+]
 
 
 # ============================================================

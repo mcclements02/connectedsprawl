@@ -1,4 +1,4 @@
-"""Import only the 16 authored human avatars and their locomotion clips.
+"""Import the authored lightweight avatars and their seven animation clips.
 
 Unlike import_artwork.py this focused pass never touches TestMap or street
 props. It is safe to rerun when character source FBXs change.
@@ -10,7 +10,14 @@ import unreal
 CONTENT_DIR = unreal.SystemLibrary.get_project_content_directory()
 SOURCE_DIR = os.path.join(CONTENT_DIR, "Import", "Pedestrians")
 DEST_ROOT = "/Game/Pedestrians"
-ANIMATION_SUFFIXES = ["Idle", "Walk", "Jog", "Talk", "WalkFormal"]
+REQUESTED_VARIANTS = {
+    value.strip().lower()
+    for value in os.environ.get("SPRAWL_CHARACTER_VARIANTS", "").split(",")
+    if value.strip()
+}
+ANIMATION_SUFFIXES = [
+    "Idle", "Walk", "Jog", "Talk", "WalkFormal", "Sprint", "Sit"
+]
 
 eal = unreal.EditorAssetLibrary
 asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
@@ -66,18 +73,47 @@ def import_character(fbx_path):
     missing = [path for path in expected if not eal.does_asset_exist(path)]
     if missing:
         raise RuntimeError("{} import missing {}".format(variant, ", ".join(missing)))
-    unreal.log("[Characters] imported {} with five locomotion clips".format(variant))
+    unreal.log("[Characters] imported {} with seven animation clips".format(variant))
 
 
 fbx_files = sorted(
     os.path.join(SOURCE_DIR, name)
     for name in os.listdir(SOURCE_DIR)
     if name.lower().endswith(".fbx")
+    and (
+        not REQUESTED_VARIANTS
+        or os.path.splitext(name)[0].lower() in REQUESTED_VARIANTS
+    )
 )
 if not fbx_files:
-    raise RuntimeError("No avatar FBXs found under {}".format(SOURCE_DIR))
+    raise RuntimeError(
+        "No matching avatar FBXs found under {} for {}".format(
+            SOURCE_DIR,
+            sorted(REQUESTED_VARIANTS) if REQUESTED_VARIANTS else "all variants",
+        )
+    )
 
 for source_path in fbx_files:
     import_character(source_path)
 
-unreal.log("[Characters] DONE: {} real human variants ready".format(len(fbx_files)))
+imported_variants = {
+    os.path.splitext(os.path.basename(path))[0].lower() for path in fbx_files
+}
+if "zarri" in imported_variants:
+    import avatar_realism
+
+    hero_blueprint = eal.load_asset("/Game/Core/BP_Zarri")
+    hero_mesh = eal.load_asset("/Game/Pedestrians/Zarri/SK_Zarri")
+    if not hero_blueprint or not hero_mesh:
+        raise RuntimeError("Zarri import could not load its Blueprint and mesh")
+    hero_cdo = unreal.get_default_object(hero_blueprint.generated_class())
+    hero_cdo.set_editor_property("hero_variant", "Zarri")
+    configured, source = avatar_realism.apply_hero_mesh_defaults(
+        hero_cdo.get_editor_property("mesh")
+    )
+    if not configured:
+        raise RuntimeError("Zarri Blueprint configuration failed: {}".format(source))
+    eal.save_asset("/Game/Core/BP_Zarri", only_if_is_dirty=False)
+    unreal.log("[Characters] BP_Zarri configured from {}".format(source))
+
+unreal.log("[Characters] DONE: {} avatar variants ready".format(len(fbx_files)))
