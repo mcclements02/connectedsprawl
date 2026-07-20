@@ -4,6 +4,8 @@
 #include "Vehicles/SprawlCar.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/ChildActorComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "EnhancedInputComponent.h"
@@ -16,8 +18,8 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
-#include "Animation/AnimInstance.h"
 #include "Animation/AnimSequence.h"
+#include "Animation/AnimSingleNodeInstance.h"
 #include "Characters/SprawlAvatarLibrary.h"
 #include "Phone/PhoneSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
@@ -57,6 +59,23 @@ AZarriCharacter::AZarriCharacter()
 	FollowCamera->SetupAttachment(SpringArm);
 	FollowCamera->bUsePawnControlRotation = false;
 	FollowCamera->SetFieldOfView(84.f);
+
+	MetaHumanVisualComponent = CreateDefaultSubobject<UChildActorComponent>(TEXT("MetaHumanVisual"));
+	MetaHumanVisualComponent->SetupAttachment(RootComponent);
+	MetaHumanVisualComponent->SetRelativeTransform(MetaHumanRelativeTransform);
+	MetaHumanVisualComponent->SetChildActorOwnerOnCreation(true);
+
+	// MetaHuman Creator assembles this actor into a stable path. Creator Core
+	// Data supplies locomotion authored for the same body skeleton. Soft
+	// references preserve a zero-cost fallback when those assets are absent.
+	MetaHumanVisualClass = TSoftClassPtr<AActor>(FSoftObjectPath(
+		TEXT("/Game/MetaHumans/Zarri/BP_Zarri.BP_Zarri_C")));
+	MetaHumanIdleAnim = TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(
+		TEXT("/MetaHumanCharacter/Optional/Animation/UEFNAnimPreset/Locomotion/AS_MH_Neutral_Stand_Idle_Loop.AS_MH_Neutral_Stand_Idle_Loop")));
+	MetaHumanWalkAnim = TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(
+		TEXT("/MetaHumanCharacter/Optional/Animation/UEFNAnimPreset/Locomotion/AS_MH_Neutral_Walk_Loop_F.AS_MH_Neutral_Walk_Loop_F")));
+	MetaHumanRunAnim = TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(
+		TEXT("/MetaHumanCharacter/Optional/Animation/UEFNAnimPreset/Locomotion/AS_MH_Neutral_Run_Loop_F.AS_MH_Neutral_Run_Loop_F")));
 
 	MobileOfficeRigComponent = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("MobileOfficeRigComponent"));
 	MobileOfficeRigComponent->SetupAttachment(GetMesh());
@@ -123,6 +142,7 @@ void AZarriCharacter::BeginPlay()
 
 	InitializeHeroAvatar();
 	InitializeEquipment();
+	TryInitializeMetaHumanVisual();
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
@@ -142,6 +162,130 @@ void AZarriCharacter::Tick(float DeltaSeconds)
 
 	UpdateHeroAnimation();
 	UpdateEquipmentVisuals(DeltaSeconds);
+}
+
+bool AZarriCharacter::TryInitializeMetaHumanVisual()
+{
+	bUsingMetaHumanVisual = false;
+	MetaHumanBodyComponent = nullptr;
+	LoadedMetaHumanIdleAnim = nullptr;
+	LoadedMetaHumanWalkAnim = nullptr;
+	LoadedMetaHumanRunAnim = nullptr;
+	MetaHumanCurrentAnim = nullptr;
+
+	if (!MetaHumanVisualComponent || MetaHumanVisualClass.IsNull()
+		|| MetaHumanIdleAnim.IsNull() || MetaHumanWalkAnim.IsNull()
+		|| MetaHumanRunAnim.IsNull())
+	{
+		return false;
+	}
+
+	const TSubclassOf<AActor> VisualClass = MetaHumanVisualClass.LoadSynchronous();
+	LoadedMetaHumanIdleAnim = MetaHumanIdleAnim.LoadSynchronous();
+	LoadedMetaHumanWalkAnim = MetaHumanWalkAnim.LoadSynchronous();
+	LoadedMetaHumanRunAnim = MetaHumanRunAnim.LoadSynchronous();
+	if (!VisualClass || !LoadedMetaHumanIdleAnim || !LoadedMetaHumanWalkAnim
+		|| !LoadedMetaHumanRunAnim)
+	{
+		UE_LOG(LogTemp, Display,
+			TEXT("[Zarri] MetaHuman actor or locomotion is unavailable; using %s fallback"),
+			*ActiveHeroVariant);
+		return false;
+	}
+
+	MetaHumanVisualComponent->SetRelativeTransform(MetaHumanRelativeTransform);
+	MetaHumanVisualComponent->SetChildActorClass(VisualClass);
+	AActor* VisualActor = MetaHumanVisualComponent->GetChildActor();
+	if (!VisualActor)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Zarri] Failed to spawn MetaHuman visual; using %s fallback"),
+			*ActiveHeroVariant);
+		MetaHumanVisualComponent->SetChildActorClass(nullptr);
+		return false;
+	}
+
+	TInlineComponentArray<USkeletalMeshComponent*> SkeletalMeshes(VisualActor);
+	for (USkeletalMeshComponent* SkeletalMesh : SkeletalMeshes)
+	{
+		if (!SkeletalMesh)
+		{
+			continue;
+		}
+		SkeletalMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SkeletalMesh->SetGenerateOverlapEvents(false);
+		if (SkeletalMesh->GetFName() == TEXT("Body")
+			|| SkeletalMesh->ComponentHasTag(TEXT("MetaHumanBody")))
+		{
+			MetaHumanBodyComponent = SkeletalMesh;
+		}
+	}
+
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(VisualActor);
+	for (UPrimitiveComponent* Primitive : PrimitiveComponents)
+	{
+		if (Primitive)
+		{
+			Primitive->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Primitive->SetGenerateOverlapEvents(false);
+		}
+	}
+	VisualActor->SetActorEnableCollision(false);
+
+	if (!MetaHumanBodyComponent || !MetaHumanBodyComponent->GetSkeletalMeshAsset())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Zarri] MetaHuman visual has no assembled Body mesh; using %s fallback"),
+			*ActiveHeroVariant);
+		MetaHumanVisualComponent->SetChildActorClass(nullptr);
+		MetaHumanBodyComponent = nullptr;
+		return false;
+	}
+
+	MetaHumanBodyComponent->SetAnimInstanceClass(nullptr);
+	MetaHumanBodyComponent->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	FSprawlAvatarLibrary::PlayLoop(MetaHumanBodyComponent,
+		LoadedMetaHumanIdleAnim, MetaHumanCurrentAnim);
+	const UAnimSingleNodeInstance* SingleNode =
+		MetaHumanBodyComponent->GetSingleNodeInstance();
+	if (!SingleNode || SingleNode->GetAnimationAsset() != LoadedMetaHumanIdleAnim)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Zarri] MetaHuman Body rejected its locomotion clips; using %s fallback"),
+			*ActiveHeroVariant);
+		MetaHumanVisualComponent->SetChildActorClass(nullptr);
+		MetaHumanBodyComponent = nullptr;
+		MetaHumanCurrentAnim = nullptr;
+		return false;
+	}
+
+	bUsingMetaHumanVisual = true;
+	AttachEquipmentToVisual(MetaHumanBodyComponent, true);
+	SetCharacterVisualHidden(false);
+
+	UE_LOG(LogTemp, Display, TEXT("[Zarri] Activated assembled MetaHuman visual %s"),
+		*VisualClass->GetName());
+	return true;
+}
+
+void AZarriCharacter::SetCharacterVisualHidden(bool bHidden)
+{
+	if (USkeletalMeshComponent* FallbackMesh = GetMesh())
+	{
+		FallbackMesh->SetHiddenInGame(bHidden || bUsingMetaHumanVisual, true);
+	}
+
+	if (MetaHumanVisualComponent)
+	{
+		if (AActor* VisualActor = MetaHumanVisualComponent->GetChildActor())
+		{
+			VisualActor->SetActorHiddenInGame(bHidden || !bUsingMetaHumanVisual);
+		}
+	}
+
+	if (MobileOfficeRigComponent) { MobileOfficeRigComponent->SetHiddenInGame(bHidden); }
+	if (RunwayTrackerComponent) { RunwayTrackerComponent->SetHiddenInGame(bHidden); }
+	if (CommDeviceComponent) { CommDeviceComponent->SetHiddenInGame(bHidden); }
 }
 
 void AZarriCharacter::InitializeHeroAvatar()
@@ -209,6 +353,29 @@ void AZarriCharacter::InitializeHeroAvatar()
 
 void AZarriCharacter::UpdateHeroAnimation()
 {
+	if (bUsingMetaHumanVisual && MetaHumanBodyComponent)
+	{
+		const float Speed = GetVelocity().Size2D();
+		if (Speed > 320.f)
+		{
+			FSprawlAvatarLibrary::PlayLoop(MetaHumanBodyComponent,
+				LoadedMetaHumanRunAnim, MetaHumanCurrentAnim,
+				FMath::Clamp(Speed / 520.f, 0.8f, 1.35f));
+		}
+		else if (Speed > 25.f)
+		{
+			FSprawlAvatarLibrary::PlayLoop(MetaHumanBodyComponent,
+				LoadedMetaHumanWalkAnim, MetaHumanCurrentAnim,
+				FMath::Clamp(Speed / 150.f, 0.7f, 1.75f));
+		}
+		else
+		{
+			FSprawlAvatarLibrary::PlayLoop(MetaHumanBodyComponent,
+				LoadedMetaHumanIdleAnim, MetaHumanCurrentAnim);
+		}
+		return;
+	}
+
 	if (!bHasHeroAvatar)
 	{
 		return;
@@ -377,6 +544,7 @@ bool AZarriCharacter::EnterVehicle(ASprawlCar* Vehicle)
 		return false;
 	}
 	// Hide Zarri but keep him in the world so we can teleport him to a door on exit.
+	SetCharacterVisualHidden(true);
 	SetActorHiddenInGame(true);
 	SetActorEnableCollision(false);
 	GetCharacterMovement()->DisableMovement();
@@ -405,6 +573,7 @@ void AZarriCharacter::OnExitedVehicle(ASprawlCar* FromVehicle)
 	SetActorLocation(Exit, /*bSweep*/ false, nullptr, ETeleportType::TeleportPhysics);
 
 	SetActorHiddenInGame(false);
+	SetCharacterVisualHidden(false);
 	SetActorEnableCollision(true);
 	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 
@@ -473,6 +642,35 @@ void AZarriCharacter::InitializeEquipment()
 		{
 			CommDeviceMID = CommDeviceComponent->CreateDynamicMaterialInstance(CommDeviceMaterialIndex, Material);
 		}
+	}
+}
+
+void AZarriCharacter::AttachEquipmentToVisual(
+	USkeletalMeshComponent* TargetMesh, bool bMetaHumanSockets)
+{
+	if (!TargetMesh)
+	{
+		return;
+	}
+
+	const FName RigSocket = bMetaHumanSockets ? MetaHumanRigSocket : MobileOfficeRigSocket;
+	const FName TrackerSocket = bMetaHumanSockets ? MetaHumanTrackerSocket : RunwayTrackerSocket;
+	const FName DeviceSocket = bMetaHumanSockets ? MetaHumanCommSocket : CommDeviceSocket;
+
+	if (MobileOfficeRigComponent && MobileOfficeRigAsset)
+	{
+		MobileOfficeRigComponent->AttachToComponent(
+			TargetMesh, FAttachmentTransformRules::SnapToTargetIncludingScale, RigSocket);
+	}
+	if (RunwayTrackerComponent && RunwayTrackerAsset)
+	{
+		RunwayTrackerComponent->AttachToComponent(
+			TargetMesh, FAttachmentTransformRules::SnapToTargetIncludingScale, TrackerSocket);
+	}
+	if (CommDeviceComponent && CommDeviceAsset)
+	{
+		CommDeviceComponent->AttachToComponent(
+			TargetMesh, FAttachmentTransformRules::SnapToTargetIncludingScale, DeviceSocket);
 	}
 }
 

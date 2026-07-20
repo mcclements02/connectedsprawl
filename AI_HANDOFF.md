@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 15 · **Last updated:** 2026-07-19 11:40 PDT · **Updated by:** codex
+**Version:** 18 · **Last updated:** 2026-07-19 17:23 PDT · **Updated by:** codex
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -20,11 +20,81 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 | Branch | Worktree | Agent | Status | Summary | Updated |
 |--------|----------|-------|--------|---------|---------|
+| main | `/Users/matthewx/code/ConnectedSprawl` | codex | complete with wardrobe follow-up | UE 5.8 Optimized Low MetaHuman Zarri is assembled, natively integrated, and standalone-validated; exact reference streetwear still needs compatible custom wardrobe assets. | 2026-07-19 17:23 PDT |
 
 ## Log (append newest on top)
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-19 · main · codex
+- **Changed:** Completed the UE 5.8 MetaHuman Zarri pass after installing Epic's
+  Creator Core Data. Added the reproducible `create_zarri_metahuman.py` authoring
+  pass and generated `/Game/MetaHumans/Source/MHC_Zarri` plus the Optimized Low
+  `/Game/MetaHumans/Zarri/BP_Zarri` runtime actor. Zarri is now a 177.5 cm slim,
+  young Black male with a warm medium-deep complexion, clean face, thick flat
+  brows, fine lashes, and a short black Afro Fade. The installed default outfit
+  is baked dark indigo/charcoal. `AZarriCharacter` keeps native movement,
+  capsule, camera, equipment, and vehicle authority while the assembled actor
+  provides the on-foot visual and Core Data idle/walk/run clips; validation
+  failures still restore the lightweight Zarri/Cappy/mannequin path.
+- **Validation:** UE 5.8 MetaHuman cloud rig and 2K-source requests completed;
+  final Optimized Low assembly logged `MetaHuman Character assembly succeeded`
+  and the script's `PASS`, followed by validation of all 52 generated runtime
+  assets. The project now contains 252 MetaHuman assets (about 461 MB). The final
+  `ConnectedSprawlEditor Mac Development` native build passed (37.63 s), the
+  Python authoring pass compiled with Epic's Python 3.11, and repeated 1280x720
+  real-Metal standalone launches showed the assembled face/body, black card
+  Afro, dark outfit, HUD, city, and locomotion in-game.
+- **Status:** the playable on-foot MetaHuman is complete and remains unstaged
+  and uncommitted. Epic's installed Core Data only provides a T-shirt/shorts
+  outfit, so it cannot supply the reference's denim/shearling jacket, hoodie,
+  cargo pants, high-top shoes, headphones, or cross-body strap. The seated
+  player-car visual also remains the lightweight Zarri proxy by design.
+- **Next:** acquire or author license-safe, mobile MetaHuman-compatible wardrobe
+  and accessory assets for the exact reference silhouette, replace the seated
+  proxy if device profiling allows it, run an iOS cook/device performance pass,
+  and configure Git LFS before publishing the 97.5 MiB source character asset.
+<!-- entry:metahuman-zarri-assembled -->
+
+### 2026-07-19 · main · codex
+- **Changed:** Added an optional assembled-MetaHuman visual boundary to native
+  `AZarriCharacter`, with stable soft references for
+  `/Game/MetaHumans/Zarri/BP_Zarri` and its project-owned locomotion AnimBP.
+  The MetaHuman activates only after its actor, `Body` mesh, and animation
+  contract validate; otherwise the existing Zarri/Cappy/mannequin path remains
+  playable. The native capsule, movement, camera, vehicle possession, seated
+  driver proxy, and equipment systems remain authoritative. MetaHuman collision
+  is disabled, equipment reattaches to standard MetaHuman sockets, and on-foot
+  visual visibility stays coherent across vehicle entry/exit.
+- **Validation:** `ConnectedSprawlEditor Mac Development` compiled successfully
+  with UE 5.8 (4 actions, 22.62 s); `git diff --check` passed before this ledger
+  update. The installed MetaHuman code/pipelines and official guidance were
+  audited for assembly output, runtime integration, and iOS constraints.
+- **Status:** blocked on an external local prerequisite: this UE 5.8 install is
+  missing **MetaHuman Creator Core Data**, so the requested face, skin, hair,
+  and wardrobe cannot yet be authored or assembled in-editor.
+- **Next:** Epic Games Launcher → Unreal Engine → Library → UE 5.8 dropdown →
+  Options → enable **MetaHuman Creator Core Data** → Apply. Then create a young
+  Black male Zarri from the supplied reference, use card/mesh hair, assemble
+  Optimized Low/Medium under `/Game/MetaHumans/Zarri`, author the locomotion
+  AnimBP at the configured path, and run PIE plus iPhone device profiling before
+  considering MetaHuman validator skinning-setting changes.
+<!-- entry:metahuman-zarri-integration-blocked-core-data -->
+
+### 2026-07-19 · main · codex
+- **Changed:** Started the requested UE 5.8 MetaHuman Zarri pass and enabled
+  Epic's installed MetaHuman Creator plugin for this project.
+- **Validation:** Mandatory Git/worktree preflight was clean on `main` at
+  `823ab7f`; the UE 5.8 installation contains MetaHuman Creator, SDK, Animator,
+  Crowd, and related Mac binaries. Editor authoring and gameplay validation are
+  still pending.
+- **Status:** in progress; the current lightweight Zarri remains the safe
+  fallback until the MetaHuman is assembled and validated.
+- **Next:** create the MetaHuman in-editor from a young Black male preset,
+  visually match the supplied face, hair, skin, and silhouette, then assemble
+  an iPhone-appropriate output and integrate it with Zarri.
+<!-- entry:metahuman-zarri-start -->
 
 ### 2026-07-19 · main · codex
 - **Changed:** Finalized the complete living-city change set for the requested

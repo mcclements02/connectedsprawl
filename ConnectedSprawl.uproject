@@ -25,6 +25,7 @@
 		{ "Name": "PythonScriptPlugin", "Enabled": true },
 		{ "Name": "ChaosVehiclesPlugin", "Enabled": true },
 		{ "Name": "ModelingToolsEditorMode", "Enabled": true },
+		{ "Name": "MetaHumanCharacter", "Enabled": true },
 		{ "Name": "GameplayAbilities", "Enabled": true },
 		{ "Name": "Niagara", "Enabled": true }
 	],
