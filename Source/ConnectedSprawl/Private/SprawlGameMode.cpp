@@ -10,6 +10,7 @@
 #include "Missions/SprawlGigSubsystem.h"
 #include "Save/SprawlSaveSubsystem.h"
 #include "World/SprawlCityGridSubsystem.h"
+#include "World/SprawlWaterfrontScenery.h"
 #include "Engine/World.h"
 #include "Engine/GameViewportClient.h"
 #include "ImageUtils.h"
@@ -39,6 +40,7 @@ void ASprawlGameMode::StartPlay()
 
 	UWorld* World = GetWorld();
 	if (!World) return;
+	ASprawlWaterfrontScenery::EnsureForWorld(World);
 
 	World->GetTimerManager().SetTimer(
 		DayTimerHandle,

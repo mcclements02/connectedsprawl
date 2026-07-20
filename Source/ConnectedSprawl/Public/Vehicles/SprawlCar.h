@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AI/SprawlTrafficRoute.h"
 #include "GameFramework/Pawn.h"
 #include "World/SprawlCityGridSubsystem.h"
 #include "SprawlCar.generated.h"
@@ -67,6 +68,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Car|Occupant")
 	bool HasVisibleDriver() const;
+	/** True only while the visible driver pelvis remains inside measured bodywork. */
+	bool HasContainedDriverVisual() const;
 
 	const FString& GetAIDriverVariant() const { return AIDriverVariant; }
 	ASprawlPedestrian* GetLastEjectedDriver() const
@@ -79,6 +82,23 @@ public:
 		return AIReservedIntersectionX >= 0 || AIReservedIntersectionY >= 0
 			|| bAIClearingIntersection;
 	}
+
+	/** Planned directed lane, used by traffic diagnostics instead of actor yaw. */
+	bool GetAITravelState(ESprawlHeading& OutHeading, int32& OutRoadIndex) const
+	{
+		if (!bAIStateSeeded)
+		{
+			return false;
+		}
+		OutHeading = AIHeading;
+		OutRoadIndex = AIRoadIndex;
+		return true;
+	}
+
+	/** Invalid edge/topology states stop and ask the manager for a safe recycle. */
+	bool NeedsTrafficRecycle() const { return bNeedsTrafficRecycle; }
+	int32 GetAICompletedTurnCount() const { return AICompletedTurnCount; }
+	int32 GetAICompletedUTurnCount() const { return AICompletedUTurnCount; }
 
 	/** Shared obstruction-tested side-door exit used by Zarri and ejected drivers. */
 	bool FindClearSideExit(float CapsuleRadius, float CapsuleHalfHeight,
@@ -218,12 +238,15 @@ protected:
 	int32 AIRoadIndex = 0;            // road we're travelling on (current axis)
 	bool  bAIStateSeeded = false;
 	int32 AIDecidedCrossing = -1;     // crossing-road index we've chosen a move for
-	int32 AIPendingTurn = 0;          // -1 = left, 0 = straight, +1 = right
+	ESprawlTrafficManeuver AIPendingManeuver = ESprawlTrafficManeuver::Straight;
 	float AISmoothedSpeed = 0.f;      // smoothed speed command (cm/s)
 	FVector2D AILastIntersection = FVector2D(1.e9f, 1.e9f); // center of last crossing we executed
 	int32 AIReservedIntersectionX = -1;
 	int32 AIReservedIntersectionY = -1;
 	bool bAIClearingIntersection = false;
+	bool bNeedsTrafficRecycle = false;
+	int32 AICompletedTurnCount = 0;
+	int32 AICompletedUTurnCount = 0;
 
 	/** Lane-follow the road grid: keep lane, obey signals, avoid traffic. */
 	void RunAutoDrive(float DeltaSeconds);
@@ -250,12 +273,8 @@ protected:
 		UPrimitiveComponent* OtherComponent, FVector NormalImpulse,
 		const FHitResult& Hit);
 
-	/** Pick straight/left/right at the upcoming crossing, avoiding lake/map edge. */
-	void DecideIntersectionMove(int32 CrossingRoadIndex);
-
-	/** Heading + road index after applying a turn choice at a crossing. */
-	static void ResolveMove(ESprawlHeading InHeading, int32 InRoadIndex, int32 CrossingRoadIndex,
-		int32 Turn, ESprawlHeading& OutHeading, int32& OutRoadIndex);
+	/** Pick a legal move at the upcoming crossing, including a reserved U-turn. */
+	bool DecideIntersectionMove(int32 CrossingRoadIndex);
 
 	/** Distance to the nearest blocking car/pedestrian ahead, or -1 if clear. */
 	float SenseObstacleAhead(float SenseLength) const;

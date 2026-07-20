@@ -1,6 +1,7 @@
 // The Connected Sprawl - Living environment controller.
 
 #include "World/SprawlEnvironmentController.h"
+#include "World/SprawlLightingContrast.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/SkyLight.h"
 #include "Engine/ExponentialHeightFog.h"
@@ -101,6 +102,8 @@ void ASprawlEnvironmentController::UpdateSunAndSky()
 	// Solar elevation: peaks at noon, dips below the horizon at night.
 	const float SunElevation = FMath::Sin((Hour - 6.f) / 12.f * PI) * MaxSunElevation;
 	bNight = SunElevation < 2.f;
+	const FSprawlLightingContrastProfile Contrast =
+		FSprawlLightingContrast::BuildProfile(SunElevation);
 
 	if (Sun)
 	{
@@ -113,7 +116,7 @@ void ASprawlEnvironmentController::UpdateSunAndSky()
 				FLinearColor(1.0f, 0.45f, 0.18f),   // horizon
 				DaySunColor,                          // daytime target
 				LowSun);
-			const float Intensity = FMath::Lerp(
+			const float Intensity = Contrast.DirectLightMultiplier * FMath::Lerp(
 				2.2f, DaySunIntensity,
 				FMath::Clamp(SunElevation / 30.f, 0.f, 1.f));
 			if (ULightComponent* L = Sun->GetLightComponent())
@@ -130,7 +133,7 @@ void ASprawlEnvironmentController::UpdateSunAndSky()
 			Sun->SetActorRotation(FRotator(-MoonElevation, SunYaw + 180.f, 0.f));
 			if (ULightComponent* L = Sun->GetLightComponent())
 			{
-				L->SetIntensity(NightMoonIntensity);
+				L->SetIntensity(NightMoonIntensity * Contrast.DirectLightMultiplier);
 				L->SetLightColor(NightMoonColor);
 			}
 		}
@@ -141,7 +144,8 @@ void ASprawlEnvironmentController::UpdateSunAndSky()
 		if (USkyLightComponent* SkyComp = Cast<USkyLightComponent>(Sky->GetLightComponent()))
 		{
 			const float DayAmount = FMath::Clamp(SunElevation / 12.f, 0.f, 1.f);
-			SkyComp->SetIntensity(FMath::Lerp(NightSkyIntensity, DaySkyIntensity, DayAmount));
+			SkyComp->SetIntensity(Contrast.SkyLightMultiplier
+				* FMath::Lerp(NightSkyIntensity, DaySkyIntensity, DayAmount));
 		}
 	}
 
@@ -151,10 +155,10 @@ void ASprawlEnvironmentController::UpdateSunAndSky()
 		const float DayAmount = FMath::Clamp(SunElevation / 12.f, 0.f, 1.f);
 		// Golden-hour haze: thickest right around sunrise/sunset.
 		const float Twilight = FMath::Clamp(1.f - FMath::Abs(SunElevation) / 10.f, 0.f, 1.f);
-		FogComp->SetFogDensity(
-			FMath::Lerp(NightFogDensity, DayFogDensity, DayAmount) + Twilight * 0.008f);
+		FogComp->SetFogDensity(Contrast.FogDensityMultiplier * (
+			FMath::Lerp(NightFogDensity, DayFogDensity, DayAmount) + Twilight * 0.008f));
 
-		const FLinearColor DayFog(0.45f, 0.55f, 0.72f);
+		const FLinearColor DayFog = Contrast.DayFogColor;
 		const FLinearColor DuskFog(0.85f, 0.48f, 0.28f);
 		const FLinearColor NightFog(0.03f, 0.045f, 0.085f);
 		FLinearColor FogColor = FMath::Lerp(NightFog, DayFog, DayAmount);

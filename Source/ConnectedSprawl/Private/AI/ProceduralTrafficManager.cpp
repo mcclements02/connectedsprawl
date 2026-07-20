@@ -2,6 +2,8 @@
 
 #include "AI/ProceduralTrafficManager.h"
 #include "AI/SprawlPedestrian.h"
+#include "AI/SprawlTrafficLaneDiscipline.h"
+#include "AI/SprawlTrafficRoute.h"
 #include "Characters/ZarriCharacter.h"
 #include "Components/PrimitiveComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -46,17 +48,6 @@ using Grid = USprawlCityGridSubsystem;
 
 namespace
 {
-ESprawlHeading OppositeHeading(ESprawlHeading Heading)
-{
-	switch (Heading)
-	{
-	case ESprawlHeading::East: return ESprawlHeading::West;
-	case ESprawlHeading::North: return ESprawlHeading::South;
-	case ESprawlHeading::West: return ESprawlHeading::East;
-	default: return ESprawlHeading::North;
-	}
-}
-
 bool TryParkRetiredCar(UWorld* World, ASprawlCar* Car)
 {
 	if (!World || !Car)
@@ -92,7 +83,8 @@ bool TryParkRetiredCar(UWorld* World, ASprawlCar* Car)
 		}
 		Candidate.Z = 180.f; // overlap-test above the ground, then let physics settle
 		Candidates.Emplace(Candidate,
-			SideAttempt == 0 ? Heading : OppositeHeading(Heading));
+			SideAttempt == 0 ? Heading
+				: FSprawlTrafficRoute::OppositeHeading(Heading));
 	}
 
 	for (const TPair<FVector, ESprawlHeading>& Candidate : Candidates)
@@ -210,7 +202,10 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 	int32 BoundaryViolationsThisSample = 0;
 	int32 UprightViolationsThisSample = 0;
 	int32 VisibleDriversThisSample = 0;
+	int32 OutsideDriversThisSample = 0;
 	int32 DriverReadyCarsThisSample = 0;
+	int32 CompletedTurnsThisSample = 0;
+	int32 CompletedUTurnsThisSample = 0;
 	for (TActorIterator<ASprawlCar> It(World); It; ++It)
 	{
 		ASprawlCar* Car = *It;
@@ -238,6 +233,10 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 			if (Car->HasVisibleDriver())
 			{
 				++VisibleDriversThisSample;
+				if (!Car->HasContainedDriverVisual())
+				{
+					++OutsideDriversThisSample;
+				}
 			}
 		}
 		Cars.Add(Car);
@@ -254,34 +253,23 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 		}
 
 		const FVector Loc = Car->GetActorLocation();
-		const ESprawlHeading Heading = Grid::HeadingFromYaw(Car->GetActorRotation().Yaw);
+		ESprawlHeading Heading = Grid::HeadingFromYaw(Car->GetActorRotation().Yaw);
+		int32 RoadIndex = Grid::NearestRoadIndex(
+			Grid::IsNorthSouth(Heading) ? Loc.X : Loc.Y);
+		const bool bHasPlannedLane = Car->GetAITravelState(Heading, RoadIndex);
 		const bool bNorthSouth = Grid::IsNorthSouth(Heading);
-		const int32 RoadIndex = Grid::NearestRoadIndex(bNorthSouth ? Loc.X : Loc.Y);
-		// Every lane on this side of the centreline is legal, so measure the
-		// departure from the nearest one rather than from lane 0 alone.
-		const float LaneCoord = bNorthSouth ? Loc.X : Loc.Y;
-		float LaneError = TNumericLimits<float>::Max();
-		for (int32 Lane = 0; Lane < Grid::LanesPerDirection; ++Lane)
-		{
-			LaneError = FMath::Min(LaneError, FMath::Abs(
-				LaneCoord - Grid::LaneCenter(RoadIndex, Heading, Lane)));
-		}
-		const float TravelCoord = bNorthSouth ? Loc.Y : Loc.X;
-		const float NearestCrossingDistance = [&]()
-		{
-			float Distance = TNumericLimits<float>::Max();
-			for (int32 Index = 0; Index < Grid::NumRoads; ++Index)
-			{
-				Distance = FMath::Min(Distance,
-					FMath::Abs(TravelCoord - Grid::RoadCenter(Index)));
-			}
-			return Distance;
-		}();
+		const FSprawlTrafficLaneSample LaneSample =
+			FSprawlTrafficLaneDiscipline::Measure(
+				Loc, Car->GetActorForwardVector(), Car->GetVelocity(),
+				Heading, RoadIndex);
+		const float NearestCrossingDistance =
+			FSprawlTrafficLaneDiscipline::DistanceToNearestIntersection(
+				Loc, Heading);
+		const bool bOnStraightEnvelope = bHasPlannedLane
+			&& !Car->HasActiveIntersectionReservation()
+			&& NearestCrossingDistance > Grid::RoadWidth * 0.5f + 450.f;
 		float& LaneViolationDuration = TrafficAuditLaneViolationDurations.FindOrAdd(CarKey);
-		// Clear of the junction box and its turn-in arc, so only a genuine
-		// straight-line lane departure is measured.
-		if (NearestCrossingDistance > Grid::RoadWidth * 0.5f + 450.f
-			&& LaneError > 90.f)
+		if (bOnStraightEnvelope && LaneSample.LaneError > 90.f)
 		{
 			LaneViolationDuration += DeltaSeconds;
 			// Do not fail a legal turn for briefly straddling the straight-lane
@@ -293,7 +281,8 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 				UE_LOG(LogSprawlTrafficAudit, Warning,
 					TEXT("[TrafficAudit] persistent lane departure car=%s location=(%.1f,%.1f) "
 						"lane_error=%.1f crossing_distance=%.1f"),
-					*Car->GetName(), Loc.X, Loc.Y, LaneError, NearestCrossingDistance);
+					*Car->GetName(), Loc.X, Loc.Y,
+					LaneSample.LaneError, NearestCrossingDistance);
 			}
 		}
 		else
@@ -301,30 +290,45 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 			LaneViolationDuration = 0.f;
 		}
 
-		const float TravelDirection = (Heading == ESprawlHeading::North
-			|| Heading == ESprawlHeading::East) ? 1.f : -1.f;
-		int32 NextCrossing = -1;
-		float DistanceAhead = TNumericLimits<float>::Max();
-		for (int32 Index = 0; Index < Grid::NumRoads; ++Index)
+		float& WrongWayDuration = TrafficAuditWrongWayDurations.FindOrAdd(CarKey);
+		if (bOnStraightEnvelope && LaneSample.bWrongWay)
 		{
-			const float Distance = (Grid::RoadCenter(Index) - TravelCoord) * TravelDirection;
-			if (Distance >= 0.f && Distance < DistanceAhead)
+			WrongWayDuration += DeltaSeconds;
+			if (WrongWayDuration >= 1.f
+				&& !TrafficAuditWrongWayViolators.Contains(CarKey))
 			{
-				DistanceAhead = Distance;
-				NextCrossing = Index;
+				TrafficAuditWrongWayViolators.Add(CarKey);
+				UE_LOG(LogSprawlTrafficAudit, Warning,
+					TEXT("[TrafficAudit] persistent wrong-way travel car=%s "
+						"location=(%.1f,%.1f) velocity_alignment=%.2f planned_heading=%d"),
+					*Car->GetName(), Loc.X, Loc.Y,
+					LaneSample.VelocityAlignment, static_cast<int32>(Heading));
 			}
 		}
+		else
+		{
+			WrongWayDuration = 0.f;
+		}
+
+		CompletedTurnsThisSample += Car->GetAICompletedTurnCount();
+		CompletedUTurnsThisSample += Car->GetAICompletedUTurnCount();
+
+		FSprawlTrafficApproach NextApproach;
+		const bool bHasNextApproach = bHasPlannedLane
+			&& FSprawlTrafficRoute::TryGetNextApproach(
+				Loc, Heading, RoadIndex, NextApproach, 0.f);
 		// Hold window derived from the grid rather than hard-coded, so this
 		// gate follows the street layout instead of a past road width.
 		constexpr float SignalHoldTolerance = 70.f;
-		if (NextCrossing >= 0
-			&& DistanceAhead >= Grid::VehicleStopDistance - SignalHoldTolerance
-			&& DistanceAhead <= Grid::VehicleStopDistance + SignalHoldTolerance
+		if (bHasNextApproach
+			&& NextApproach.DistanceAhead
+				>= Grid::VehicleStopDistance - SignalHoldTolerance
+			&& NextApproach.DistanceAhead
+				<= Grid::VehicleStopDistance + SignalHoldTolerance
 			&& Car->GetVelocity().Size2D() < 80.f)
 		{
-			const int32 IntersectionX = bNorthSouth ? RoadIndex : NextCrossing;
-			const int32 IntersectionY = bNorthSouth ? NextCrossing : RoadIndex;
-			if (GridSub->GetSignal(IntersectionX, IntersectionY, bNorthSouth)
+			if (GridSub->GetSignal(NextApproach.IntersectionX,
+				NextApproach.IntersectionY, bNorthSouth)
 				!= ESprawlSignal::Green)
 			{
 				TrafficAuditSignalStops.Add(CarKey);
@@ -365,6 +369,12 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 		TrafficAuditMaxUprightViolations, UprightViolationsThisSample);
 	TrafficAuditMaxVisibleDrivers = FMath::Max(
 		TrafficAuditMaxVisibleDrivers, VisibleDriversThisSample);
+	TrafficAuditMaxOutsideDrivers = FMath::Max(
+		TrafficAuditMaxOutsideDrivers, OutsideDriversThisSample);
+	TrafficAuditMaxCompletedTurns = FMath::Max(
+		TrafficAuditMaxCompletedTurns, CompletedTurnsThisSample);
+	TrafficAuditMaxCompletedUTurns = FMath::Max(
+		TrafficAuditMaxCompletedUTurns, CompletedUTurnsThisSample);
 	if (TrafficAuditElapsed >= 5.f)
 	{
 		TrafficAuditMaxMissingDriversAfterWarmup = FMath::Max(
@@ -432,9 +442,11 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 		&& TrafficAuditUnauthorizedEntries == 0
 		&& TrafficAuditMinSpacing >= 220.f
 		&& TrafficAuditLaneViolators.IsEmpty()
+		&& TrafficAuditWrongWayViolators.IsEmpty()
 		&& TrafficAuditMaxPedestrians >= 20
 		&& TrafficAuditMaxRealAvatars >= 20
 		&& TrafficAuditMaxVisibleDrivers >= 10
+		&& TrafficAuditMaxOutsideDrivers == 0
 		&& TrafficAuditMaxMissingDriversAfterWarmup == 0
 		&& TrafficAuditPedOffsideViolators.IsEmpty();
 	bTrafficAuditPassed = bPassed;
@@ -445,16 +457,22 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 			TEXT("[TrafficAudit] %s cars=%d total_cars=%d enterable_cars=%d "
 				"boundary_violators=%d upright_violators=%d moved=%d signal_stops=%d wheel_cars=%d "
 				"max_box_occupancy=%d unauthorized_entries=%d min_spacing=%.1f "
-				"lane_violators=%d pedestrians=%d real_avatars=%d visible_drivers=%d "
-				"missing_drivers=%d ped_offside=%d"),
+				"lane_violators=%d wrong_way=%d turns=%d uturns=%d "
+				"route_recycles=%d spawn_route_rejects=%d "
+				"pedestrians=%d real_avatars=%d visible_drivers=%d "
+				"outside_drivers=%d missing_drivers=%d ped_offside=%d"),
 			Result, TrafficAuditPeakCars, TrafficAuditPeakTotalCars,
 			TrafficAuditMaxEnterableCars, TrafficAuditMaxBoundaryViolations,
 			TrafficAuditMaxUprightViolations, TrafficAuditMovedCars.Num(),
 			TrafficAuditSignalStops.Num(), TrafficAuditWheelMotionCars.Num(),
 			TrafficAuditMaxIntersectionOccupancy, TrafficAuditUnauthorizedEntries,
 			TrafficAuditMinSpacing, TrafficAuditLaneViolators.Num(),
+			TrafficAuditWrongWayViolators.Num(), TrafficAuditMaxCompletedTurns,
+			TrafficAuditMaxCompletedUTurns, TrafficRouteRecycles,
+			TrafficSpawnRouteRejects,
 			TrafficAuditMaxPedestrians, TrafficAuditMaxRealAvatars,
-			TrafficAuditMaxVisibleDrivers, TrafficAuditMaxMissingDriversAfterWarmup,
+			TrafficAuditMaxVisibleDrivers, TrafficAuditMaxOutsideDrivers,
+			TrafficAuditMaxMissingDriversAfterWarmup,
 			TrafficAuditPedOffsideViolators.Num());
 	}
 	else
@@ -463,16 +481,22 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 			TEXT("[TrafficAudit] %s cars=%d total_cars=%d enterable_cars=%d "
 				"boundary_violators=%d upright_violators=%d moved=%d signal_stops=%d wheel_cars=%d "
 				"max_box_occupancy=%d unauthorized_entries=%d min_spacing=%.1f "
-				"lane_violators=%d pedestrians=%d real_avatars=%d visible_drivers=%d "
-				"missing_drivers=%d ped_offside=%d"),
+				"lane_violators=%d wrong_way=%d turns=%d uturns=%d "
+				"route_recycles=%d spawn_route_rejects=%d "
+				"pedestrians=%d real_avatars=%d visible_drivers=%d "
+				"outside_drivers=%d missing_drivers=%d ped_offside=%d"),
 			Result, TrafficAuditPeakCars, TrafficAuditPeakTotalCars,
 			TrafficAuditMaxEnterableCars, TrafficAuditMaxBoundaryViolations,
 			TrafficAuditMaxUprightViolations, TrafficAuditMovedCars.Num(),
 			TrafficAuditSignalStops.Num(), TrafficAuditWheelMotionCars.Num(),
 			TrafficAuditMaxIntersectionOccupancy, TrafficAuditUnauthorizedEntries,
 			TrafficAuditMinSpacing, TrafficAuditLaneViolators.Num(),
+			TrafficAuditWrongWayViolators.Num(), TrafficAuditMaxCompletedTurns,
+			TrafficAuditMaxCompletedUTurns, TrafficRouteRecycles,
+			TrafficSpawnRouteRejects,
 			TrafficAuditMaxPedestrians, TrafficAuditMaxRealAvatars,
-			TrafficAuditMaxVisibleDrivers, TrafficAuditMaxMissingDriversAfterWarmup,
+			TrafficAuditMaxVisibleDrivers, TrafficAuditMaxOutsideDrivers,
+			TrafficAuditMaxMissingDriversAfterWarmup,
 			TrafficAuditPedOffsideViolators.Num());
 	}
 	RequestAuditExitIfComplete();
@@ -647,6 +671,14 @@ void AProceduralTrafficManager::CullDistant(const FVector& PlayerLoc)
 			ActiveTraffic.RemoveAtSwap(i);
 			continue;
 		}
+		if (const ASprawlCar* Car = Cast<ASprawlCar>(P);
+			Car && Car->NeedsTrafficRecycle())
+		{
+			P->Destroy();
+			ActiveTraffic.RemoveAtSwap(i);
+			++TrafficRouteRecycles;
+			continue;
+		}
 
 		// A claimed traffic car leaves the managed lane/spacing population
 		// immediately. Keep it as a bounded abandoned-car object so stealing a
@@ -762,44 +794,44 @@ void AProceduralTrafficManager::SpawnNeeded(const FVector& PlayerLoc)
 		// Snap to the nearest road on a random axis and pick a travel direction.
 		const bool bVerticalRoad = FMath::RandBool();
 		ESprawlHeading Heading;
+		int32 RoadIndex = INDEX_NONE;
 		if (bVerticalRoad)
 		{
-			const int32 Road = Grid::NearestRoadIndex(SpawnLoc.X);
+			RoadIndex = Grid::NearestRoadIndex(SpawnLoc.X);
 			Heading = FMath::RandBool() ? ESprawlHeading::North : ESprawlHeading::South;
-			SpawnLoc.X = Grid::LaneCenter(Road, Heading);
+			SpawnLoc.X = Grid::LaneCenter(RoadIndex, Heading);
 		}
 		else
 		{
-			const int32 Road = Grid::NearestRoadIndex(SpawnLoc.Y);
+			RoadIndex = Grid::NearestRoadIndex(SpawnLoc.Y);
 			Heading = FMath::RandBool() ? ESprawlHeading::East : ESprawlHeading::West;
-			SpawnLoc.Y = Grid::LaneCenter(Road, Heading);
+			SpawnLoc.Y = Grid::LaneCenter(RoadIndex, Heading);
 		}
 		SpawnLoc.Z = 180.f;
 
-		// Never materialise inside a junction box. The car would hold no
-		// right-of-way lease while sitting in the middle of an intersection,
-		// blocking every approach — and with a wide carriageway the boxes
-		// cover a large share of each road's length.
-		const float AlongCoord = bVerticalRoad ? SpawnLoc.Y : SpawnLoc.X;
-		bool bInsideJunction = false;
-		for (int32 Road = 0; Road < Grid::NumRoads; ++Road)
+		// A spawn owns a directed lane, not just a clear point. Prefer the
+		// sampled heading, then try its opposite lane; reject the candidate if
+		// neither direction reaches a dry intersection with a forward exit.
+		if (!FSprawlTrafficRoute::IsSpawnRouteViable(
+			SpawnLoc, Heading, RoadIndex))
 		{
-			if (FMath::Abs(AlongCoord - Grid::RoadCenter(Road))
-				< Grid::RoadWidth * 0.5f + 400.f)
+			const ESprawlHeading Opposite =
+				FSprawlTrafficRoute::OppositeHeading(Heading);
+			if (bVerticalRoad)
 			{
-				bInsideJunction = true;
-				break;
+				SpawnLoc.X = Grid::LaneCenter(RoadIndex, Opposite);
 			}
-		}
-		if (bInsideJunction)
-		{
-			continue;
-		}
-
-		if (Grid::IsOverLake(SpawnLoc.X, SpawnLoc.Y) ||
-			!Grid::IsInsideRoadGrid(SpawnLoc.X, SpawnLoc.Y))
-		{
-			continue;
+			else
+			{
+				SpawnLoc.Y = Grid::LaneCenter(RoadIndex, Opposite);
+			}
+			if (!FSprawlTrafficRoute::IsSpawnRouteViable(
+				SpawnLoc, Opposite, RoadIndex))
+			{
+				++TrafficSpawnRouteRejects;
+				continue;
+			}
+			Heading = Opposite;
 		}
 
 		const FQuat SpawnRotation = FRotator(

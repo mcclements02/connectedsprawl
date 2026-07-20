@@ -2,6 +2,8 @@
 
 #include "World/SprawlRoadMarkings.h"
 #include "World/SprawlCityGridSubsystem.h"
+#include "World/SprawlRoadMarkingLayout.h"
+#include "World/SprawlRoadPaintOcclusion.h"
 #include "Components/BoxComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -12,10 +14,7 @@ using Grid = USprawlCityGridSubsystem;
 
 namespace
 {
-// Markings sit just above the asphalt (road surface tops out at z = 0).
-constexpr float PaintZ = 1.5f;
-constexpr float PaintThickness = 0.03f; // cube scale -> 3cm
-constexpr float IntersectionHalf = Grid::RoadWidth * 0.5f; // 950
+constexpr float IntersectionHalf = Grid::RoadWidth * 0.5f;
 constexpr float BoundaryThickness = 120.f;
 constexpr float BoundaryHalfHeight = 700.f;
 
@@ -40,20 +39,22 @@ ASprawlRoadMarkings::ASprawlRoadMarkings()
 		TEXT("/Engine/BasicShapes/Cube.Cube"));
 	static ConstructorHelpers::FObjectFinderOptional<UMaterialInterface> PaintMat(
 		TEXT("/Game/Materials/MI_RoadPaint.MI_RoadPaint"));
+	static ConstructorHelpers::FObjectFinderOptional<UMaterialInterface> OpaquePaintMat(
+		TEXT("/Game/CityArt/M_RoadWhite.M_RoadWhite"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FallbackMat(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 
 	PaintMesh = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("Paint"));
 	PaintMesh->SetupAttachment(RootComponent);
-	PaintMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	PaintMesh->SetCastShadow(false);
+	FSprawlRoadPaintOcclusion::Configure(PaintMesh);
 	if (CubeMesh.Succeeded())
 	{
 		PaintMesh->SetStaticMesh(CubeMesh.Object);
 	}
-	if (PaintMat.Get())
+	if (UMaterialInterface* RoadPaint = FSprawlRoadPaintOcclusion::SelectMaterial(
+		PaintMat.Get(), OpaquePaintMat.Get()))
 	{
-		PaintMesh->SetMaterial(0, PaintMat.Get());
+		PaintMesh->SetMaterial(0, RoadPaint);
 	}
 	else if (FallbackMat.Succeeded())
 	{
@@ -100,7 +101,8 @@ void ASprawlRoadMarkings::BeginPlay()
 
 void ASprawlRoadMarkings::AddStripe(const FVector& Center, float LengthX, float LengthY)
 {
-	const FVector Scale(LengthX / 100.f, LengthY / 100.f, PaintThickness);
+	const FSprawlRoadMarkingFit Fit = FSprawlRoadMarkingLayout::GetFit();
+	const FVector Scale(LengthX / 100.f, LengthY / 100.f, Fit.MeshThickness);
 	PaintMesh->AddInstance(FTransform(FRotator::ZeroRotator, Center, Scale), /*bWorldSpace=*/true);
 }
 
@@ -111,21 +113,9 @@ void ASprawlRoadMarkings::BuildMarkings()
 		return;
 	}
 
-	const float GridLo = Grid::RoadCenter(0) - Grid::Step * 0.5f;
-	const float GridHi = Grid::RoadCenter(Grid::NumRoads - 1) + Grid::Step * 0.5f;
-
-	// True when a centerline point is inside any intersection box.
-	auto InAnyIntersection = [](float Along) -> bool
-	{
-		for (int32 R = 0; R < Grid::NumRoads; ++R)
-		{
-			if (FMath::Abs(Along - Grid::RoadCenter(R)) < IntersectionHalf + 120.f)
-			{
-				return true;
-			}
-		}
-		return false;
-	};
+	const FSprawlRoadMarkingFit Fit = FSprawlRoadMarkingLayout::GetFit();
+	TArray<FSprawlRoadMarkingSegment> RoadIntervals;
+	FSprawlRoadMarkingLayout::BuildRoadIntervals(RoadIntervals);
 
 	// --- Lane striping down every road, both axes ---
 	// Painted per road: a dashed centreline, a dashed divider between the two
@@ -160,22 +150,21 @@ void ASprawlRoadMarkings::BuildMarkings()
 		for (const FLateralStripe& Stripe : LaneStripes)
 		{
 			const float Lateral = RoadCoord + Stripe.Offset;
-			for (float Along = GridLo; Along < GridHi; Along += Stripe.Spacing)
+			TArray<float> DashCenters;
+			FSprawlRoadMarkingLayout::AppendCenteredDashCenters(
+				RoadIntervals, Stripe.Length, Stripe.Spacing, DashCenters);
+			for (const float Along : DashCenters)
 			{
-				if (InAnyIntersection(Along))
-				{
-					continue;
-				}
 				// Vertical road: stripe runs along Y at x = Lateral.
 				if (!Grid::IsOverLake(Lateral, Along))
 				{
-					AddStripe(FVector(Lateral, Along, PaintZ),
+					AddStripe(FVector(Lateral, Along, Fit.SurfaceZ),
 						Stripe.Width, Stripe.Length);
 				}
 				// Horizontal road: stripe runs along X at y = Lateral.
 				if (!Grid::IsOverLake(Along, Lateral))
 				{
-					AddStripe(FVector(Along, Lateral, PaintZ),
+					AddStripe(FVector(Along, Lateral, Fit.SurfaceZ),
 						Stripe.Length, Stripe.Width);
 				}
 			}
@@ -192,21 +181,20 @@ void ASprawlRoadMarkings::BuildMarkings()
 		for (const float Side : { -1.f, 1.f })
 		{
 			const float BayCenter = RoadCoord + Side * Grid::ParkingOffset;
-			for (float Along = GridLo; Along < GridHi; Along += ParkingBayLength)
+			TArray<float> BayCenters;
+			FSprawlRoadMarkingLayout::AppendCenteredDashCenters(
+				RoadIntervals, ParkingTickWidth, ParkingBayLength, BayCenters);
+			for (const float Along : BayCenters)
 			{
-				if (InAnyIntersection(Along))
-				{
-					continue;
-				}
 				if (!Grid::IsOverLake(BayCenter, Along))
 				{
-					AddStripe(FVector(BayCenter, Along, PaintZ),
+					AddStripe(FVector(BayCenter, Along, Fit.SurfaceZ),
 						Grid::ParkingBayWidth, ParkingTickWidth);
 					++ParkingBays;
 				}
 				if (!Grid::IsOverLake(Along, BayCenter))
 				{
-					AddStripe(FVector(Along, BayCenter, PaintZ),
+					AddStripe(FVector(Along, BayCenter, Fit.SurfaceZ),
 						ParkingTickWidth, Grid::ParkingBayWidth);
 					++ParkingBays;
 				}
@@ -234,11 +222,11 @@ void ASprawlRoadMarkings::BuildMarkings()
 			for (float Across = -BandHalfWidth; Across <= BandHalfWidth; Across += 90.f)
 			{
 				// North + south approaches (vertical road, stripes along Y).
-				AddStripe(FVector(C.X + Across, C.Y + BandCenter, PaintZ), 40.f, 150.f);
-				AddStripe(FVector(C.X + Across, C.Y - BandCenter, PaintZ), 40.f, 150.f);
+				AddStripe(FVector(C.X + Across, C.Y + BandCenter, Fit.SurfaceZ), 40.f, 150.f);
+				AddStripe(FVector(C.X + Across, C.Y - BandCenter, Fit.SurfaceZ), 40.f, 150.f);
 				// East + west approaches (horizontal road, stripes along X).
-				AddStripe(FVector(C.X + BandCenter, C.Y + Across, PaintZ), 150.f, 40.f);
-				AddStripe(FVector(C.X - BandCenter, C.Y + Across, PaintZ), 150.f, 40.f);
+				AddStripe(FVector(C.X + BandCenter, C.Y + Across, Fit.SurfaceZ), 150.f, 40.f);
+				AddStripe(FVector(C.X - BandCenter, C.Y + Across, Fit.SurfaceZ), 150.f, 40.f);
 			}
 
 			// Stop lines: across both inbound travel lanes, just before the
@@ -248,16 +236,16 @@ void ASprawlRoadMarkings::BuildMarkings()
 			const float ApproachCenter = ParkingEdgeOffset * 0.5f;
 			const float ApproachWidth = ParkingEdgeOffset;
 			// Northbound (lanes on -X side) stops south of the intersection.
-			AddStripe(FVector(C.X - ApproachCenter, C.Y - StopDist, PaintZ),
+			AddStripe(FVector(C.X - ApproachCenter, C.Y - StopDist, Fit.SurfaceZ),
 				ApproachWidth, 30.f);
 			// Southbound (lanes on +X side) stops north of the intersection.
-			AddStripe(FVector(C.X + ApproachCenter, C.Y + StopDist, PaintZ),
+			AddStripe(FVector(C.X + ApproachCenter, C.Y + StopDist, Fit.SurfaceZ),
 				ApproachWidth, 30.f);
 			// Eastbound (lanes on +Y side) stops west of the intersection.
-			AddStripe(FVector(C.X - StopDist, C.Y + ApproachCenter, PaintZ),
+			AddStripe(FVector(C.X - StopDist, C.Y + ApproachCenter, Fit.SurfaceZ),
 				30.f, ApproachWidth);
 			// Westbound (lanes on -Y side) stops east of the intersection.
-			AddStripe(FVector(C.X + StopDist, C.Y - ApproachCenter, PaintZ),
+			AddStripe(FVector(C.X + StopDist, C.Y - ApproachCenter, Fit.SurfaceZ),
 				30.f, ApproachWidth);
 		}
 	}

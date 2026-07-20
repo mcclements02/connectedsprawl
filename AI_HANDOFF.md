@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 32 · **Last updated:** 2026-07-20 12:35 PDT · **Updated by:** claude
+**Version:** 40 · **Last updated:** 2026-07-20 13:57 PDT · **Updated by:** codex
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -20,12 +20,207 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 | Branch | Worktree | Agent | Status | Summary | Updated |
 |--------|----------|-------|--------|---------|---------|
-| main | `/Users/matthewx/code/ConnectedSprawl` | claude | validated, uncommitted | Game-feel polish pass: GTA-style follow camera + single-joystick touch controls with buttons, planted car handling and far chase cam, playable night lighting, translucent car glass with visible drivers, streetwear outfit recolor, on-foot boundary rescue. All four runtime audits PASS. | 2026-07-19 18:30 PDT |
+| main | `/Users/matthewx/code/ConnectedSprawl` | codex | validated, uncommitted | Preserving the validated traffic/vehicle changes and upgrading the runtime waterfront to a fitted translucent ocean mesh with GPU waves, flow, depth/refraction, far shores, and controlled instanced mountain ranges; map and binary assets remain untouched. | 2026-07-20 13:57 PDT |
 
 ## Log (append newest on top)
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-20 · main · codex (GPU ocean water and waves — validated)
+- **New `FSprawlOceanSurface` module:** fits the existing tessellated water mesh
+  to the live 9600x6400 waterfront despite its off-centre import bounds, then
+  creates a dynamic instance of the authored translucent water shader with a
+  coastal-blue colour, flow, dual-wave displacement, depth, and refraction.
+  Wave motion remains GPU-driven; no tick, collision, overlap, navigation, or
+  CPU simulation was added.
+- **Integration and deterministic coverage:** `ASprawlWaterfrontScenery` now
+  delegates mesh fitting and material configuration to the ocean module, with
+  the existing engine plane and city water material retained as fallbacks.
+  `ConnectedSprawl.World.WaterfrontSceneryLayout` additionally covers valid
+  wave settings and the scale/translation needed for off-centre source meshes.
+- **Validation:** a clean non-hot-reload `ConnectedSprawlEditor Mac
+  Development` link succeeded in 4.76 seconds after the initial full compile
+  succeeded in 27.56 seconds. The focused automation test passed 1/1. A final
+  real-Metal 1600x900 capture logged `ocean=9600x6400`, `flow=0.15`,
+  `wave=1100`, and `strength=2.0`; two water-region frames 2.5 seconds apart
+  differed by 7.0% RMSE, confirming temporal GPU surface motion. The
+  `ConnectedSprawl Mac Development` game target also built successfully in
+  81.86 seconds.
+- **Risk / remaining validation:** launching the raw Development app without a
+  staged build failed as expected because no cooked global shader library was
+  present; no cook, stage, package, iPhone/device, or sustained performance
+  profile was run. The reused `SM_Water` source mesh reports a missing legacy
+  material dependency, but the ocean module replaces that slot at runtime.
+  Existing road-paint, mountain/rock ISM-usage, foliage, and car-detail warnings
+  remain unrelated.
+- **Status:** validated and uncommitted on `main`. No map, Blueprint, material,
+  or binary asset was authored, and no branch, worktree, staging, commit, or
+  remote operation was performed.
+<!-- entry:gpu-ocean-water-waves-validated -->
+
+### 2026-07-20 · main · codex (waterfront and mountain backdrop — validated)
+- **New runtime scenery module:** `ASprawlWaterfrontScenery` derives the exact
+  9600x6400 lake footprint from the live city grid, adds an opaque blue water
+  surface and two far banks, hides the two broken map placements of the legacy
+  mountain mesh, and reuses that authored asset as four normalized HISM ranges
+  with seven rock foothills along the south/east horizon. It is spawned once by
+  `ASprawlGameMode`; it has no tick, collision, overlaps, navigation influence,
+  shadows, decals, or custom-depth work.
+- **Validation:** the final `ConnectedSprawlEditor Mac Development` build
+  succeeded in 12.39 seconds and
+  `ConnectedSprawl.World.WaterfrontSceneryLayout` passed 1/1. The broader World
+  suite previously passed 2/2 after the module integration. A 30-second real-RHI
+  traffic audit passed with all 14 traffic cars moving, visible contained
+  drivers, and zero boundary, lane, wrong-way, intersection-entry, or missing-
+  driver violations. A final real-Metal 1600x900 capture from the waterfront
+  was inspected: the basin reads as blue water, the fragmented vista is gone,
+  and the controlled authored ridges form the background.
+- **Risk / remaining validation:** no cook, package, iPhone/device, or sustained
+  performance profile was run. Existing missing foliage/car-detail dependency
+  warnings and the `MI_RoadPaint` ISM-usage warning remain unrelated. The first
+  compile exposed an iterator warning and early visual drafts looked too
+  geometric; both were corrected before the final build/capture.
+- **Status:** validated and uncommitted on `main`. No map, Blueprint, material,
+  or binary asset was authored, and no branch, worktree, staging, commit, or
+  remote operation was performed.
+<!-- entry:waterfront-mountain-backdrop-validated -->
+
+### 2026-07-20 · main · codex (waterfront and mountain backdrop — in progress)
+- **New `ASprawlWaterfrontScenery` module:** derives the lake footprint from
+  the live `USprawlCityGridSubsystem`, overlays it with a controlled opaque
+  blue water surface, adds two non-colliding far banks, hides the fragmented
+  marketplace mountain mesh, and replaces it with twelve instanced peaks plus
+  seven foothills outside the playable boundary.
+- **Performance/safety:** the scenery is spawned once by `ASprawlGameMode`,
+  never ticks, never collides, never affects navigation, casts no shadows, and
+  uses instancing for the background layers. No map, Blueprint, material, or
+  other binary asset is rewritten.
+- **Validation:** a deterministic grid/layout test is added; build, focused
+  automation, runtime traffic regression, and visual capture are pending.
+- **Status:** in progress and uncommitted on `main`; no branch, worktree,
+  staging, commit, or remote operation has been performed.
+<!-- entry:waterfront-mountain-backdrop-in-progress -->
+
+### 2026-07-20 · main · codex (contained occupants, paint depth, drive logic — validated)
+- **Integration complete:** `ASprawlCar` now seats visible AI occupants through
+  `FSprawlVehicleOccupantPlacement`, uses `FSprawlVehicleDriveLogic` for both
+  player and AI movement, and exposes a containment diagnostic. Road markings
+  use `FSprawlRoadPaintOcclusion` to reject non-depth-writing paint and disable
+  custom-depth rendering, so vehicle bodywork occludes painted lines.
+- **Deterministic validation:** `ConnectedSprawl.Vehicles` passed 2/2 tests
+  (`NamedFrontAxleDefinesVisibleNose` and
+  `OccupantContainmentAndDriveLogic`); `ConnectedSprawl.World` passed 1/1
+  (`LightingContrastAndRoadMarkingFit`).
+- **Build/runtime validation:** `ConnectedSprawlEditor Mac Development`
+  completed with `Result: Succeeded` in 25.84 seconds. The 30-second real-RHI
+  `-SprawlTrafficAudit` passed with 14/14 traffic cars moved, 14 visible
+  drivers, `outside_drivers=0`, `missing_drivers=0`, zero lane or wrong-way
+  violators, and zero unauthorized intersection entries. `git diff --check`
+  passes.
+- **Remaining validation/risk:** no cook, package, iPhone/device, or sustained
+  performance profile was run. Unreal reported pre-existing missing foliage
+  dependencies and that `MI_RoadPaint` lacks its Instanced Static Mesh usage
+  flag; Unreal substituted its opaque default for that instance in the audit,
+  so resaving the authored material with that usage flag remains worthwhile.
+- **Status:** validated and uncommitted on `main`; no map, Blueprint, material,
+  or binary asset was authored. No branch, worktree, staging, commit, or remote
+  operation was performed.
+<!-- entry:contained-occupants-paint-depth-drive-logic-validated -->
+
+### 2026-07-20 · main · codex (contained occupants, paint depth, drive logic — in progress)
+- **New `FSprawlVehicleOccupantPlacement` module:** measures visible bodywork
+  in actor space while excluding wheel and driver meshes, derives a conservative
+  inner-cabin envelope, and clamps the driver pelvis inside it. An invalid body
+  now suppresses the driver visual instead of displaying a person outside the
+  car.
+- **New `FSprawlRoadPaintOcclusion` module:** requires a depth-writing opaque or
+  masked paint material, disables custom-depth rendering, and fixes paint at a
+  background translucency priority so lines remain road surfaces and are
+  occluded by vehicles. The existing opaque `MI_RoadPaint` remains preferred;
+  `M_RoadWhite` is the safe authored fallback.
+- **New `FSprawlVehicleDriveLogic` module:** centralizes forward force,
+  brake-before-reverse engagement, reverse steering sign, AI planar velocity,
+  gravity preservation, and the rule that stopped AI traffic cannot rotate in
+  place. `ASprawlCar` uses it for both player and autonomous drive paths.
+- **Validation:** deterministic module coverage has been added; build and
+  runtime audit are pending.
+- **Status:** in progress and uncommitted on `main`; no branch, worktree,
+  staging, commit, or remote operation has been performed.
+<!-- entry:contained-occupants-paint-depth-drive-logic -->
+
+### 2026-07-20 · main · codex (contrast, visual forward, and road-marking fit — built)
+- **Validation:** `ConnectedSprawlEditor Mac Development` completed with
+  `Result: Succeeded` in 57.37 seconds; `git diff --check` passes. The rebuilt
+  editor module is present at `Binaries/Mac/libUnrealEditor-ConnectedSprawl.dylib`.
+  A focused `UnrealEditor-Cmd` automation invocation was attempted but exited
+  during macOS application-services setup (`Connection invalid`) while the
+  already-running game/editor session held the service. It produced no test
+  report, so the new deterministic tests are compiled but **not claimed run**.
+- **Risk / next:** restart the running game/editor so it loads the rebuilt
+  module, then run `ConnectedSprawl.Vehicles` and `ConnectedSprawl.World`
+  automation plus `-SprawlTrafficAudit` for runtime confirmation. The previous
+  directed-traffic build and audit results remain the latest runtime evidence.
+- **Status:** built and uncommitted on `main`; no map, Blueprint, material, or
+  binary asset was authored; no branch, worktree, staging, commit, or remote
+  operation was performed.
+<!-- entry:contrast-visual-forward-road-marking-fit-built -->
+
+### 2026-07-20 · main · codex (contrast, visual forward, and road-marking fit — in progress)
+- **New runtime modules:** `FSprawlLightingContrast` establishes a conservative
+  direct-to-ambient/fog profile for a more legible streetscape with
+  auto-exposure still disabled. `FSprawlVehicleVisualForward` derives imported
+  vehicle yaw from its named front/rear wheel axles, so physical hull +X is the
+  visible nose-forward direction and reverse remains an intentional input.
+  `FSprawlRoadMarkingLayout` supplies thin paint dimensions and centred,
+  stop-line-clear road intervals so stripes no longer end arbitrarily inside
+  an intersection approach.
+- **Integration:** the environment controller now uses the contrast profile;
+  road-marking construction consumes the common fit/interval model; runtime
+  split vehicle kits use the named-axle resolver instead of a local-axis
+  heuristic. No map, Blueprint, material, or binary asset has been modified.
+- **Validation:** pending build plus focused Unreal automation/audit execution.
+- **Status:** in progress and uncommitted on `main`; no branch, worktree,
+  staging, commit, or remote operation has been performed.
+- **Next:** compile, run the focused unit tests and traffic audit, then inspect
+  the resulting diff before handoff.
+<!-- entry:contrast-visual-forward-road-marking-fit -->
+
+### 2026-07-20 · main · codex (directed traffic and lane discipline)
+- **New `FSprawlTrafficRoute` module:** traffic now owns a directed route through
+  each approach. Straight/right/left exits are topology-checked against the
+  live grid and lake; a dead end executes a real U-turn only inside a reserved
+  junction. A car with no legal route stops immediately for manager recycle
+  instead of flipping its heading across an active lane. Runtime spawns must
+  have a dry forward exit and try the opposite directed lane before rejection.
+- **New `FSprawlTrafficLaneDiscipline` module:** grid-scaled pure-pursuit
+  guidance, lane-error measurement, and wrong-way velocity detection share one
+  allocation-free implementation. Stationary authored traffic with the
+  historical small lane offset is collision-sweep canonicalized before it
+  accelerates; blocked or large corrections stay on the controller path.
+- **Integration and diagnostics:** `ASprawlCar` exposes its planned heading and
+  road, retains junction leases through legal turns/U-turns, and reports route
+  recycle/turn counters. `AProceduralTrafficManager` backfills invalid routes,
+  audits the planned lane rather than actor yaw, and now fails on persistent
+  wrong-way velocity independently of lane position. Four deterministic Unreal
+  automation tests cover all heading/maneuver mappings, the lake-edge U-turn,
+  forward-exit spawn policy, exact-lane guidance, historical offset repair, and
+  wrong-way detection.
+- **Validation:** `ConnectedSprawlEditor Mac Development` build succeeded;
+  `ConnectedSprawl.Traffic` found and passed all 4 tests. Two real-Metal
+  TrafficAudit runs passed: the focused run had 14/14 movers, 17 turns,
+  `lane_violators=0`, `wrong_way=0`, `route_recycles=0`; the final combined
+  takeover run had 23 movers, 11 turns, the same zero violation/recycle gates,
+  one-car max junction occupancy, and 0 unauthorized entries. CarjackAudit
+  passed possession, fleeing driver, lease release, retirement, and 14-car
+  backfill. `git diff --check` passed. No map, Blueprint, or binary asset was
+  changed.
+- **Status:** validated and uncommitted on `main`; no branch, worktree, staging,
+  commit, or remote operation was performed.
+- **Next:** interactive visual traffic review and iPhone device profiling remain
+  worthwhile. The displaced junction props, warmth gate, and stale legacy
+  generation constants remain separate open ledger items and were not touched.
+<!-- entry:directed-traffic-lane-discipline -->
 
 ### 2026-07-20 · main · claude (block features contained)
 - **New `fix_block_features.py`:** a park deck was lying diagonally across a
