@@ -59,8 +59,21 @@ public:
 	UPROPERTY(EditAnywhere, Category="Environment|Daylight") float DaySkyIntensity = 1.85f;
 	UPROPERTY(EditAnywhere, Category="Environment|Daylight") float DayFogDensity = 0.006f;
 
+	/**
+	 * Playable-night floors. Auto-exposure is disabled project-wide, so night
+	 * readability must come from real light: a stronger blue moon, a higher
+	 * ambient sky floor, and thinner fog than the old pitch-black mix.
+	 */
+	UPROPERTY(EditAnywhere, Category="Environment|Night") float NightMoonIntensity = 1.35f;
+	UPROPERTY(EditAnywhere, Category="Environment|Night")
+	FLinearColor NightMoonColor = FLinearColor(0.62f, 0.72f, 1.f, 1.f);
+	UPROPERTY(EditAnywhere, Category="Environment|Night") float NightSkyIntensity = 0.60f;
+	UPROPERTY(EditAnywhere, Category="Environment|Night") float NightFogDensity = 0.0075f;
+
 	/** Streetlights switched on near the player at night (point-light budget). */
-	UPROPERTY(EditAnywhere, Category="Environment") int32 MaxActiveStreetlights = 22;
+	UPROPERTY(EditAnywhere, Category="Environment") int32 MaxActiveStreetlights = 26;
+	UPROPERTY(EditAnywhere, Category="Environment") float StreetlightIntensity = 13500.f;
+	UPROPERTY(EditAnywhere, Category="Environment") float StreetlightRadius = 3000.f;
 
 	/** Current clock time in hours (0..24). */
 	UFUNCTION(BlueprintCallable, Category="Environment")

@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 18 · **Last updated:** 2026-07-19 17:23 PDT · **Updated by:** codex
+**Version:** 32 · **Last updated:** 2026-07-20 12:35 PDT · **Updated by:** claude
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -20,12 +20,458 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 | Branch | Worktree | Agent | Status | Summary | Updated |
 |--------|----------|-------|--------|---------|---------|
-| main | `/Users/matthewx/code/ConnectedSprawl` | codex | complete with wardrobe follow-up | UE 5.8 Optimized Low MetaHuman Zarri is assembled, natively integrated, and standalone-validated; exact reference streetwear still needs compatible custom wardrobe assets. | 2026-07-19 17:23 PDT |
+| main | `/Users/matthewx/code/ConnectedSprawl` | claude | validated, uncommitted | Game-feel polish pass: GTA-style follow camera + single-joystick touch controls with buttons, planted car handling and far chase cam, playable night lighting, translucent car glass with visible drivers, streetwear outfit recolor, on-foot boundary rescue. All four runtime audits PASS. | 2026-07-19 18:30 PDT |
 
 ## Log (append newest on top)
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-20 · main · claude (block features contained)
+- **New `fix_block_features.py`:** a park deck was lying diagonally across a
+  junction. Two structural causes, not cosmetic ones: `City_DW3_playground`
+  measured **2573cm wide against a 2000cm block**, so it could not fit
+  wherever it was centred; and features were authored at arbitrary yaw, whose
+  diagonal edges cut the kerb line even when they would otherwise fit. The
+  module squares features to the grid (yaw to nearest 90 deg), scales any
+  oversized one until its footprint fits the block interior
+  (`BlockSize/2 - SIDEWALK_WIDTH` = 600 half-width), and recentres it. The
+  playground scaled x0.45; 1 squared, verified clear of the carriageway.
+- **MISTAKE — 25 props displaced.** `City_RPG_Junction` was included in the
+  feature list on the strength of its name. Those belong at **road
+  junctions**, and the pass recentred 25 of them onto block centres before
+  that was caught. Their original positions are not recoverable from the saved
+  map. The prefix is now excluded with a comment explaining why; they are
+  small (51x6x46cm) so the visual cost is low, but it is a real displacement
+  and a reminder to verify what a prefix actually is before acting on it.
+- **Validation:** feature pass clean, street verified clear in a captured
+  frame. VisualAudit still fails the warmth gate only (luma 101.2).
+- **Status:** same uncommitted change set on `main`.
+- **Next:** optionally re-place `City_RPG_Junction` props at intersections;
+  the last lane violator; the warmth gate; the legacy generation scripts.
+<!-- entry:block-features-contained -->
+
+### 2026-07-20 · main · claude (sidewalk ring, driver seat, lane tracking)
+- **New `city_sidewalks.py`:** `city_surfaces.py` gives each block one surface,
+  so a park block met the carriageway with grass running straight to the kerb
+  and nowhere to walk. This lays a 400cm pavement ring around every block —
+  172 strips — sitting 0.5cm proud of the block surface so it reads as the
+  walking surface over grass or paving alike. Spawns actors, so no `-nullrhi`.
+- **New `FSprawlDriverSeat`:** the seated occupant was pinned at a fixed offset
+  tuned for the prototype kitbash, so on imported bodies drivers sat half
+  outside the shell. The seat is now measured from the bodywork the car is
+  actually wearing (visible mesh bounds in actor space, occupant excluded):
+  ahead of centre, offset to the driver's side, at seated hip height off the
+  body floor. Any body, any scale, always inside.
+- **Lane tracking — hypothesis tested and corrected by measurement.** I first
+  assumed the ~120cm lane error was oscillation and lengthened the lookahead
+  while softening the gain: **violators went 2 -> 5**, disproving it. The cars
+  were converging too slowly, not hunting. Reversing the direction — lookahead
+  `clamp(speed * 0.36, 240, 460)` and gain `YawError / 24` — took violators to
+  **1**, better than the 2 it started at, with signal stops 9 -> 14 and min
+  spacing 311 -> 831. Recorded because the intuitive read was the wrong one.
+- **Validation:** Build clean. TrafficAudit 8/9 gates (1 lane violator, 0
+  boundary/upright/unauthorized-entry, occupancy 1, 14 signal stops, 26
+  pedestrians). VisualAudit fails only the warmth gate again
+  (`red_blue=0.997` vs `>= 1.00`; luma 100.7, crushed 0.01%) — the scene is
+  fractionally cool, not broken, and the gate was left alone.
+- **Status:** same uncommitted change set on `main`.
+- **Next:** the last lane violator, then the warmth gate (either the scene
+  wants a touch more warmth or the gate's lower bound is too tight for an
+  overcast sky), then the legacy generation scripts.
+<!-- entry:sidewalk-ring-driver-seat-lane-tracking -->
+
+### 2026-07-20 · main · claude (two-way street with parallel parking)
+- **Changed:** `LanesPerDirection` 2 -> 1 at the user's request — a two-way
+  street with parallel parking rather than a 4-lane arterial. Everything
+  re-derives from that one constant: `RoadWidth` 1900 -> 1200, `Step` 3200,
+  `Span` 22400, boundary 11200, `ParkingOffset` 475, stop lines, and every AI
+  approach distance. `ASprawlRoadMarkings` now builds its stripe list
+  dynamically, painting lane dividers only *between* travel lanes — so a
+  two-way street gets a centreline and parking edge lines and no divider
+  (2558 instances, 322 bays, verified "1 lanes/direction on a 1200cm
+  carriageway").
+- **`expand_streets.py` reworked to anchor by OWNERSHIP, not proximity** —
+  the fix for the regression logged in the previous entry. Within
+  `BlockSize/2` of a block centre an actor is block-owned and keeps its exact
+  block-relative offset; otherwise it is road-owned and its road offset scales
+  by `NEW_ROAD/OLD_ROAD`. The 1900 -> 1200 pass moved 2379 block-owned actors
+  and **`fix_building_placement.py` then reported 0 in the carriageway, 0 over
+  the walking band, 0 moved** — the kerbside damage did not recur, which is
+  the proof the anchoring rule was the real fix.
+- **`fix_kerbside_anchoring.py` disabled (`ENABLED = False`)** — it was a
+  one-shot inverse repair for the proximity-anchored 600 -> 1900 pass. It is
+  unnecessary now and its 280-700cm band would straddle the 1200cm
+  carriageway and shove road furniture onto the pavement if re-run.
+- **Validation:** Build clean. Layout pipeline ran in the documented order
+  (expand -> park -> surfaces -> buildings): 36 cars in clear bays, 40
+  pavement + 3 grass blocks, 0 building intrusions. TrafficAudit 8/9 gates:
+  14 signal stops, box occupancy 1, 0 unauthorized entries, 0 boundary/upright
+  violations, min spacing 319, 26 pedestrians.
+- **KNOWN ISSUE — lane discipline.** `lane_violators=2`: `SprawlCar_93` at
+  (8053,-3332) err 122 and `SprawlCar_90` at (-6739,-7960) err 136, each
+  sustained >1.5s. With a 350cm lane the centre is 175 from the road
+  centreline, so a ~120cm error puts the car's edge over the parking-bay line
+  at 350. Two principled changes were tried and **neither moved the number** —
+  measuring error against the nearest legal lane (correct for multi-lane), and
+  committing turns on entering the junction rather than 175cm from the centre
+  of a 950cm box. Both were kept on their own merits. That elimination points
+  at the lane-keeping controller itself — `RunAutoDrive`'s 360cm lookahead and
+  `YawError / 30` steering gain, neither of which scales with lane width —
+  rather than at the geometry constants. **Next session: scale the lookahead
+  and/or gain to `Grid::LaneWidth` and re-run.** Cars otherwise drive, obey
+  signals, hold right-of-way and do not collide.
+- **VisualAudit** fails by a hair on warmth only: `red_blue=1.000` against a
+  `>= 1.00` gate (luma 102.4, crushed 0.01%, clipped 0.18% all comfortably
+  inside). The frame is exactly neutral rather than fractionally warm; the
+  gate was left alone rather than loosened to force a pass.
+- **Status:** same uncommitted change set on `main`.
+- **Next:** the lane-keeping tune above; then the legacy generation scripts,
+  which still carry the original 2000/600/2600 constants.
+<!-- entry:two-way-street-parallel-parking -->
+
+### 2026-07-20 · main · claude (surfaces, kerbside fix, building line)
+- **Regression fixed (mine):** `expand_streets.py` anchored each actor to its
+  *nearest* grid anchor. Anything in the outer ~350cm of a block is nearer the
+  road centre than its own block centre — exactly where kerbside trees,
+  hydrants, benches and shopfronts live — so those scaled with the road and
+  ended up standing in the widened carriageway (user screenshot: trees and a
+  planter in the street). New `fix_kerbside_anchoring.py` applies the exact
+  inverse: the mapping is invertible, so anything now 280-700cm from a road
+  centre was block-owned and is shifted outward by
+  `NEW_ANCHOR_HALF - OLD_ANCHOR_HALF` = 650cm, landing back at its original
+  distance from its block centre. **1338 objects returned**, including 97
+  trees, 74 street lights and 123 shopfront pieces. Road furniture (<280cm)
+  and parked cars (825cm bays) untouched.
+- **New `city_surfaces.py`:** the world is one asphalt plane, so street and
+  pavement were indistinguishable grey. Lays one surface slab per block flush
+  with the kerb — grass on the 3 park blocks, pavement on the other 40 — and
+  deliberately leaves the gaps bare so the ground plane reads as the street.
+  Collision off; the ground plane already carries it. **Spawns actors, so it
+  must run without `-nullrhi`.**
+- **New `fix_building_placement.py`:** holds structures to a building line
+  1350cm from each road centre (kerb 950 + 400 walking band) and keeps the
+  carriageway clear; awnings and signs may overhang the pavement by design.
+  629 structures set back; re-run reports **0 in the carriageway, 0 over the
+  walking band, 0 moved** — converged and idempotent.
+- **New `Design/CITY_MODULES.md`:** documents every layout module, the grid
+  cross-section, the required run order after a grid change, which modules
+  spawn actors, and the anchoring trap above. All modules are 136-198 lines.
+- **Process note:** the building pass was applied before its report was read.
+  The first run showed implausible 1348cm "intrusions", which warranted
+  inspection first; the result was verified good afterwards, but the correct
+  order is audit (`APPLY = False`) then apply.
+- **Validation:** VisualAudit PASS (mean_luma 103-107) at each stage; building
+  placement converged to zero; street-level frames show a clear carriageway,
+  kerbside trees and cars, and visible grass and pavement surfaces.
+- **Also corrected (both principled, neither masking):** the traffic audit
+  measured lane error against lane 0 only, which is wrong now each direction
+  has two legal lanes — it now measures against the nearest legal lane. And
+  turns committed `LaneOffset` (175cm) before the road centre, which suited a
+  300cm junction but is deep inside a 950cm one, so cars exited wide; they now
+  commit on entering the box (`IntersectionHalf - LaneOffset`).
+- **KNOWN ISSUE — one stuck traffic car.** TrafficAudit fails a single gate,
+  `lane_violators=1`, and it is the same car at the same place across runs:
+  `SprawlCar_93` at (9414, -3946), lane_error ~160, barely moving between
+  samples (9414.7 -> 9424.0 over the run). That is **stuck, not drifting** —
+  something is blocking a travel lane on the vertical road at x~9750, mid-block
+  in Y. Every other gate passes (0 boundary/upright/unauthorized-entry
+  violations, box occupancy 1, 8-10 signal stops, 26 pedestrians, min spacing
+  340). Neither the lane-metric nor the turn-commit change moved it, so the
+  cause is an obstruction at that spot, not AI tuning. **Next session: find
+  what occupies (9414, -3946)** — likely a prop or building corner left inside
+  the carriageway that the placement pass did not classify as a structure.
+- **Status:** same uncommitted change set on `main`; traffic audit is at 8/9
+  gates with the above understood and localised.
+- **Next:** the stuck-car obstruction above, then the legacy generation scripts
+  which still carry the old grid constants.
+<!-- entry:city-surfaces-and-building-line -->
+
+### 2026-07-20 · main · claude (streets widened to 2 lanes + parking)
+- **Why it was structural:** `ParkingOffset` was 410 while the road half-width
+  was only 300 — "parking" had always placed cars *past the kerb*, on the
+  pavement, which is why trees grew through them. A 600cm street cannot hold
+  two lanes each way plus a bay, so the grid itself had to grow.
+- **Changed (grid):** `USprawlCityGridSubsystem` now derives the carriageway
+  from the lane layout instead of a magic number:
+  `RoadWidth = 2 * (2 lanes * 350 + 250 bay) = 1900`, `Step` 2600 -> 3900,
+  `Span` 18200 -> 27300, boundary 9100 -> 13650. `LaneCenter()` takes a lane
+  index (0 = centreline side, 1 = kerbside) and `ParkingLaneCenter()` is new;
+  stop-line distances derive from the road width. Every existing AI call site
+  defaults to lane 0, so traffic keeps valid lane discipline unchanged.
+- **Changed (paint):** `ASprawlRoadMarkings` now stripes a dashed centreline,
+  a dashed divider between the two travel lanes each side, a near-solid edge
+  line against the parking bay, and per-bay ticks — 3960 instances, 322 bays,
+  crosswalks and stop lines rescaled to the wider approach.
+- **New modules:** `expand_streets.py` maps every actor from the old anchor
+  spacing onto the new one (anchors alternate block/road centre each half
+  step), so block interiors keep their exact internal layout and only the gaps
+  open up — 2666 actors remapped, max shift 84.5m, ground plane rescaled, and
+  the 264 legacy `City_Detail_*Center/Lane/Edge` stripes retired since the C++
+  system now paints them. `park_cars_in_bays.py` then assigns all 36 parked
+  cars a real bay, testing each against 1161 tree/prop/building footprints and
+  the cars already placed. `audit_street_geometry.py` and
+  `audit_vehicle_grounding.py` are the read-only diagnostics behind both.
+- **AI constants that had to follow the geometry** (each was silently tied to
+  the old 600cm street and broke a different audit gate):
+  `DecisionDistance` was 1100, *shorter* than the new 1490 stop line, so cars
+  could never evaluate a signal before reaching it; the right-of-way lease was
+  only refreshed on the approach, so it expired mid-crossing of a 19m box and
+  read as an intrusion; the lease released at centre+400, admitting a second
+  car while the first still occupied the box; and `SpawnNeeded` snapped cars
+  onto a lane at a random along-road position — with junctions now covering
+  ~half of each road, cars materialised inside intersections holding no lease.
+  All four now derive from `Grid::RoadWidth`/`VehicleStopDistance`. The traffic
+  audit's own hold window and lane-departure margin were hard-coded to the old
+  road too and now derive from the grid.
+- **Validation:** Build clean. TrafficAudit **PASS** (16 movers, 15 signal
+  stops, box occupancy 1, **0 unauthorized entries**, min spacing 338, zero
+  lane/boundary/upright violations, 26 pedestrians). ProgressionAudit,
+  LocomotionAudit (0.00 deg) and CarjackAudit all PASS. VisualAudit PASS
+  (mean_luma 103-113). Street-level frame shows the wider carriageway, painted
+  lanes and cars parked along the kerb.
+- **Status:** same uncommitted change set on `main`.
+- **Next:** the older generation scripts (`build_city.py`, `add_city_detail.py`,
+  `realkit_apply.py`, `dw_*.py`) still hard-code `BLOCK/ROAD/STEP = 2000/600/2600`.
+  They are no longer consistent with the live grid — re-running any of them
+  would rebuild at the old spacing. Update those constants before using them
+  again, or treat `expand_streets.py` as the migration step after any rebuild.
+<!-- entry:streets-widened-two-lanes-parking -->
+
+### 2026-07-20 · main · claude (parked cars: runtime stance seating)
+- **Changed:** the earlier construction-time stance fix could not reach the
+  city's 51 `City_ParkedCar_*`/`City_TrafficCar_*` actors, because an authoring
+  pass had assigned each an external body mesh and **serialised its offset into
+  the level** — so their visuals still hung ~7-19 cm below the hull's contact
+  plane and the wheels stayed under the tarmac (user screenshot: red Mini with
+  its wheels cut off at road level). `FSprawlVehicleStance::ComputeVisibleBottomZ`
+  now measures the lowest point of everything actually visible on a vehicle
+  from the live components (each re-derived in actor space, so wheels on their
+  steering pivots measure correctly), and `ASprawlCar::SeatVisualOnContactPlane`
+  shifts every visual child of the hull by the difference at BeginPlay. This
+  works regardless of how a body was authored — constructor, runtime split
+  parts, or baked into the map — and is a no-op once correct.
+- **Validation:** Build clean. All **51 cars seated** at BeginPlay, lifted
+  7.1-12.9 cm each (e.g. `SprawlCar_2 seated by 12.9 cm, visual bottom -74.9 ->
+  contact plane -62.0`). TrafficAudit PASS (14/14 movers, wheel motion on all
+  14, zero boundary/upright/lane violations); VisualAudit PASS (mean_luma
+  98.5); parked-car close-up shows tyres meeting the surface.
+- **Gotcha recorded:** `UE_LOG(LogTemp, Log, ...)` is **filtered out** of
+  `-game` runs in this project — `[RoadMarkings]` and the first `[Stance]` pass
+  were both invisible despite running. Use `Display` for anything that needs to
+  be verifiable headlessly.
+- **Status:** same uncommitted change set on `main`.
+- **Next:** unchanged.
+<!-- entry:parked-car-stance-seating -->
+
+### 2026-07-20 · main · claude (vehicle stance, decals off characters)
+- **Changed (tyres):** new `FSprawlVehicleStance` module. `ASprawlCar` rests on
+  its collision hull, so the hull underside is the contact plane, but the
+  assembly seated the *body* mesh's underside there — and since tyres hang
+  below a car's floorpan, every wheel sank into the road. The module measures
+  the lowest point of body **and** wheels and seats that instead, which is what
+  produces real ride height. Prototype wheels had the same fault arithmetically
+  (hull bottom -62, wheel centre -54, radius 41 -> tread at -95, i.e. 33 cm
+  under the tarmac); their centre height is now derived from the hull extent
+  and wheel radius rather than hard-coded.
+- **Changed (paint on Zarri):** new `FSprawlCharacterRender` module. The city
+  uses 115 DecalActors for crosswalk paint and grime, and a decal projects onto
+  any primitive that has not opted out — so characters walking over paint wore
+  it. Decal reception is now disabled for the hero (including every component
+  of the assembled MetaHuman: body, face, hair, clothing), all carried
+  equipment, pedestrians and seated drivers, via `ApplyAvatar`, the locomotion
+  component and the MetaHuman activation path.
+- **Validation:** Build clean. TrafficAudit PASS after the stance change
+  (14/14 movers, wheel motion on all 14, zero violations); VisualAudit PASS
+  (mean_luma 98.2); parked-car close-up shows wheels resting on the surface
+  rather than buried.
+- **Investigated and reverted:** residual white speckling on Zarri in captures
+  is temporal-AA ghosting, not decals — proved by capturing with
+  `r.AntiAliasingMethod 0` (completely clean) and with
+  `r.BasePassForceOutputsVelocity 1` (also clean). The permanent fix
+  `r.VelocityOutputPass=1` regressed scene lighting badly (mean luma 98 -> 72,
+  red/blue 1.01 -> 0.83, VisualAudit FAIL), so it was reverted and the config
+  carries a comment recording the trade. Ghosting remains a known cosmetic
+  issue, worst right after a teleport.
+- **Status:** same uncommitted change set on `main`.
+- **Next:** if the ghosting matters in play, the lead is why base-pass velocity
+  darkens this scene (likely interaction with the mobile shading path or the
+  `r.Velocity.EnableVertexDeformation=2` setting) rather than the cvar itself.
+<!-- entry:vehicle-stance-and-character-decals -->
+
+### 2026-07-20 · main · claude (crowd casting, world placement repair)
+- **Changed (crowd):** New `FSprawlCrowdAppearance` module casts the pedestrian
+  pool by measurement rather than a hand-kept blocklist. Each variant's head
+  length is read from its reference skeleton as a fraction of standing height
+  (`FSprawlAvatarLibrary::ComputeHeadHeightRatio`); adults sit near an eighth,
+  caricatures far higher, and only variants at or under 0.20 walk the city or
+  ride in traffic. Both call sites (`ASprawlPedestrian`, `ASprawlCar`'s seated
+  driver) now draw from it. Measured spread: **cast 8** — Lydia 0.067, Chill
+  0.122, BizDude/Bruno 0.150, Kyle 0.162, Erika 0.172, Samuela 0.174, Baldman
+  0.197; **cut 13** — Rose 0.207 … Juanita 0.475 (includes Cappy 0.285, the
+  big-head figure in the reported screenshots). The table is logged every run
+  so the cut stays auditable; an empty result falls back to the full pool.
+- **Changed (shared):** the reference-skeleton helpers moved out of
+  `USprawlLocomotionComponent` into `FSprawlAvatarLibrary`
+  (`ComputeMeshForwardYaw`, `ComputeHeadHeightRatio`), so facing and
+  proportion measurement share one implementation.
+- **Changed (world):** new `audit_world_placement.py` (read-only diagnostic)
+  and `repair_world_placement.py` (idempotent, non-destructive repair). Root
+  cause of both reported world bugs was one authoring slip: Python's
+  `unreal.Rotator` takes **(roll, pitch, yaw)** but `realkit_apply.py:248`,
+  `dw_realism2.py` and friends called it positionally as
+  `Rotator(0, yaw, 0)`, so every prop's intended yaw landed in PITCH and tipped
+  it over — 722 tilted actors including 134 trees, 40 hydrants, 40 bins,
+  storefronts and trim. The repair recovers the intended angle (unmirroring the
+  `roll=180/yaw=180` normalized form), puts it back on yaw, and re-seats each
+  actor on its authored surface (`SIDEWALK_Z=14`, `ROAD_Z=1.5`, both flat and
+  exact — no tracing). Separately, lane markings had been pushed to z=11,
+  hovering ~9 cm over the asphalt and slicing through pedestrians' ankles
+  (the "paint going through Zarri" report); 264 were laid back down to
+  top_z=2.8, just under the C++ `ASprawlRoadMarkings` plane so the two systems
+  layer instead of z-fighting.
+- **Validation:** Build clean. Repair moved 555 upright + 485 re-seated + 264
+  markings, then re-ran as a no-op (idempotent). Audit tilt count 722 -> 168,
+  and every remaining tilt is deliberate: 89 awnings (authored with a real
+  slope), 78 R2 decals (orientation is their projection), and the sun.
+  TrafficAudit PASS after the repair (26 pedestrians, 26 real avatars, 14
+  visible drivers, zero violations); VisualAudit PASS (mean_luma 98.2);
+  LocomotionAudit still PASS (0.00 deg) after the helper move.
+- **Status:** same uncommitted change set on `main`.
+- **Next:** awnings carry the same Rotator slip (intended `roll=-90`) but were
+  left alone rather than guessed at — worth a look in-editor. Minor floating
+  canopy cards remain on the DW3 tree asset (art, not placement). Threshold
+  `MaxHumanHeadRatio` is one constant if the crowd should be stricter (0.18
+  would also cut Baldman) or looser.
+<!-- entry:crowd-casting-and-placement-repair -->
+
+### 2026-07-20 · main · claude (modular locomotion; sideways run fixed)
+- **Changed:** New standalone `USprawlLocomotionComponent`
+  (`Public/Characters/SprawlLocomotionComponent.h` + private impl) owns on-foot
+  gait selection and body facing for any visual — imported avatar, assembled
+  MetaHuman, or future pawns. Facing is derived from the mesh's own reference
+  skeleton (first usable left/right bone pair, hips preferred over arms;
+  forward = right × up) and reconciled against the visual's live world
+  transform, so rotations already baked into a Blueprint or applied by
+  `FSprawlAvatarLibrary::ApplyAvatar` are respected and never doubled. Gaits
+  are data: a fastest-first `FSprawlGait` band list (clip, min speed,
+  reference speed, play-rate clamps) replacing the hard-coded if/else ladders.
+  `AZarriCharacter` now just feeds it a ground speed; ~60 lines of duplicated
+  animation branching removed, and `HeroCurrentAnim`/`MetaHumanCurrentAnim`
+  are gone (the component owns clip state).
+- **Root cause fixed:** the fallback path applied the Mixamo `-90` yaw inside
+  `ApplyAvatar`, but the MetaHuman child actor was placed with
+  `FRotator::ZeroRotator`, so the assembled body sat 90 deg off the capsule and
+  Zarri ran sideways. Measured correction is now `-90.0` for
+  `/Game/MetaHumans/Zarri/BP_Zarri` (Body reads as facing 90 deg locally) and
+  `-0.6` for the imported avatar.
+- **Added audits:** `-SprawlLocomotionAudit` sweeps six yaws and gates on the
+  body's facing error vs the pawn heading (<= 1 deg); `-SprawlAuditRun` holds
+  forward input so `-SprawlVisualAudit` captures a running pose instead of an
+  idle one.
+- **Validation:** Build clean. LocomotionAudit PASS (`visual=metahuman
+  worst_facing_error=0.00 deg applied_correction=-90.0`). VisualAudit PASS
+  running (mean_luma 113.4, crushed 0.02%) and the captured frame shows Zarri
+  square to his direction of travel, back to camera, mid-stride.
+- **Status:** same uncommitted change set on `main`.
+- **Next:** `ASprawlPedestrian` and the seated driver visual still run their
+  own copies of the avatar/anim logic and could adopt this component next;
+  otherwise unchanged.
+<!-- entry:modular-locomotion-component -->
+
+### 2026-07-19 · main · claude (nose-first kits + calmer run camera)
+- **Changed:** `TryApplyRuntimeVehicleParts` no longer hard-codes a +90° mesh
+  yaw: it derives each kit's forward from the FBX-named front axle (front vs
+  rear wheel centroids) so every variant drives nose-first — live play showed
+  some kits rendering tail-first at speed. Follow camera: correction is now
+  proportional to yaw error (soft dead-band, no wobble while running
+  straight), turn speed 3.4→2.6, sprint no longer over-drives the swing; the
+  MetaHuman run-anim rate cap rises to 1.5 so the 760 cm/s sprint stops
+  foot-sliding.
+- **Validation:** Build clean; TrafficAudit PASS (14/14 movers, visible
+  drivers 14, min_spacing 414, zero violations); before/after boulevard
+  frames confirm the flipped kit's taillights now face the rear while an
+  already-correct kit is unchanged.
+- **Status:** same uncommitted polish change set on `main`.
+- **Next:** unchanged.
+<!-- entry:kit-orientation-and-follow-cam -->
+
+### 2026-07-19 · main · claude (Esc frees the cursor)
+- **Changed:** Bare Esc now saves AND releases the OS mouse cursor from the
+  game window (`FInputModeGameAndUI`, no viewport lock, cursor shown) — live
+  play showed the Esc reflex was really "give me my mouse back". Clicking the
+  game recaptures (`LeftMouseButton` binding with `bConsumeInput = false`,
+  suppressed while a modal is up). Shift+Esc remains the quit chord.
+- **Validation:** `ConnectedSprawlEditor Mac Development` rebuilt clean.
+- **Status:** part of the same uncommitted polish change set on `main`.
+- **Next:** unchanged.
+<!-- entry:esc-cursor-release -->
+
+### 2026-07-19 · main · claude (Esc chord, supersedes entry below)
+- **Changed:** Per user request after live play, quitting is now the deliberate
+  chord **Shift+Esc** (`ASprawlPlayerController::OnEscapePressed` checks the
+  held modifier). A bare Esc only saves and shows "Progress saved — Shift+Esc
+  quits the game". The 3-second double-press window from the previous entry is
+  removed — reflex double-taps were still killing the session.
+- **Validation:** `ConnectedSprawlEditor Mac Development` rebuilt clean
+  (Result: Succeeded, 21.95 s).
+- **Status:** part of the same uncommitted polish change set on `main`.
+- **Next:** unchanged.
+<!-- entry:esc-shift-quit-chord -->
+
+### 2026-07-19 · main · claude (evening follow-up)
+- **Changed:** Two-stage Esc in `ASprawlPlayerController`: first press saves and
+  shows "Progress saved — press Esc again to quit"; a second press within 3 s
+  quits. Two consecutive interactive play sessions ended ~50 s in via
+  `UGameEngine::HandleExitCommand` — the old Esc=instant-save-and-quit read as
+  a crash-to-desktop to GTA pause-menu reflexes.
+- **Validation:** `ConnectedSprawlEditor Mac Development` rebuilt clean
+  (21.8 s); windowed `-game` launches on this Mac bring TestMap up with the
+  MetaHuman active and exit only via the new confirmed path. Interactive play
+  logs live at `~/Library/Logs/ConnectedSprawl/ConnectedSprawl.log` (the .app
+  relaunch does not write `Saved/Logs/`).
+- **Status:** part of the same uncommitted polish change set on `main`.
+- **Next:** unchanged from the entry below.
+<!-- entry:esc-two-stage-quit -->
+
+### 2026-07-19 · main · claude
+- **Changed:** Game-feel polish pass across controls, cameras, lighting, cars,
+  and wardrobe. `AZarriCharacter` gains a GTA-style auto-follow camera (eases
+  behind travel after look input goes idle; fixes curved "drunk" forward
+  walking), shoulder-offset framing, a public sprint setter, and an on-foot
+  boundary rescue that teleports back to the last safe sidewalk location on a
+  fall or perimeter escape. `ASprawlCar` gains lateral tyre-grip damping and a
+  brake-force multiplier (no more hovercraft skating), a farther/higher chase
+  camera (arm 780→1000, FOV 88), and a touch-pedal throttle override.
+  `ASprawlPlayerController` clamps view pitch and routes a new touch API.
+  `USprawlNativeHUD` builds touch controls on touch platforms only: right-half
+  drag-to-look pane plus contextual JUMP/SPRINT/ENTER ↔ GAS/BRAKE/EXIT buttons;
+  `DefaultInput.ini` switches to the engine's LeftVirtualJoystickOnly interface
+  (no second joystick). `ASprawlEnvironmentController` gets playable-night
+  floors (moon 1.35, sky 0.60, thinner night fog, streetlights 13.5k/30m/26
+  pooled) and `-SprawlStartHour=`/`-SprawlFreezeClock` capture hooks; the
+  visual audit accepts `-SprawlAuditShowUI` to composite the HUD. New
+  `game_ready_polish.py` authored translucent `M_CarGlassClear`, reparented
+  `MI_CarGlass` (opacity 0.30) so drivers are visible through real glass,
+  retargeted glass slots across the Car_1–10 kits, and recolored the MetaHuman
+  garment MIs from near-black indigo to a light heather tee + charcoal shorts.
+- **Validation:** `ConnectedSprawlEditor Mac Development` builds clean.
+  Real-Metal offscreen runs: VisualAudit PASS day (mean_luma 96–99, crushed 0%),
+  TrafficAudit PASS (14/14 movers, visible_drivers=14, 0 boundary/upright/lane
+  violations, min_spacing 312), ProgressionAudit PASS, CarjackAudit PASS.
+  Night frame at 22:00 verified visually (moody but readable; luma 22 vs 19.5
+  before). UI frame confirms single left joystick + labeled buttons, no
+  overlap. UE 5.8 headless python now needs `-run=pythonscript -script=...`
+  (`-ExecutePythonScript` is ignored; LogPython output is swallowed — the
+  script writes `Saved/GameReadyPolishReport.txt` instead).
+- **Status:** complete and validated on macOS; all changes uncommitted in the
+  `main` worktree awaiting user review/commit.
+- **Next:** iOS cook + on-device performance pass (translucent glass and the
+  higher night light floors are the new costs to profile), optional rounded
+  styling for the touch buttons, shoes/wardrobe assets remain the known
+  MetaHuman gap, and Git LFS setup is still outstanding for the 97.5 MiB
+  `MHC_Zarri.uasset` already on origin.
+<!-- entry:game-feel-polish-pass -->
 
 ### 2026-07-19 · main · codex
 - **Changed:** Completed the UE 5.8 MetaHuman Zarri pass after installing Epic's

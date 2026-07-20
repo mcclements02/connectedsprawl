@@ -21,8 +21,18 @@
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimSingleNodeInstance.h"
 #include "Characters/SprawlAvatarLibrary.h"
+#include "Characters/SprawlCharacterRender.h"
+#include "Characters/SprawlLocomotionComponent.h"
 #include "Phone/PhoneSubsystem.h"
+#include "World/SprawlCityGridSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
+#include "HAL/PlatformMisc.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+
+// File-scope alias (matches the other Sprawl translation units so unity
+// builds don't see a local declaration shadowing the global one).
+using Grid = USprawlCityGridSubsystem;
 
 AZarriCharacter::AZarriCharacter()
 {
@@ -54,11 +64,16 @@ AZarriCharacter::AZarriCharacter()
 	SpringArm->CameraLagSpeed         = 11.f;
 	SpringArm->bEnableCameraRotationLag = true;
 	SpringArm->CameraRotationLagSpeed = 14.f;
+	// Slight over-the-shoulder framing: Zarri sits just left of center with
+	// the lens riding above his shoulder line instead of his lower back.
+	SpringArm->SocketOffset = FVector(0.f, 46.f, 64.f);
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(SpringArm);
 	FollowCamera->bUsePawnControlRotation = false;
 	FollowCamera->SetFieldOfView(84.f);
+
+	Locomotion = CreateDefaultSubobject<USprawlLocomotionComponent>(TEXT("Locomotion"));
 
 	MetaHumanVisualComponent = CreateDefaultSubobject<UChildActorComponent>(TEXT("MetaHumanVisual"));
 	MetaHumanVisualComponent->SetupAttachment(RootComponent);
@@ -140,9 +155,17 @@ void AZarriCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Covers the fallback body and every piece of carried equipment; the
+	// assembled MetaHuman is a separate actor and is handled on activation.
+	FSprawlCharacterRender::DisableDecalProjection(this);
+
 	InitializeHeroAvatar();
 	InitializeEquipment();
 	TryInitializeMetaHumanVisual();
+
+	bLocomotionAuditEnabled = FParse::Param(
+		FCommandLine::Get(), TEXT("SprawlLocomotionAudit"));
+	bAuditRunForward = FParse::Param(FCommandLine::Get(), TEXT("SprawlAuditRun"));
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
@@ -162,6 +185,171 @@ void AZarriCharacter::Tick(float DeltaSeconds)
 
 	UpdateHeroAnimation();
 	UpdateEquipmentVisuals(DeltaSeconds);
+	UpdateFollowCamera(DeltaSeconds);
+	UpdateBoundaryRescue(DeltaSeconds);
+
+	if (bAuditRunForward && Controller)
+	{
+		// Hold forward so headless captures show a running pose rather than idle.
+		const FRotator YawRotation(0.f, Controller->GetControlRotation().Yaw, 0.f);
+		AddMovementInput(FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X), 1.f);
+	}
+	if (bLocomotionAuditEnabled)
+	{
+		RunLocomotionAudit();
+	}
+}
+
+void AZarriCharacter::RunLocomotionAudit()
+{
+	bLocomotionAuditEnabled = false;
+
+	if (!Locomotion || !Locomotion->HasVisual())
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[LocomotionAudit] FAIL: no locomotion visual is active"));
+		FPlatformMisc::RequestExitWithStatus(true, 1, TEXT("SprawlLocomotionAudit"));
+		return;
+	}
+
+	// Facing is what "runs straight" reduces to: the body must point wherever
+	// the pawn points, at any heading. Movement itself is engine-owned
+	// (bOrientRotationToMovement turns the capsule toward velocity), so sweeping
+	// yaws measures the part this project actually controls — and does it
+	// deterministically, with no traffic or collision noise.
+	const FRotator OriginalRotation = GetActorRotation();
+	const float TestYaws[] = { 0.f, 45.f, 90.f, 180.f, 270.f, -135.f };
+	float WorstErrorDegrees = 0.f;
+	float WorstYaw = 0.f;
+	for (const float TestYaw : TestYaws)
+	{
+		SetActorRotation(FRotator(0.f, TestYaw, 0.f), ETeleportType::TeleportPhysics);
+		const FVector VisualForward = Locomotion->GetVisualForward();
+		const float ErrorDegrees = FMath::Abs(FMath::FindDeltaAngleDegrees(
+			VisualForward.Rotation().Yaw, TestYaw));
+		if (ErrorDegrees > WorstErrorDegrees)
+		{
+			WorstErrorDegrees = ErrorDegrees;
+			WorstYaw = TestYaw;
+		}
+	}
+	SetActorRotation(OriginalRotation, ETeleportType::TeleportPhysics);
+
+	const bool bPassed = WorstErrorDegrees <= 1.f;
+	const TCHAR* VisualKind = bUsingMetaHumanVisual
+		? TEXT("metahuman") : TEXT("fallback");
+	if (bPassed)
+	{
+		UE_LOG(LogTemp, Display,
+			TEXT("[LocomotionAudit] PASS visual=%s worst_facing_error=%.2f deg "
+				"at_yaw=%.0f applied_correction=%.1f deg"),
+			VisualKind, WorstErrorDegrees, WorstYaw,
+			Locomotion->GetAppliedYawCorrection());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[LocomotionAudit] FAIL visual=%s worst_facing_error=%.2f deg "
+				"at_yaw=%.0f applied_correction=%.1f deg gate=<=1.0"),
+			VisualKind, WorstErrorDegrees, WorstYaw,
+			Locomotion->GetAppliedYawCorrection());
+	}
+	FPlatformMisc::RequestExitWithStatus(
+		true, bPassed ? 0 : 1, TEXT("SprawlLocomotionAudit"));
+}
+
+void AZarriCharacter::UpdateFollowCamera(float DeltaSeconds)
+{
+	if (!bAutoFollowCamera)
+	{
+		return;
+	}
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC)
+	{
+		return;
+	}
+	if (GetWorld()->GetTimeSeconds() - LastLookInputTime < FollowCameraDelay)
+	{
+		return;
+	}
+
+	const FVector Velocity2D(GetVelocity().X, GetVelocity().Y, 0.f);
+	const float Speed = Velocity2D.Size();
+	if (Speed < 90.f)
+	{
+		// Standing still: leave the camera wherever the player parked it.
+		return;
+	}
+
+	// Ease behind the direction of travel. The correction is proportional to
+	// how far off-axis the camera is: near-centered errors barely move (no
+	// side-to-side wobble while running straight), big errors swing harder.
+	FRotator Control = PC->GetControlRotation();
+	const float TargetYaw = Velocity2D.Rotation().Yaw;
+	const float DeltaYaw = FMath::FindDeltaAngleDegrees(Control.Yaw, TargetYaw);
+	const float ErrorScale = FMath::Clamp(FMath::Abs(DeltaYaw) / 25.f, 0.f, 1.f);
+	const float FollowRate = FollowCameraTurnSpeed
+		* FMath::Clamp(Speed / 520.f, 0.45f, 1.f) * ErrorScale;
+	const float YawAlpha = FMath::Clamp(DeltaSeconds * FollowRate, 0.f, 1.f);
+	Control.Yaw += DeltaYaw * YawAlpha;
+
+	const float CurrentPitch = FRotator::NormalizeAxis(Control.Pitch);
+	const float PitchAlpha = FMath::Clamp(DeltaSeconds * 0.9f, 0.f, 1.f);
+	Control.Pitch = CurrentPitch
+		+ (FollowCameraRestPitch - CurrentPitch) * PitchAlpha;
+
+	PC->SetControlRotation(Control);
+}
+
+void AZarriCharacter::UpdateBoundaryRescue(float DeltaSeconds)
+{
+	// While driving, Zarri is hidden with collision and movement off; the car
+	// runs its own boundary recovery.
+	if (IsHidden())
+	{
+		return;
+	}
+
+	const FVector Location = GetActorLocation();
+
+	SafeFootLocationTimer -= DeltaSeconds;
+	const UCharacterMovementComponent* Move = GetCharacterMovement();
+	const float SafeInset = Grid::CityBoundaryHalfExtent - 220.f;
+	const bool bWellInside = FMath::Abs(Location.X) <= SafeInset
+		&& FMath::Abs(Location.Y) <= SafeInset;
+	if (SafeFootLocationTimer <= 0.f && Move && Move->IsMovingOnGround()
+		&& bWellInside && !Grid::IsOverLake(Location.X, Location.Y, 120.f)
+		&& Location.Z > -120.f && Location.Z < 1500.f)
+	{
+		LastSafeFootLocation = Location;
+		bHasSafeFootLocation = true;
+		SafeFootLocationTimer = 0.75f;
+	}
+
+	const bool bOutOfBounds = !Grid::IsInsideCityBounds(Location.X, Location.Y, 60.f);
+	const bool bFellThrough = Location.Z < -350.f;
+	if (!bOutOfBounds && !bFellThrough)
+	{
+		return;
+	}
+
+	FVector Rescue = LastSafeFootLocation;
+	if (!bHasSafeFootLocation)
+	{
+		// No history yet (e.g. spawned outside): center-block sidewalk anchor.
+		const float CenterBlock = Grid::BlockCenter(Grid::NumBlocks / 2);
+		Rescue = FVector(CenterBlock, CenterBlock, 120.f);
+	}
+	Rescue.Z += 40.f;
+	SetActorLocation(Rescue, false, nullptr, ETeleportType::TeleportPhysics);
+	if (UCharacterMovementComponent* MutableMove = GetCharacterMovement())
+	{
+		MutableMove->StopMovementImmediately();
+		MutableMove->SetMovementMode(MOVE_Falling);
+	}
+	UE_LOG(LogTemp, Warning, TEXT("[Zarri] Rescued to safety (%s)"),
+		bFellThrough ? TEXT("fell below world") : TEXT("outside city bounds"));
 }
 
 bool AZarriCharacter::TryInitializeMetaHumanVisual()
@@ -171,7 +359,6 @@ bool AZarriCharacter::TryInitializeMetaHumanVisual()
 	LoadedMetaHumanIdleAnim = nullptr;
 	LoadedMetaHumanWalkAnim = nullptr;
 	LoadedMetaHumanRunAnim = nullptr;
-	MetaHumanCurrentAnim = nullptr;
 
 	if (!MetaHumanVisualComponent || MetaHumanVisualClass.IsNull()
 		|| MetaHumanIdleAnim.IsNull() || MetaHumanWalkAnim.IsNull()
@@ -231,6 +418,9 @@ bool AZarriCharacter::TryInitializeMetaHumanVisual()
 		}
 	}
 	VisualActor->SetActorEnableCollision(false);
+	// Body, face, hair and clothing are separate components; none of them
+	// should catch the road's paint decals.
+	FSprawlCharacterRender::DisableDecalProjection(VisualActor);
 
 	if (!MetaHumanBodyComponent || !MetaHumanBodyComponent->GetSkeletalMeshAsset())
 	{
@@ -244,8 +434,13 @@ bool AZarriCharacter::TryInitializeMetaHumanVisual()
 
 	MetaHumanBodyComponent->SetAnimInstanceClass(nullptr);
 	MetaHumanBodyComponent->SetAnimationMode(EAnimationMode::AnimationSingleNode);
-	FSprawlAvatarLibrary::PlayLoop(MetaHumanBodyComponent,
-		LoadedMetaHumanIdleAnim, MetaHumanCurrentAnim);
+	Locomotion->SetVisual(MetaHumanBodyComponent, MetaHumanVisualComponent);
+	Locomotion->SetGaits({
+		FSprawlGait(LoadedMetaHumanRunAnim, 320.f, 520.f, 0.8f, 1.5f),
+		FSprawlGait(LoadedMetaHumanWalkAnim, 25.f, 150.f, 0.7f, 1.75f),
+		FSprawlGait(LoadedMetaHumanIdleAnim, 0.f, 0.f, 1.f, 1.f),
+	});
+	Locomotion->UpdateLocomotion(0.f);
 	const UAnimSingleNodeInstance* SingleNode =
 		MetaHumanBodyComponent->GetSingleNodeInstance();
 	if (!SingleNode || SingleNode->GetAnimationAsset() != LoadedMetaHumanIdleAnim)
@@ -255,11 +450,14 @@ bool AZarriCharacter::TryInitializeMetaHumanVisual()
 			*ActiveHeroVariant);
 		MetaHumanVisualComponent->SetChildActorClass(nullptr);
 		MetaHumanBodyComponent = nullptr;
-		MetaHumanCurrentAnim = nullptr;
+		SetupFallbackLocomotion();
 		return false;
 	}
 
 	bUsingMetaHumanVisual = true;
+	// The assembled body is authored down its own axis, so square it up with
+	// the capsule before it is ever seen — otherwise Zarri travels sideways.
+	Locomotion->AlignVisualToOwnerForward();
 	AttachEquipmentToVisual(MetaHumanBodyComponent, true);
 	SetCharacterVisualHidden(false);
 
@@ -348,60 +546,29 @@ void AZarriCharacter::InitializeHeroAvatar()
 	HeroSprintAnim = FSprawlAvatarLibrary::LoadAvatarAnim(
 		ActiveHeroVariant, TEXT("Sprint"));
 	bHasHeroAvatar = true;
-	FSprawlAvatarLibrary::PlayLoop(GetMesh(), HeroIdleAnim, HeroCurrentAnim);
+	SetupFallbackLocomotion();
+}
+
+void AZarriCharacter::SetupFallbackLocomotion()
+{
+	// The engine mannequin drives itself from a real AnimBP, so the component
+	// only takes over once an imported avatar is actually in place.
+	if (!bHasHeroAvatar || !Locomotion)
+	{
+		return;
+	}
+	Locomotion->SetVisual(GetMesh(), GetMesh());
+	Locomotion->SetStandardGaits(
+		HeroIdleAnim, HeroWalkAnim, HeroJogAnim, HeroSprintAnim);
+	Locomotion->AlignVisualToOwnerForward();
+	Locomotion->UpdateLocomotion(0.f);
 }
 
 void AZarriCharacter::UpdateHeroAnimation()
 {
-	if (bUsingMetaHumanVisual && MetaHumanBodyComponent)
+	if (Locomotion)
 	{
-		const float Speed = GetVelocity().Size2D();
-		if (Speed > 320.f)
-		{
-			FSprawlAvatarLibrary::PlayLoop(MetaHumanBodyComponent,
-				LoadedMetaHumanRunAnim, MetaHumanCurrentAnim,
-				FMath::Clamp(Speed / 520.f, 0.8f, 1.35f));
-		}
-		else if (Speed > 25.f)
-		{
-			FSprawlAvatarLibrary::PlayLoop(MetaHumanBodyComponent,
-				LoadedMetaHumanWalkAnim, MetaHumanCurrentAnim,
-				FMath::Clamp(Speed / 150.f, 0.7f, 1.75f));
-		}
-		else
-		{
-			FSprawlAvatarLibrary::PlayLoop(MetaHumanBodyComponent,
-				LoadedMetaHumanIdleAnim, MetaHumanCurrentAnim);
-		}
-		return;
-	}
-
-	if (!bHasHeroAvatar)
-	{
-		return;
-	}
-
-	const float Speed = GetVelocity().Size2D();
-	if (Speed > 560.f)
-	{
-		UAnimSequence* Sprint = HeroSprintAnim ? HeroSprintAnim : HeroJogAnim;
-		const float ReferenceSpeed = HeroSprintAnim ? 610.f : 330.f;
-		FSprawlAvatarLibrary::PlayLoop(GetMesh(), Sprint, HeroCurrentAnim,
-			FMath::Clamp(Speed / ReferenceSpeed, 0.85f, HeroSprintAnim ? 1.35f : 1.8f));
-	}
-	else if (Speed > 320.f)
-	{
-		FSprawlAvatarLibrary::PlayLoop(GetMesh(), HeroJogAnim, HeroCurrentAnim,
-			FMath::Clamp(Speed / 330.f, 0.9f, 1.6f));
-	}
-	else if (Speed > 25.f)
-	{
-		FSprawlAvatarLibrary::PlayLoop(GetMesh(), HeroWalkAnim, HeroCurrentAnim,
-			FMath::Clamp(Speed / 130.f, 0.7f, 2.0f));
-	}
-	else
-	{
-		FSprawlAvatarLibrary::PlayLoop(GetMesh(), HeroIdleAnim, HeroCurrentAnim);
+		Locomotion->UpdateLocomotion(GetVelocity().Size2D());
 	}
 }
 
@@ -460,19 +627,29 @@ void AZarriCharacter::HandleLook(const FInputActionValue& Value)
 	const FVector2D Axis = Value.Get<FVector2D>().GetClampedToMaxSize(1.f);
 	if (Controller)
 	{
+		if (Axis.SizeSquared() > FMath::Square(0.05f))
+		{
+			// Manual look pauses the auto-follow so the player wins.
+			LastLookInputTime = GetWorld()->GetTimeSeconds();
+		}
 		AddControllerYawInput(Axis.X * 0.82f);
 		AddControllerPitchInput(Axis.Y * 0.68f);
 	}
 }
 
+void AZarriCharacter::SetSprinting(bool bSprinting)
+{
+	GetCharacterMovement()->MaxWalkSpeed = bSprinting ? 760.f : 520.f;
+}
+
 void AZarriCharacter::HandleSprint(const FInputActionValue&)
 {
-	GetCharacterMovement()->MaxWalkSpeed = 760.f;
+	SetSprinting(true);
 }
 
 void AZarriCharacter::HandleStopSprint(const FInputActionValue&)
 {
-	GetCharacterMovement()->MaxWalkSpeed = 520.f;
+	SetSprinting(false);
 }
 
 void AZarriCharacter::HandleInteract(const FInputActionValue&)

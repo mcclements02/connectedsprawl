@@ -41,4 +41,22 @@ struct CONNECTEDSPRAWL_API FSprawlAvatarLibrary
 	/** Swap the looping single-node animation if it changed; optional play rate. */
 	static void PlayLoop(USkeletalMeshComponent* MeshComp, UAnimSequence* Anim,
 		TObjectPtr<UAnimSequence>& CurrentAnim, float PlayRate = 1.f);
+
+	// --- Reference-skeleton measurements -------------------------------------
+	// Art from different pipelines disagrees about facing axis and proportion,
+	// so both are measured from the asset instead of assumed per-variant.
+
+	/**
+	 * Yaw (deg) the body's authored forward sits at in its own local space:
+	 * ~90 for a Mixamo/MetaHuman body facing +Y, ~0 for one facing +X. Derived
+	 * from the reference pose's left/right bone pair.
+	 */
+	static bool ComputeMeshForwardYaw(const USkeletalMesh* Mesh, float& OutYawDegrees);
+
+	/**
+	 * Head length as a fraction of standing height. Adult humans land near
+	 * 0.12-0.14 (the classic "seven-and-a-half heads tall"); stylised
+	 * big-head characters are far higher.
+	 */
+	static bool ComputeHeadHeightRatio(const USkeletalMesh* Mesh, float& OutRatio);
 };

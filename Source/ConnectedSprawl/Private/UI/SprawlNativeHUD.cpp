@@ -2,13 +2,17 @@
 
 #include "UI/SprawlNativeHUD.h"
 
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
+#include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "SprawlPlayerController.h"
+#include "Widgets/Input/SVirtualJoystick.h"
 
 namespace
 {
@@ -51,6 +55,8 @@ void USprawlNativeHUD::BuildUI()
 	WidgetTree->RootWidget = Root;
 
 	UBorder* StatsPanel = MakeNativeHUDPanel(WidgetTree, TEXT("StatsPanel"));
+	// Read-only panels must not swallow touches meant for movement or look.
+	StatsPanel->SetVisibility(ESlateVisibility::HitTestInvisible);
 	StatsText = MakeNativeHUDText(WidgetTree, TEXT("StatsText"), 18,
 		FLinearColor(0.94f, 0.96f, 1.f), ETextJustify::Left);
 	StatsPanel->SetContent(StatsText);
@@ -62,6 +68,7 @@ void USprawlNativeHUD::BuildUI()
 	}
 
 	UBorder* ObjectivePanel = MakeNativeHUDPanel(WidgetTree, TEXT("ObjectivePanel"));
+	ObjectivePanel->SetVisibility(ESlateVisibility::HitTestInvisible);
 	ObjectiveText = MakeNativeHUDText(WidgetTree, TEXT("ObjectiveText"), 17,
 		FLinearColor(0.45f, 0.86f, 1.f), ETextJustify::Center);
 	ObjectivePanel->SetContent(ObjectiveText);
@@ -86,6 +93,241 @@ void USprawlNativeHUD::BuildUI()
 		Slot->SetPosition(FVector2D(0.f, -34.f));
 		Slot->SetSize(FVector2D(660.f, 68.f));
 	}
+
+	BuildTouchControls(Root);
+}
+
+void USprawlNativeHUD::BuildTouchControls(UCanvasPanel* Root)
+{
+	if (bTouchControlsBuilt || !Root || !WidgetTree
+		|| !SVirtualJoystick::ShouldDisplayTouchInterface())
+	{
+		return;
+	}
+	bTouchControlsBuilt = true;
+
+	// Right-side look pane. The engine's single left virtual joystick owns
+	// movement; drags here bubble up to the NativeOnTouch* overrides and turn
+	// the camera, so there is no second joystick on screen.
+	LookPane = WidgetTree->ConstructWidget<UBorder>(
+		UBorder::StaticClass(), TEXT("LookPane"));
+	LookPane->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
+	LookPane->SetVisibility(ESlateVisibility::Visible);
+	if (UCanvasPanelSlot* Slot = Root->AddChildToCanvas(LookPane))
+	{
+		Slot->SetAnchors(FAnchors(0.42f, 0.05f, 1.f, 0.64f));
+		Slot->SetOffsets(FMargin(0.f));
+		Slot->SetZOrder(5);
+	}
+
+	auto MakeTouchButton = [&](const TCHAR* Name, const FText& Label,
+		TObjectPtr<UTextBlock>& OutLabel, FVector2D Position, FVector2D Size)
+		-> UButton*
+	{
+		UButton* Button = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(), Name);
+		Button->SetBackgroundColor(FLinearColor(0.05f, 0.07f, 0.11f, 0.62f));
+		UTextBlock* LabelText = MakeNativeHUDText(WidgetTree,
+			*(FString(Name) + TEXT("Label")), 22,
+			FLinearColor(0.92f, 0.95f, 1.f), ETextJustify::Center);
+		LabelText->SetText(Label);
+		Button->AddChild(LabelText);
+		OutLabel = LabelText;
+		if (UCanvasPanelSlot* Slot = Root->AddChildToCanvas(Button))
+		{
+			Slot->SetAnchors(FAnchors(1.f, 1.f));
+			Slot->SetAlignment(FVector2D(1.f, 1.f));
+			Slot->SetPosition(Position);
+			Slot->SetSize(Size);
+			Slot->SetZOrder(10);
+		}
+		return Button;
+	};
+
+	PrimaryButton = MakeTouchButton(TEXT("TouchPrimary"),
+		NSLOCTEXT("Sprawl", "TouchJump", "JUMP"), PrimaryLabel,
+		FVector2D(-34.f, -34.f), FVector2D(168.f, 150.f));
+	PrimaryButton->OnPressed.AddDynamic(
+		this, &USprawlNativeHUD::HandlePrimaryPressed);
+	PrimaryButton->OnReleased.AddDynamic(
+		this, &USprawlNativeHUD::HandlePrimaryReleased);
+
+	SecondaryButton = MakeTouchButton(TEXT("TouchSecondary"),
+		NSLOCTEXT("Sprawl", "TouchSprint", "SPRINT"), SecondaryLabel,
+		FVector2D(-222.f, -34.f), FVector2D(150.f, 116.f));
+	SecondaryButton->OnPressed.AddDynamic(
+		this, &USprawlNativeHUD::HandleSecondaryPressed);
+	SecondaryButton->OnReleased.AddDynamic(
+		this, &USprawlNativeHUD::HandleSecondaryReleased);
+
+	InteractButton = MakeTouchButton(TEXT("TouchInteract"),
+		NSLOCTEXT("Sprawl", "TouchEnter", "ENTER"), InteractLabel,
+		FVector2D(-34.f, -204.f), FVector2D(168.f, 88.f));
+	InteractButton->OnPressed.AddDynamic(
+		this, &USprawlNativeHUD::HandleInteractButtonPressed);
+
+	RefreshTouchButtonLabels(true);
+}
+
+ASprawlPlayerController* USprawlNativeHUD::GetSprawlPC() const
+{
+	return Cast<ASprawlPlayerController>(GetOwningPlayer());
+}
+
+void USprawlNativeHUD::RefreshTouchButtonLabels(bool bForce)
+{
+	if (!bTouchControlsBuilt || !PrimaryLabel || !SecondaryLabel || !InteractLabel)
+	{
+		return;
+	}
+	const ASprawlPlayerController* PC = GetSprawlPC();
+	const bool bInCar = PC && PC->IsDrivingVehicle();
+	if (!bForce && bInCar == bTouchButtonsInCarMode)
+	{
+		return;
+	}
+	bTouchButtonsInCarMode = bInCar;
+	bTouchGasHeld = false;
+	bTouchBrakeHeld = false;
+	PrimaryLabel->SetText(bInCar
+		? NSLOCTEXT("Sprawl", "TouchGas", "GAS")
+		: NSLOCTEXT("Sprawl", "TouchJump", "JUMP"));
+	SecondaryLabel->SetText(bInCar
+		? NSLOCTEXT("Sprawl", "TouchBrake", "BRAKE")
+		: NSLOCTEXT("Sprawl", "TouchSprint", "SPRINT"));
+	InteractLabel->SetText(bInCar
+		? NSLOCTEXT("Sprawl", "TouchExit", "EXIT")
+		: NSLOCTEXT("Sprawl", "TouchEnter", "ENTER"));
+}
+
+void USprawlNativeHUD::HandlePrimaryPressed()
+{
+	ASprawlPlayerController* PC = GetSprawlPC();
+	if (!PC)
+	{
+		return;
+	}
+	if (PC->IsDrivingVehicle())
+	{
+		bTouchGasHeld = true;
+		PC->TouchThrottlePressed(1.f);
+	}
+	else
+	{
+		PC->TouchJumpPressed();
+	}
+}
+
+void USprawlNativeHUD::HandlePrimaryReleased()
+{
+	ASprawlPlayerController* PC = GetSprawlPC();
+	if (!PC)
+	{
+		return;
+	}
+	bTouchGasHeld = false;
+	if (PC->IsDrivingVehicle() && bTouchBrakeHeld)
+	{
+		PC->TouchThrottlePressed(-1.f); // brake pedal is still down
+	}
+	else
+	{
+		PC->TouchThrottleReleased();
+	}
+	PC->TouchJumpReleased();
+}
+
+void USprawlNativeHUD::HandleSecondaryPressed()
+{
+	ASprawlPlayerController* PC = GetSprawlPC();
+	if (!PC)
+	{
+		return;
+	}
+	if (PC->IsDrivingVehicle())
+	{
+		bTouchBrakeHeld = true;
+		PC->TouchThrottlePressed(-1.f);
+	}
+	else
+	{
+		PC->TouchSprintPressed();
+	}
+}
+
+void USprawlNativeHUD::HandleSecondaryReleased()
+{
+	ASprawlPlayerController* PC = GetSprawlPC();
+	if (!PC)
+	{
+		return;
+	}
+	bTouchBrakeHeld = false;
+	if (PC->IsDrivingVehicle() && bTouchGasHeld)
+	{
+		PC->TouchThrottlePressed(1.f); // gas pedal is still down
+	}
+	else
+	{
+		PC->TouchThrottleReleased();
+	}
+	PC->TouchSprintReleased();
+}
+
+void USprawlNativeHUD::HandleInteractButtonPressed()
+{
+	if (ASprawlPlayerController* PC = GetSprawlPC())
+	{
+		PC->TouchInteractPressed();
+		RefreshTouchButtonLabels(true);
+	}
+}
+
+FReply USprawlNativeHUD::NativeOnTouchStarted(
+	const FGeometry& InGeometry, const FPointerEvent& InGestureEvent)
+{
+	// Only drags that begin over the look pane reach here: every other HUD
+	// element is either hit-test-invisible or a button that handles itself.
+	if (!bTouchControlsBuilt || LookFingerIndex != INDEX_NONE)
+	{
+		return Super::NativeOnTouchStarted(InGeometry, InGestureEvent);
+	}
+	LookFingerIndex = static_cast<int32>(InGestureEvent.GetPointerIndex());
+	LastLookPosition = InGestureEvent.GetScreenSpacePosition();
+	return FReply::Handled().CaptureMouse(TakeWidget());
+}
+
+FReply USprawlNativeHUD::NativeOnTouchMoved(
+	const FGeometry& InGeometry, const FPointerEvent& InGestureEvent)
+{
+	if (LookFingerIndex == INDEX_NONE
+		|| static_cast<int32>(InGestureEvent.GetPointerIndex()) != LookFingerIndex)
+	{
+		return Super::NativeOnTouchMoved(InGeometry, InGestureEvent);
+	}
+	const FVector2D Position = InGestureEvent.GetScreenSpacePosition();
+	const FVector2D PixelDelta = Position - LastLookPosition;
+	LastLookPosition = Position;
+
+	const float ViewportScale = FMath::Max(
+		0.5f, UWidgetLayoutLibrary::GetViewportScale(GetWorld()));
+	if (ASprawlPlayerController* PC = GetSprawlPC())
+	{
+		PC->ApplyTouchLook(PixelDelta / ViewportScale);
+	}
+	return FReply::Handled();
+}
+
+FReply USprawlNativeHUD::NativeOnTouchEnded(
+	const FGeometry& InGeometry, const FPointerEvent& InGestureEvent)
+{
+	if (LookFingerIndex != INDEX_NONE
+		&& static_cast<int32>(InGestureEvent.GetPointerIndex()) == LookFingerIndex)
+	{
+		LookFingerIndex = INDEX_NONE;
+		return FReply::Handled().ReleaseMouseCapture();
+	}
+	return Super::NativeOnTouchEnded(InGeometry, InGestureEvent);
 }
 
 void USprawlNativeHUD::NativeConstruct()
@@ -149,6 +391,12 @@ void USprawlNativeHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 	{
 		DistanceRefreshAccumulator = 0.f;
 		RefreshObjective();
+	}
+	TouchModeRefreshAccumulator += InDeltaTime;
+	if (TouchModeRefreshAccumulator >= 0.25f)
+	{
+		TouchModeRefreshAccumulator = 0.f;
+		RefreshTouchButtonLabels();
 	}
 }
 

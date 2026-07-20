@@ -14,6 +14,7 @@ class USpringArmComponent;
 class UInputAction;
 class UInputMappingContext;
 class USkeletalMeshComponent;
+class USprawlLocomotionComponent;
 class ASprawlCar;
 struct FInputActionValue;
 
@@ -56,6 +57,10 @@ public:
 	UFUNCTION(BlueprintPure, Category="Zarri|Appearance")
 	bool IsUsingMetaHumanVisual() const { return bUsingMetaHumanVisual; }
 
+	/** Sprint toggle shared by keyboard, gamepad, and the touch HUD. */
+	UFUNCTION(BlueprintCallable, Category="Zarri")
+	void SetSprinting(bool bSprinting);
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USpringArmComponent> SpringArm;
@@ -71,6 +76,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<UChildActorComponent> MetaHumanVisualComponent;
 
+	/**
+	 * Owns gait selection and body facing for whichever visual is active, so
+	 * neither the MetaHuman nor the fallback avatar can drift out of line with
+	 * the direction Zarri is actually travelling.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<USprawlLocomotionComponent> Locomotion;
+
 	// --- Enhanced Input assets (assigned in BP) ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
@@ -83,6 +96,16 @@ protected:
 
 	/** Radius within which Zarri can enter a vehicle. */
 	UPROPERTY(EditAnywhere, Category="Zarri") float InteractRadius = 550.f;
+
+	// --- GTA-style follow camera ---
+	/** Swing the camera behind the movement direction when look input is idle. */
+	UPROPERTY(EditAnywhere, Category="Zarri|Camera") bool bAutoFollowCamera = true;
+	/** Seconds after the last look input before auto-follow resumes. */
+	UPROPERTY(EditAnywhere, Category="Zarri|Camera") float FollowCameraDelay = 1.1f;
+	/** How assertively the camera eases behind the travel direction. */
+	UPROPERTY(EditAnywhere, Category="Zarri|Camera") float FollowCameraTurnSpeed = 2.6f;
+	/** Resting pitch the follow camera settles toward while moving. */
+	UPROPERTY(EditAnywhere, Category="Zarri|Camera") float FollowCameraRestPitch = -12.f;
 
 	// --- Visual Equipment Components ---
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components|Equipment")
@@ -161,7 +184,6 @@ protected:
 	UPROPERTY() TObjectPtr<UAnimSequence> HeroWalkAnim;
 	UPROPERTY() TObjectPtr<UAnimSequence> HeroJogAnim;
 	UPROPERTY() TObjectPtr<UAnimSequence> HeroSprintAnim;
-	UPROPERTY() TObjectPtr<UAnimSequence> HeroCurrentAnim;
 	FString ActiveHeroVariant = TEXT("Zarri");
 	bool bHasHeroAvatar = false;
 	bool bUsingMetaHumanVisual = false;
@@ -174,14 +196,35 @@ protected:
 	TObjectPtr<UAnimSequence> LoadedMetaHumanWalkAnim;
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimSequence> LoadedMetaHumanRunAnim;
-	UPROPERTY(Transient)
-	TObjectPtr<UAnimSequence> MetaHumanCurrentAnim;
+
+	float LastLookInputTime = -100.f;
+
+	// --- On-foot boundary rescue (cars have their own EnforceCityBoundary) ---
+	FVector LastSafeFootLocation = FVector::ZeroVector;
+	bool bHasSafeFootLocation = false;
+	float SafeFootLocationTimer = 0.f;
+
+	/** Ease control yaw behind the travel direction after look input goes idle. */
+	void UpdateFollowCamera(float DeltaSeconds);
+
+	/** Teleport back to the last safe sidewalk spot after a fall or escape. */
+	void UpdateBoundaryRescue(float DeltaSeconds);
 
 	/** Swap in the imported hero avatar if the art has been imported. */
 	void InitializeHeroAvatar();
 
-	/** Single-node locomotion switching for either visual implementation. */
+	/** Point the locomotion component back at the imported avatar body. */
+	void SetupFallbackLocomotion();
+
+	/** Feed the locomotion component this frame's ground speed. */
 	void UpdateHeroAnimation();
+
+	// --- Facing audit (-SprawlLocomotionAudit) ---
+	/** Sweep known yaws and assert the body faces the pawn's forward. */
+	void RunLocomotionAudit();
+	bool bLocomotionAuditEnabled = false;
+	/** -SprawlAuditRun: hold forward input so captures show him running. */
+	bool bAuditRunForward = false;
 
 	/** Activate the assembled visual only after its body and animation validate. */
 	bool TryInitializeMetaHumanVisual();

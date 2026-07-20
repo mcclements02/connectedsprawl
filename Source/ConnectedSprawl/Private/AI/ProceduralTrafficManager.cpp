@@ -257,8 +257,15 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 		const ESprawlHeading Heading = Grid::HeadingFromYaw(Car->GetActorRotation().Yaw);
 		const bool bNorthSouth = Grid::IsNorthSouth(Heading);
 		const int32 RoadIndex = Grid::NearestRoadIndex(bNorthSouth ? Loc.X : Loc.Y);
-		const float LaneError = FMath::Abs(
-			(bNorthSouth ? Loc.X : Loc.Y) - Grid::LaneCenter(RoadIndex, Heading));
+		// Every lane on this side of the centreline is legal, so measure the
+		// departure from the nearest one rather than from lane 0 alone.
+		const float LaneCoord = bNorthSouth ? Loc.X : Loc.Y;
+		float LaneError = TNumericLimits<float>::Max();
+		for (int32 Lane = 0; Lane < Grid::LanesPerDirection; ++Lane)
+		{
+			LaneError = FMath::Min(LaneError, FMath::Abs(
+				LaneCoord - Grid::LaneCenter(RoadIndex, Heading, Lane)));
+		}
 		const float TravelCoord = bNorthSouth ? Loc.Y : Loc.X;
 		const float NearestCrossingDistance = [&]()
 		{
@@ -271,7 +278,10 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 			return Distance;
 		}();
 		float& LaneViolationDuration = TrafficAuditLaneViolationDurations.FindOrAdd(CarKey);
-		if (NearestCrossingDistance > 900.f && LaneError > 90.f)
+		// Clear of the junction box and its turn-in arc, so only a genuine
+		// straight-line lane departure is measured.
+		if (NearestCrossingDistance > Grid::RoadWidth * 0.5f + 450.f
+			&& LaneError > 90.f)
 		{
 			LaneViolationDuration += DeltaSeconds;
 			// Do not fail a legal turn for briefly straddling the straight-lane
@@ -304,7 +314,12 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 				NextCrossing = Index;
 			}
 		}
-		if (NextCrossing >= 0 && DistanceAhead >= 740.f && DistanceAhead <= 840.f
+		// Hold window derived from the grid rather than hard-coded, so this
+		// gate follows the street layout instead of a past road width.
+		constexpr float SignalHoldTolerance = 70.f;
+		if (NextCrossing >= 0
+			&& DistanceAhead >= Grid::VehicleStopDistance - SignalHoldTolerance
+			&& DistanceAhead <= Grid::VehicleStopDistance + SignalHoldTolerance
 			&& Car->GetVelocity().Size2D() < 80.f)
 		{
 			const int32 IntersectionX = bNorthSouth ? RoadIndex : NextCrossing;
@@ -318,8 +333,10 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 
 		const int32 IntersectionX = Grid::NearestRoadIndex(Loc.X);
 		const int32 IntersectionY = Grid::NearestRoadIndex(Loc.Y);
-		if (FMath::Abs(Loc.X - Grid::RoadCenter(IntersectionX)) < 300.f
-			&& FMath::Abs(Loc.Y - Grid::RoadCenter(IntersectionY)) < 300.f)
+		// Inside the junction box itself, sized from the carriageway.
+		constexpr float IntersectionHalf = Grid::RoadWidth * 0.5f;
+		if (FMath::Abs(Loc.X - Grid::RoadCenter(IntersectionX)) < IntersectionHalf
+			&& FMath::Abs(Loc.Y - Grid::RoadCenter(IntersectionY)) < IntersectionHalf)
 		{
 			const int32 Key = IntersectionX * Grid::NumRoads + IntersectionY;
 			++IntersectionOccupancy.FindOrAdd(Key);
@@ -758,6 +775,26 @@ void AProceduralTrafficManager::SpawnNeeded(const FVector& PlayerLoc)
 			SpawnLoc.Y = Grid::LaneCenter(Road, Heading);
 		}
 		SpawnLoc.Z = 180.f;
+
+		// Never materialise inside a junction box. The car would hold no
+		// right-of-way lease while sitting in the middle of an intersection,
+		// blocking every approach — and with a wide carriageway the boxes
+		// cover a large share of each road's length.
+		const float AlongCoord = bVerticalRoad ? SpawnLoc.Y : SpawnLoc.X;
+		bool bInsideJunction = false;
+		for (int32 Road = 0; Road < Grid::NumRoads; ++Road)
+		{
+			if (FMath::Abs(AlongCoord - Grid::RoadCenter(Road))
+				< Grid::RoadWidth * 0.5f + 400.f)
+			{
+				bInsideJunction = true;
+				break;
+			}
+		}
+		if (bInsideJunction)
+		{
+			continue;
+		}
 
 		if (Grid::IsOverLake(SpawnLoc.X, SpawnLoc.Y) ||
 			!Grid::IsInsideRoadGrid(SpawnLoc.X, SpawnLoc.Y))

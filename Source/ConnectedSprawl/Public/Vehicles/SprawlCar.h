@@ -128,6 +128,10 @@ public:
 	/** Unconditionally step the driver out; input-facing phone handling lives elsewhere. */
 	void RequestExit();
 
+	/** Touch-HUD pedals: +1 gas, -1 brake/reverse, 0 released. Overrides stick Y. */
+	UFUNCTION(BlueprintCallable, Category="Car|Input")
+	void SetTouchThrottle(float InThrottle);
+
 	/** If true and no player is in the seat, the car drives itself around the grid. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Car|AI") bool bAutoDrive = false;
 	/** Cruise speed (cm/s) for AI-driven cars on open road. */
@@ -161,6 +165,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Car") float EngineForce = 3200000.f;
 	/** Yaw rate at speed, deg/s. */
 	UPROPERTY(EditAnywhere, Category="Car") float TurnRate = 78.f;
+	/** How quickly sideways velocity is gripped away (higher = more planted). */
+	UPROPERTY(EditAnywhere, Category="Car") float LateralGripResponse = 7.5f;
+	/** Extra engine-force multiplier while braking against current travel. */
+	UPROPERTY(EditAnywhere, Category="Car") float BrakeForceMultiplier = 1.8f;
 	/** How quickly throttle follows stick/buttons; higher feels snappier. */
 	UPROPERTY(EditAnywhere, Category="Car|Input") float ThrottleResponse = 8.f;
 	/** How quickly steering follows stick/buttons; higher feels snappier. */
@@ -197,6 +205,7 @@ protected:
 	float SteerInput = 0.f;
 	float TargetThrottleInput = 0.f;
 	float TargetSteerInput = 0.f;
+	float TouchThrottleInput = 0.f;
 	float WheelRotationDegrees = 0.f;
 	UPROPERTY() bool bUsingExternalWheelParts = false;
 	bool bResumeAutoDriveAfterExit = false;
@@ -262,6 +271,14 @@ protected:
 
 	/** Use cooked split vehicle assets for runtime-spawned traffic when present. */
 	void TryApplyRuntimeVehicleParts();
+
+	/**
+	 * Lift or drop the whole visual so its lowest point meets the hull's
+	 * contact plane — the plane the car physically rests on. Catches bodies
+	 * whose offsets were baked into the level by an authoring pass, which a
+	 * constructor default can never reach.
+	 */
+	void SeatVisualOnContactPlane();
 
 	void HandleMove(const FInputActionValue& Value);
 	void HandleMoveEnd(const FInputActionValue& Value);

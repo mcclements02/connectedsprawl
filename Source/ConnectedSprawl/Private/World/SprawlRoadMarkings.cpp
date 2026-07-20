@@ -15,9 +15,20 @@ namespace
 // Markings sit just above the asphalt (road surface tops out at z = 0).
 constexpr float PaintZ = 1.5f;
 constexpr float PaintThickness = 0.03f; // cube scale -> 3cm
-constexpr float IntersectionHalf = Grid::RoadWidth * 0.5f; // 300
+constexpr float IntersectionHalf = Grid::RoadWidth * 0.5f; // 950
 constexpr float BoundaryThickness = 120.f;
 constexpr float BoundaryHalfHeight = 700.f;
+
+// Lane and bay striping.
+constexpr float CenterlineWidth = 18.f;
+constexpr float LaneDividerWidth = 14.f;
+constexpr float EdgeLineWidth = 12.f;
+/** Offset to the solid line separating the outer lane from the parking bay. */
+constexpr float ParkingEdgeOffset =
+	Grid::LanesPerDirection * Grid::LaneWidth;                          // 700
+/** Length of one parallel-parking bay, and the tick that separates them. */
+constexpr float ParkingBayLength = 700.f;
+constexpr float ParkingTickWidth = 12.f;
 }
 
 ASprawlRoadMarkings::ASprawlRoadMarkings()
@@ -116,25 +127,89 @@ void ASprawlRoadMarkings::BuildMarkings()
 		return false;
 	};
 
-	// --- Dashed centerlines down every road, both axes ---
+	// --- Lane striping down every road, both axes ---
+	// Painted per road: a dashed centreline, a dashed divider between the two
+	// travel lanes on each side, and a near-solid edge line separating the
+	// outer lane from the parallel-parking bay.
+	//
+	// Lateral offsets are signed so the same loop serves both sides; the
+	// stripe is laid across (Offset) and along (Along) the road's axis.
+	struct FLateralStripe
+	{
+		float Offset;
+		float Width;
+		float Length;
+		float Spacing;
+	};
+	TArray<FLateralStripe> LaneStripes;
+	LaneStripes.Add({ 0.f, CenterlineWidth, DashLength, DashSpacing });
+	// Dividers only sit between travel lanes, so a two-way street has none.
+	for (int32 Boundary = 1; Boundary < Grid::LanesPerDirection; ++Boundary)
+	{
+		const float Offset = Boundary * Grid::LaneWidth;
+		LaneStripes.Add({ -Offset, LaneDividerWidth, DashLength, DashSpacing });
+		LaneStripes.Add({ +Offset, LaneDividerWidth, DashLength, DashSpacing });
+	}
+	// Near-continuous: dash length matches spacing so it reads as solid.
+	LaneStripes.Add({ -ParkingEdgeOffset, EdgeLineWidth, DashSpacing, DashSpacing });
+	LaneStripes.Add({ +ParkingEdgeOffset, EdgeLineWidth, DashSpacing, DashSpacing });
+
 	for (int32 R = 0; R < Grid::NumRoads; ++R)
 	{
 		const float RoadCoord = Grid::RoadCenter(R);
-		for (float Along = GridLo; Along < GridHi; Along += DashSpacing)
+		for (const FLateralStripe& Stripe : LaneStripes)
 		{
-			if (InAnyIntersection(Along))
+			const float Lateral = RoadCoord + Stripe.Offset;
+			for (float Along = GridLo; Along < GridHi; Along += Stripe.Spacing)
 			{
-				continue;
+				if (InAnyIntersection(Along))
+				{
+					continue;
+				}
+				// Vertical road: stripe runs along Y at x = Lateral.
+				if (!Grid::IsOverLake(Lateral, Along))
+				{
+					AddStripe(FVector(Lateral, Along, PaintZ),
+						Stripe.Width, Stripe.Length);
+				}
+				// Horizontal road: stripe runs along X at y = Lateral.
+				if (!Grid::IsOverLake(Along, Lateral))
+				{
+					AddStripe(FVector(Along, Lateral, PaintZ),
+						Stripe.Length, Stripe.Width);
+				}
 			}
-			// Vertical road: dash runs along Y at x = RoadCoord.
-			if (!Grid::IsOverLake(RoadCoord, Along))
+		}
+	}
+
+	// --- Parallel-parking bays outboard of the travel lanes ---
+	// One tick between neighbouring bays, so drivers can see where a car is
+	// meant to sit rather than guessing at the kerb.
+	int32 ParkingBays = 0;
+	for (int32 R = 0; R < Grid::NumRoads; ++R)
+	{
+		const float RoadCoord = Grid::RoadCenter(R);
+		for (const float Side : { -1.f, 1.f })
+		{
+			const float BayCenter = RoadCoord + Side * Grid::ParkingOffset;
+			for (float Along = GridLo; Along < GridHi; Along += ParkingBayLength)
 			{
-				AddStripe(FVector(RoadCoord, Along, PaintZ), 18.f, DashLength);
-			}
-			// Horizontal road: dash runs along X at y = RoadCoord.
-			if (!Grid::IsOverLake(Along, RoadCoord))
-			{
-				AddStripe(FVector(Along, RoadCoord, PaintZ), DashLength, 18.f);
+				if (InAnyIntersection(Along))
+				{
+					continue;
+				}
+				if (!Grid::IsOverLake(BayCenter, Along))
+				{
+					AddStripe(FVector(BayCenter, Along, PaintZ),
+						Grid::ParkingBayWidth, ParkingTickWidth);
+					++ParkingBays;
+				}
+				if (!Grid::IsOverLake(Along, BayCenter))
+				{
+					AddStripe(FVector(Along, BayCenter, PaintZ),
+						ParkingTickWidth, Grid::ParkingBayWidth);
+					++ParkingBays;
+				}
 			}
 		}
 	}
@@ -153,32 +228,43 @@ void ASprawlRoadMarkings::BuildMarkings()
 			++Intersections;
 
 			// Zebra bands across each approach: stripes run parallel to
-			// travel, repeated across the road width.
-			const float BandCenter = IntersectionHalf + 110.f; // 410 from center
-			for (float Across = -240.f; Across <= 240.f; Across += 80.f)
+			// travel, repeated the full width of the carriageway.
+			const float BandCenter = IntersectionHalf + 110.f;
+			const float BandHalfWidth = IntersectionHalf - 80.f;
+			for (float Across = -BandHalfWidth; Across <= BandHalfWidth; Across += 90.f)
 			{
 				// North + south approaches (vertical road, stripes along Y).
-				AddStripe(FVector(C.X + Across, C.Y + BandCenter, PaintZ), 35.f, 130.f);
-				AddStripe(FVector(C.X + Across, C.Y - BandCenter, PaintZ), 35.f, 130.f);
+				AddStripe(FVector(C.X + Across, C.Y + BandCenter, PaintZ), 40.f, 150.f);
+				AddStripe(FVector(C.X + Across, C.Y - BandCenter, PaintZ), 40.f, 150.f);
 				// East + west approaches (horizontal road, stripes along X).
-				AddStripe(FVector(C.X + BandCenter, C.Y + Across, PaintZ), 130.f, 35.f);
-				AddStripe(FVector(C.X - BandCenter, C.Y + Across, PaintZ), 130.f, 35.f);
+				AddStripe(FVector(C.X + BandCenter, C.Y + Across, PaintZ), 150.f, 40.f);
+				AddStripe(FVector(C.X - BandCenter, C.Y + Across, PaintZ), 150.f, 40.f);
 			}
 
-			// Stop lines: across the inbound lane only, just before the
+			// Stop lines: across both inbound travel lanes, just before the
 			// crosswalk. Right-hand traffic (see Grid::LaneCenter).
 			const float StopDist = Grid::StopLineDistance;
-			// Northbound (lane on -X side) stops south of the intersection.
-			AddStripe(FVector(C.X - Grid::LaneOffset, C.Y - StopDist, PaintZ), 270.f, 30.f);
-			// Southbound (lane on +X side) stops north of the intersection.
-			AddStripe(FVector(C.X + Grid::LaneOffset, C.Y + StopDist, PaintZ), 270.f, 30.f);
-			// Eastbound (lane on +Y side) stops west of the intersection.
-			AddStripe(FVector(C.X - StopDist, C.Y + Grid::LaneOffset, PaintZ), 30.f, 270.f);
-			// Westbound (lane on -Y side) stops east of the intersection.
-			AddStripe(FVector(C.X + StopDist, C.Y - Grid::LaneOffset, PaintZ), 30.f, 270.f);
+			// Centre of the inbound carriageway, and how wide it is.
+			const float ApproachCenter = ParkingEdgeOffset * 0.5f;
+			const float ApproachWidth = ParkingEdgeOffset;
+			// Northbound (lanes on -X side) stops south of the intersection.
+			AddStripe(FVector(C.X - ApproachCenter, C.Y - StopDist, PaintZ),
+				ApproachWidth, 30.f);
+			// Southbound (lanes on +X side) stops north of the intersection.
+			AddStripe(FVector(C.X + ApproachCenter, C.Y + StopDist, PaintZ),
+				ApproachWidth, 30.f);
+			// Eastbound (lanes on +Y side) stops west of the intersection.
+			AddStripe(FVector(C.X - StopDist, C.Y + ApproachCenter, PaintZ),
+				30.f, ApproachWidth);
+			// Westbound (lanes on -Y side) stops east of the intersection.
+			AddStripe(FVector(C.X + StopDist, C.Y - ApproachCenter, PaintZ),
+				30.f, ApproachWidth);
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[RoadMarkings] painted %d instances across %d intersections"),
-		PaintMesh->GetInstanceCount(), Intersections);
+	UE_LOG(LogTemp, Display,
+		TEXT("[RoadMarkings] painted %d instances: %d intersections, %d parking bays, "
+			"%d lanes/direction on a %.0fcm carriageway"),
+		PaintMesh->GetInstanceCount(), Intersections, ParkingBays,
+		Grid::LanesPerDirection, Grid::RoadWidth);
 }

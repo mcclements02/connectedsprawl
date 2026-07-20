@@ -4,6 +4,10 @@
 #include "AI/PedestrianCrowdManager.h"
 #include "AI/SprawlPedestrian.h"
 #include "Characters/SprawlAvatarLibrary.h"
+#include "Characters/SprawlCharacterRender.h"
+#include "Characters/SprawlCrowdAppearance.h"
+#include "Vehicles/SprawlDriverSeat.h"
+#include "Vehicles/SprawlVehicleStance.h"
 #include "Characters/ZarriCharacter.h"
 #include "Phone/PhoneSubsystem.h"
 #include "Animation/AnimSequence.h"
@@ -216,7 +220,12 @@ ASprawlCar::ASprawlCar()
 
 	const FVector WheelScale(0.82f, 0.82f, 0.34f);
 	const FRotator WheelRot(0.f, 0.f, 90.f);
-	const float WX = 150.f, WY = 104.f, WZ = -54.f;
+	// Engine cylinder is r=50 before the wheel scale; seat the tread on the
+	// hull's contact plane so the prototype wheels rest on the road.
+	const float PrototypeWheelRadius = 50.f * WheelScale.X;
+	const float WX = 150.f, WY = 104.f;
+	const float WZ = FSprawlVehicleStance::ComputePrototypeWheelCenterZ(
+		PrototypeWheelRadius, Hull->GetUnscaledBoxExtent().Z);
 	const FVector WheelPos[4] = {
 		FVector(WX, WY, WZ), FVector(WX, -WY, WZ),
 		FVector(-WX, WY, WZ), FVector(-WX, -WY, WZ)
@@ -245,24 +254,26 @@ ASprawlCar::ASprawlCar()
 	}
 
 	// --- Camera ---
+	// Far, high chase framing: maximum road awareness at city speeds, in the
+	// spirit of the classic far vehicle-camera setting.
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(Hull);
-	SpringArm->TargetArmLength = 780.f;
-	SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 165.f));
-	SpringArm->SetRelativeRotation(FRotator(-12.f, 0.f, 0.f));
+	SpringArm->TargetArmLength = 1000.f;
+	SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 205.f));
+	SpringArm->SetRelativeRotation(FRotator(-13.5f, 0.f, 0.f));
 	SpringArm->bUsePawnControlRotation = false;
 	SpringArm->bInheritPitch = false;
 	SpringArm->bInheritYaw = true;
 	SpringArm->bInheritRoll = false;
 	SpringArm->bEnableCameraLag = true;
-	SpringArm->CameraLagSpeed = 9.f;
+	SpringArm->CameraLagSpeed = 8.f;
 	SpringArm->bEnableCameraRotationLag = true;
-	SpringArm->CameraRotationLagSpeed = 10.f;
+	SpringArm->CameraRotationLagSpeed = 8.f;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(SpringArm);
 	FollowCamera->bUsePawnControlRotation = false;
-	FollowCamera->SetFieldOfView(86.f);
+	FollowCamera->SetFieldOfView(88.f);
 
 	// --- Input assets ---
 	static ConstructorHelpers::FObjectFinder<UInputMappingContext> IMC(
@@ -280,6 +291,7 @@ void ASprawlCar::BeginPlay()
 {
 	Super::BeginPlay();
 	TryApplyRuntimeVehicleParts();
+	SeatVisualOnContactPlane();
 
 	// Physics setup deferred out of the constructor (GEngine isn't ready there).
 	if (Hull)
@@ -503,7 +515,8 @@ void ASprawlCar::ResetPrototypeWheels()
 	const FRotator WheelRotation(0.f, 0.f, 90.f);
 	const float WheelX = 150.f;
 	const float WheelY = 104.f;
-	const float WheelZ = -54.f;
+	const float WheelZ = FSprawlVehicleStance::ComputePrototypeWheelCenterZ(
+		50.f * WheelScale.X, Hull ? Hull->GetUnscaledBoxExtent().Z : 62.f);
 	const FVector Positions[4] = {
 		FVector(WheelX, WheelY, WheelZ), FVector(WheelX, -WheelY, WheelZ),
 		FVector(-WheelX, WheelY, WheelZ), FVector(-WheelX, -WheelY, WheelZ)
@@ -821,7 +834,8 @@ void ASprawlCar::InitializeAIDriverVisual()
 	}
 	bDriverVisualInitializationAttempted = true;
 
-	const TArray<FString>& Variants = FSprawlAvatarLibrary::PedestrianVariants();
+	// Drivers and passengers are cast from the same realistic pool as the crowd.
+	const TArray<FString>& Variants = FSprawlCrowdAppearance::HumanVariants();
 	if (Variants.IsEmpty())
 	{
 		return;
@@ -869,7 +883,11 @@ bool ASprawlCar::ApplySeatedDriverVariant(const FString& VariantName)
 	{
 		return false;
 	}
-	DriverMesh->SetRelativeLocationAndRotation(DriverSeatLocation, DriverSeatRotation);
+	// Derive the seat from the body this car is actually wearing; the authored
+	// offset only ever fitted the prototype kitbash.
+	FVector SeatLocation = DriverSeatLocation;
+	FSprawlDriverSeat::ComputeSeatLocation(this, DriverMesh, SeatLocation);
+	DriverMesh->SetRelativeLocationAndRotation(SeatLocation, DriverSeatRotation);
 	DriverCurrentAnim = nullptr;
 	FSprawlAvatarLibrary::PlayLoop(DriverMesh, Sit, DriverCurrentAnim);
 	DriverMesh->SetVisibility(true, true);
@@ -945,6 +963,15 @@ void ASprawlCar::HandleMoveEnd(const FInputActionValue& /*Value*/)
 	TargetThrottleInput = 0.f;
 }
 
+void ASprawlCar::SetTouchThrottle(float InThrottle)
+{
+	TouchThrottleInput = FMath::Clamp(InThrottle, -1.f, 1.f);
+	if (Hull && !FMath::IsNearlyZero(TouchThrottleInput))
+	{
+		Hull->WakeAllRigidBodies();
+	}
+}
+
 void ASprawlCar::HandleExit(const FInputActionValue& /*Value*/)
 {
 	if (UGameInstance* GI = GetGameInstance())
@@ -968,6 +995,7 @@ void ASprawlCar::ExitDriver()
 		SteerInput = 0.f;
 		TargetThrottleInput = 0.f;
 		TargetSteerInput = 0.f;
+		TouchThrottleInput = 0.f;
 		Driver = nullptr;
 		HideDriverVisual();
 		if (bPendingCarjack)
@@ -1025,15 +1053,35 @@ void ASprawlCar::Tick(float DeltaSeconds)
 	const FVector Fwd = GetActorForwardVector();
 	const FVector Vel = Hull->GetPhysicsLinearVelocity();
 	const float ForwardSpeed = FVector::DotProduct(Vel, Fwd);
+	// Touch pedals override the stick's Y axis while held.
+	const float DesiredThrottle = FMath::Abs(TouchThrottleInput) > 0.05f
+		? TouchThrottleInput : TargetThrottleInput;
 	ThrottleInput = FMath::FInterpTo(
-		ThrottleInput, TargetThrottleInput, DeltaSeconds, ThrottleResponse);
+		ThrottleInput, DesiredThrottle, DeltaSeconds, ThrottleResponse);
 	SteerInput = FMath::FInterpTo(
 		SteerInput, TargetSteerInput, DeltaSeconds, SteeringResponse);
 
-	// Throttle / reverse
+	// Throttle / reverse — input against the current travel direction is a
+	// brake, and gets extra bite so stopping distances feel sane.
 	if (FMath::Abs(ThrottleInput) > 0.05f)
 	{
-		Hull->AddForce(Fwd * ThrottleInput * EngineForce);
+		const bool bBraking = ThrottleInput * ForwardSpeed < 0.f
+			&& FMath::Abs(ForwardSpeed) > 60.f;
+		Hull->AddForce(Fwd * ThrottleInput * EngineForce
+			* (bBraking ? BrakeForceMultiplier : 1.f));
+	}
+
+	// Tyre grip: bleed sideways velocity every tick so the car tracks its
+	// nose through corners instead of skating like a hovercraft.
+	const FVector Right = GetActorRightVector();
+	const float LateralSpeed = FVector::DotProduct(Vel, Right);
+	if (FMath::Abs(LateralSpeed) > 1.f)
+	{
+		const float GripAlpha = FMath::Clamp(
+			DeltaSeconds * LateralGripResponse, 0.f, 0.6f);
+		const FVector GrippedVelocity = Vel - Right * (LateralSpeed * GripAlpha);
+		Hull->SetPhysicsLinearVelocity(
+			FVector(GrippedVelocity.X, GrippedVelocity.Y, Vel.Z));
 	}
 
 	// Steering — yaw rate scales with speed, flips sign in reverse.
@@ -1115,16 +1163,76 @@ void ASprawlCar::TryApplyRuntimeVehicleParts()
 	const float Scale = static_cast<float>(
 		FMath::Clamp(480.0 / NaturalLength, 0.45, 1.4));
 	const FVector RelativeScale(Scale);
-	const FVector RelativeLocation(0.f, 0.f, -62.f - BodyBounds.Min.Z * Scale);
-	const FRotator RelativeRotation(0.f, 90.f, 0.f);
+	// Seat the tyres — not the floorpan — on the hull's contact plane.
+	const float HullHalfHeight = Hull ? Hull->GetUnscaledBoxExtent().Z : 62.f;
+	const FVector RelativeLocation(0.f, 0.f,
+		FSprawlVehicleStance::ComputeGroundedOffsetZ(
+			Bodies[0], Wheels, Scale, HullHalfHeight));
 
 	TArray<FVector> Centers;
 	for (UStaticMesh* Wheel : Wheels)
 	{
 		Centers.Add(Wheel->GetBoundingBox().GetCenter());
 	}
+
+	// The kits name their wheels front/rear but author the body along
+	// whichever local axis the artist chose, so a single fixed yaw leaves
+	// some variants driving tail-first. Point the named front axle at hull
+	// +X per kit instead. Centers order is FL, FR, RL, RR.
+	const FVector FrontCentroid = (Centers[0] + Centers[1]) * 0.5f;
+	const FVector RearCentroid = (Centers[2] + Centers[3]) * 0.5f;
+	const FVector FrontOffset = FrontCentroid - RearCentroid;
+	float ForwardYaw;
+	if (FMath::Abs(FrontOffset.Y) >= FMath::Abs(FrontOffset.X))
+	{
+		ForwardYaw = FrontOffset.Y < 0.f ? 90.f : -90.f;
+	}
+	else
+	{
+		ForwardYaw = FrontOffset.X > 0.f ? 0.f : 180.f;
+	}
+	const FRotator RelativeRotation(0.f, ForwardYaw, 0.f);
 	SetExternalVehicleParts(Bodies, Wheels, Centers,
 		RelativeLocation, RelativeRotation, RelativeScale);
+}
+
+void ASprawlCar::SeatVisualOnContactPlane()
+{
+	if (!Hull)
+	{
+		return;
+	}
+
+	float VisualBottomZ = 0.f;
+	if (!FSprawlVehicleStance::ComputeVisibleBottomZ(this, VisualBottomZ))
+	{
+		return;
+	}
+
+	const float ContactPlaneZ = -Hull->GetUnscaledBoxExtent().Z;
+	const float Delta = ContactPlaneZ - VisualBottomZ;
+	// Ignore noise, and refuse a correction so large it implies the geometry
+	// is not what we think it is.
+	if (FMath::Abs(Delta) < 0.5f || FMath::Abs(Delta) > 250.f)
+	{
+		return;
+	}
+
+	// Relative locations are expressed in the hull's space, whose Z matches the
+	// actor's, so a plain Z shift is correct even for the rotated wheel pivots.
+	for (USceneComponent* Child : Hull->GetAttachChildren())
+	{
+		if (!Child || Child == SpringArm)
+		{
+			continue;
+		}
+		Child->SetRelativeLocation(
+			Child->GetRelativeLocation() + FVector(0.f, 0.f, Delta));
+	}
+
+	UE_LOG(LogTemp, Display,
+		TEXT("[Stance] %s seated by %.1f cm (visual bottom %.1f -> contact plane %.1f)"),
+		*GetName(), Delta, VisualBottomZ, ContactPlaneZ);
 }
 
 void ASprawlCar::MaintainUpright(float DeltaSeconds)
@@ -1375,8 +1483,11 @@ bool ASprawlCar::IsIntersectionPathClear(
 		return false;
 	};
 
+	// The junction box scales with the carriageway, so clearance is tested
+	// over the area a car actually has to cross.
+	constexpr float BoxHalf = Grid::RoadWidth * 0.5f + 30.f;
 	const FVector BoxCenter(Center.X, Center.Y, GetActorLocation().Z);
-	if (HasOtherVehicle(BoxCenter, FQuat::Identity, FVector(330.f, 330.f, 100.f)))
+	if (HasOtherVehicle(BoxCenter, FQuat::Identity, FVector(BoxHalf, BoxHalf, 100.f)))
 	{
 		return false;
 	}
@@ -1386,7 +1497,7 @@ bool ASprawlCar::IsIntersectionPathClear(
 	ResolveMove(AIHeading, AIRoadIndex, CrossingRoadIndex, AIPendingTurn,
 		ExitHeading, ExitRoadIndex);
 	const FVector ExitDirection = Grid::HeadingVector(ExitHeading);
-	FVector ExitCenter = BoxCenter + ExitDirection * 900.f;
+	FVector ExitCenter = BoxCenter + ExitDirection * (BoxHalf + 400.f);
 	const float ExitLaneCenter = Grid::LaneCenter(ExitRoadIndex, ExitHeading);
 	if (Grid::IsNorthSouth(ExitHeading))
 	{
@@ -1422,9 +1533,20 @@ void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 	USprawlCityGridSubsystem* GridSub = GetWorld()
 		? GetWorld()->GetSubsystem<USprawlCityGridSubsystem>() : nullptr;
 
+	// Distances that must track the street layout: a wider carriageway means a
+	// bigger junction box, a longer approach and a later release.
+	constexpr float IntersectionHalf = Grid::RoadWidth * 0.5f;
+	// Hold the lease until the car is genuinely clear of the box, not merely
+	// past its centre — otherwise a second car is admitted while the first is
+	// still crossing a junction that is now 19m wide.
+	constexpr float ClearedIntersectionDistance = IntersectionHalf + 700.f;
+	constexpr float DecisionDistance = Grid::VehicleStopDistance + 700.f;
+	constexpr float ReservationRequestDistance = Grid::VehicleStopDistance + 300.f;
+
 	const FVector Loc = GetActorLocation();
 	if (bAIClearingIntersection
-		&& FVector2D::Distance(FVector2D(Loc.X, Loc.Y), AILastIntersection) > 700.f)
+		&& FVector2D::Distance(FVector2D(Loc.X, Loc.Y), AILastIntersection)
+			> ClearedIntersectionDistance)
 	{
 		ReleaseIntersectionReservation();
 	}
@@ -1474,9 +1596,9 @@ void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 	// --- Decide our move for the upcoming intersection, once ---
 	// The distance-from-last-intersection latch stops us re-deciding while
 	// still rolling through the crossing we just turned at.
-	constexpr float DecisionDistance = 1100.f;
 	if (DistAhead < DecisionDistance && AIDecidedCrossing != NextCrossing &&
-		FVector2D::Distance(FVector2D(Loc.X, Loc.Y), AILastIntersection) > 700.f)
+		FVector2D::Distance(FVector2D(Loc.X, Loc.Y), AILastIntersection)
+			> ClearedIntersectionDistance)
 	{
 		DecideIntersectionMove(NextCrossing);
 	}
@@ -1489,8 +1611,17 @@ void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 	// approach is served, the box is unoccupied, and its exit lane has room.
 	// Cars denied a lease queue at the same painted stop line as red traffic.
 	constexpr float StopLine = Grid::VehicleStopDistance;
-	constexpr float ReservationRequestDistance = 930.f;
-	if (GridSub && DistAhead > 300.f && DistAhead < DecisionDistance)
+
+	// Refresh whatever lease this car actually owns, wherever it is. Crossing
+	// a 19m box takes longer than the lease's lifetime, so a refresh gated on
+	// the approach alone would expire mid-junction and read as an intrusion.
+	if (GridSub && AIReservedIntersectionX >= 0 && AIReservedIntersectionY >= 0)
+	{
+		GridSub->TryReserveIntersection(
+			AIReservedIntersectionX, AIReservedIntersectionY, this);
+	}
+
+	if (GridSub && DistAhead > IntersectionHalf && DistAhead < DecisionDistance)
 	{
 		const int32 Ix = bNS ? AIRoadIndex : NextCrossing;
 		const int32 Iy = bNS ? NextCrossing : AIRoadIndex;
@@ -1538,7 +1669,7 @@ void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 	}
 
 	// Slow for turns through the intersection.
-	if (AIPendingTurn != 0 && DistAhead < 700.f)
+	if (AIPendingTurn != 0 && DistAhead < IntersectionHalf + 250.f)
 	{
 		TargetSpeed = FMath::Min(TargetSpeed, AITurnSpeed);
 	}
@@ -1555,7 +1686,11 @@ void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 	// Beginning a turn only at the road center makes a 4.7m car overshoot the
 	// receiving lane and brush curbside parking. The lane-offset point gives
 	// the visual steering arc room to arrive centered without cutting the box.
-	const float CommitDistance = AIPendingTurn == 0 ? 90.f : Grid::LaneOffset;
+	// Begin the turn on entering the junction, not deep inside it: with a
+	// 19m box, committing a lane-offset short of the centre left cars exiting
+	// wide and drifting for most of the following block.
+	const float CommitDistance = AIPendingTurn == 0
+		? 90.f : IntersectionHalf - Grid::LaneOffset;
 	if (AIDecidedCrossing == NextCrossing && DistAhead < CommitDistance)
 	{
 		ESprawlHeading NewHeading;
@@ -1571,16 +1706,21 @@ void ASprawlCar::RunAutoDrive(float DeltaSeconds)
 
 	// --- Lane keeping: steer toward a lookahead point on the lane center ---
 	const float LaneCoord = Grid::LaneCenter(AIRoadIndex, AIHeading);
-	// A compact lookahead recenters the car promptly after a turn without the
-	// long, shallow diagonal that can otherwise cross the center line.
-	FVector LookAhead = Loc + Grid::HeadingVector(AIHeading) * 360.f;
+	// Pure pursuit. Measured: lengthening the lookahead and softening the gain
+	// made lane-holding worse (2 -> 5 violators), so the cars were converging
+	// too slowly, not oscillating. A shorter lookahead pulls them back onto
+	// the lane centre sooner.
+	const float LookAheadDistance = FMath::Clamp(CurSpeed * 0.36f, 240.f, 460.f);
+	FVector LookAhead = Loc + Grid::HeadingVector(AIHeading) * LookAheadDistance;
 	if (Grid::IsNorthSouth(AIHeading)) { LookAhead.X = LaneCoord; }
 	else                               { LookAhead.Y = LaneCoord; }
 
 	const float DesiredYaw = FMath::RadiansToDegrees(
 		FMath::Atan2(LookAhead.Y - Loc.Y, LookAhead.X - Loc.X));
 	const float YawError = FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, DesiredYaw);
-	SteerInput = FMath::Clamp(YawError / 30.f, -1.f, 1.f);
+	// Softer than the old /30: paired with the longer lookahead this settles
+	// on the lane instead of hunting across it.
+	SteerInput = FMath::Clamp(YawError / 24.f, -1.f, 1.f);
 
 	// Big heading error (mid-turn / U-turn): crawl until we're pointed right.
 	if (FMath::Abs(YawError) > 55.f)

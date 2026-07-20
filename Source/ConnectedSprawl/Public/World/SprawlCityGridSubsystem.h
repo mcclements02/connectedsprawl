@@ -49,20 +49,35 @@ class CONNECTEDSPRAWL_API USprawlCityGridSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
-	// --- Layout constants (must match Content/Python/build_city.py) ---
+	// --- Layout constants (must match Content/Python/expand_streets.py) ---
 	static constexpr int32 NumBlocks   = 7;       // blocks per axis
 	static constexpr float BlockSize   = 2000.f;  // cm
-	static constexpr float RoadWidth   = 600.f;   // cm
-	static constexpr float Step        = BlockSize + RoadWidth;       // 2600
-	static constexpr float Span        = NumBlocks * Step;            // 18200
+	/**
+	 * The gap between blocks is the drivable street; pedestrians walk the
+	 * outer margin of the blocks themselves. A two-way street: one travel
+	 * lane each side of the centreline, plus a parallel-parking bay.
+	 *
+	 *   0 ....... 350 ..... 600
+	 *   |   lane   |  bay   | kerb
+	 */
+	static constexpr float LaneWidth   = 350.f;
+	static constexpr int32 LanesPerDirection = 1;
+	static constexpr float ParkingBayWidth = 250.f;
+	/** Kerb to kerb, derived so the painted layout always fits exactly. */
+	static constexpr float RoadWidth =
+		2.f * (LanesPerDirection * LaneWidth + ParkingBayWidth);      // 1200
+	static constexpr float Step        = BlockSize + RoadWidth;       // 3200
+	static constexpr float Span        = NumBlocks * Step;            // 22400
 	/** Inner face of the invisible perimeter walls around the authored city. */
-	static constexpr float CityBoundaryHalfExtent = Span * 0.5f;      // 9100
-	static constexpr float LaneOffset  = 150.f;   // right-hand lane center from road centerline
-	/** Curbside parking center, recessed enough that a 210cm-wide car clears the live lane. */
-	static constexpr float ParkingOffset = 410.f;
+	static constexpr float CityBoundaryHalfExtent = Span * 0.5f;      // 11200
+	/** Centre of the lane nearest the centreline (lane index 0). */
+	static constexpr float LaneOffset  = LaneWidth * 0.5f;            // 175
+	/** Centre of the parallel-parking bay, outboard of both travel lanes. */
+	static constexpr float ParkingOffset =
+		LanesPerDirection * LaneWidth + ParkingBayWidth * 0.5f;       // 825
 	/** Painted stop-line center and the matching safe vehicle-center hold distance. */
-	static constexpr float StopLineDistance = 540.f;
-	static constexpr float VehicleStopDistance = 790.f;
+	static constexpr float StopLineDistance = RoadWidth * 0.5f + 240.f;   // 1240
+	static constexpr float VehicleStopDistance = StopLineDistance + 250.f; // 1490
 	static constexpr int32 NumRoads    = NumBlocks - 1;               // roads per axis
 
 	/** Center of block index i (0..NumBlocks-1) on either axis. */
@@ -204,24 +219,39 @@ public:
 		return Heading == ESprawlHeading::North || Heading == ESprawlHeading::South;
 	}
 
-	/**
-	 * Right-hand-traffic lane center for travel on the given road.
-	 * For a vertical road (north/south travel) this returns the lane X;
-	 * for a horizontal road it returns the lane Y.
-	 */
-	static float LaneCenter(int32 RoadIndex, ESprawlHeading Heading)
+	/** Which side of the centreline right-hand traffic on this heading uses. */
+	static float TravelSide(ESprawlHeading Heading)
 	{
 		// UE is left-handed (X fwd, Y right, Z up): the right-hand side of
 		// travel is north -> -X, south -> +X, east -> +Y, west -> -Y.
-		float Side = 0.f;
 		switch (Heading)
 		{
-		case ESprawlHeading::North: Side = -1.f; break;
-		case ESprawlHeading::South: Side = +1.f; break;
-		case ESprawlHeading::East:  Side = +1.f; break;
-		case ESprawlHeading::West:  Side = -1.f; break;
+		case ESprawlHeading::North: return -1.f;
+		case ESprawlHeading::South: return +1.f;
+		case ESprawlHeading::East:  return +1.f;
+		default:                    return -1.f;
 		}
-		return RoadCenter(RoadIndex) + Side * LaneOffset;
+	}
+
+	/**
+	 * Right-hand-traffic lane center for travel on the given road.
+	 * For a vertical road (north/south travel) this returns the lane X;
+	 * for a horizontal road it returns the lane Y. LaneIndex 0 is the lane
+	 * beside the centreline, 1 the kerbside lane.
+	 */
+	static float LaneCenter(int32 RoadIndex, ESprawlHeading Heading,
+		int32 LaneIndex = 0)
+	{
+		const int32 ClampedLane =
+			FMath::Clamp(LaneIndex, 0, LanesPerDirection - 1);
+		return RoadCenter(RoadIndex)
+			+ TravelSide(Heading) * (LaneOffset + ClampedLane * LaneWidth);
+	}
+
+	/** Centre of the parallel-parking bay on the given side of a road. */
+	static float ParkingLaneCenter(int32 RoadIndex, ESprawlHeading Heading)
+	{
+		return RoadCenter(RoadIndex) + TravelSide(Heading) * ParkingOffset;
 	}
 
 	// --- Traffic signals -------------------------------------------------

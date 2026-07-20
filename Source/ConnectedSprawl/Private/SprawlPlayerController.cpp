@@ -14,6 +14,7 @@
 
 #include "Kismet/KismetSystemLibrary.h"
 #include "Components/InputComponent.h"
+#include "Engine/Engine.h"
 #include "Vehicles/SprawlCar.h"
 #include "Characters/ZarriCharacter.h"
 #include "GameFramework/Pawn.h"
@@ -24,6 +25,73 @@ void ASprawlPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 	EnsureUIInitialized();
+
+	// GTA-style view limits: enough to scan rooftops or the tarmac, never a
+	// full flip over the top. Applies on foot and behind the wheel.
+	if (PlayerCameraManager)
+	{
+		PlayerCameraManager->ViewPitchMin = -52.f;
+		PlayerCameraManager->ViewPitchMax = 28.f;
+	}
+}
+
+void ASprawlPlayerController::ApplyTouchLook(const FVector2D& Delta)
+{
+	AddYawInput(Delta.X * TouchLookYawScale);
+	AddPitchInput(Delta.Y * TouchLookPitchScale);
+}
+
+void ASprawlPlayerController::TouchJumpPressed()
+{
+	if (ACharacter* Character = Cast<ACharacter>(GetPawn()))
+	{
+		Character->Jump();
+	}
+}
+
+void ASprawlPlayerController::TouchJumpReleased()
+{
+	if (ACharacter* Character = Cast<ACharacter>(GetPawn()))
+	{
+		Character->StopJumping();
+	}
+}
+
+void ASprawlPlayerController::TouchSprintPressed()
+{
+	if (AZarriCharacter* Zarri = Cast<AZarriCharacter>(GetPawn()))
+	{
+		Zarri->SetSprinting(true);
+	}
+}
+
+void ASprawlPlayerController::TouchSprintReleased()
+{
+	if (AZarriCharacter* Zarri = Cast<AZarriCharacter>(GetPawn()))
+	{
+		Zarri->SetSprinting(false);
+	}
+}
+
+void ASprawlPlayerController::TouchThrottlePressed(float Direction)
+{
+	if (ASprawlCar* Car = Cast<ASprawlCar>(GetPawn()))
+	{
+		Car->SetTouchThrottle(Direction);
+	}
+}
+
+void ASprawlPlayerController::TouchThrottleReleased()
+{
+	if (ASprawlCar* Car = Cast<ASprawlCar>(GetPawn()))
+	{
+		Car->SetTouchThrottle(0.f);
+	}
+}
+
+bool ASprawlPlayerController::IsDrivingVehicle() const
+{
+	return Cast<ASprawlCar>(GetPawn()) != nullptr;
 }
 
 void ASprawlPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -127,6 +195,12 @@ void ASprawlPlayerController::SetupInputComponent()
 
 	if (InputComponent)
 	{
+		// Recapture the freed cursor on a click without eating gameplay clicks.
+		FInputKeyBinding& RecaptureBinding = InputComponent->BindKey(
+			EKeys::LeftMouseButton, IE_Pressed,
+			this, &ASprawlPlayerController::OnRecaptureClick);
+		RecaptureBinding.bConsumeInput = false;
+
 		InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ASprawlPlayerController::OnEscapePressed);
 		InputComponent->BindKey(EKeys::One, IE_Pressed, this, &ASprawlPlayerController::OnOnePressed);
 		// Cmd/Ctrl + Shift + 0 also releases the cursor — same handler checks the modifiers.
@@ -179,7 +253,50 @@ void ASprawlPlayerController::OnEscapePressed()
 		}
 	}
 
-	UKismetSystemLibrary::QuitGame(GetWorld(), this, EQuitPreference::Quit, false);
+	// Quitting is a deliberate chord: Shift+Esc. A bare Esc saves and hands
+	// the OS cursor back — the thing pause-menu reflexes actually want.
+	const bool bShiftDown = IsInputKeyDown(EKeys::LeftShift)
+		|| IsInputKeyDown(EKeys::RightShift);
+	if (bShiftDown)
+	{
+		UKismetSystemLibrary::QuitGame(GetWorld(), this, EQuitPreference::Quit, false);
+		return;
+	}
+	SetMouseCaptured(false);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(static_cast<uint64>(0x5E5C), 4.f,
+			FColor::White,
+			TEXT("Saved · mouse freed — click the game to recapture · Shift+Esc quits"));
+	}
+	UE_LOG(LogTemp, Display, TEXT("[Sprawl] Esc: saved, cursor released"));
+}
+
+void ASprawlPlayerController::SetMouseCaptured(bool bCaptured)
+{
+	if (bCaptured)
+	{
+		bShowMouseCursor = false;
+		SetInputMode(FInputModeGameOnly());
+		return;
+	}
+	bShowMouseCursor = true;
+	FInputModeGameAndUI InputMode;
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+}
+
+void ASprawlPlayerController::OnRecaptureClick()
+{
+	// Only when the cursor is currently free, and never underneath a modal.
+	if (!bShowMouseCursor
+		|| (DecisionWidget && DecisionWidget->IsInViewport())
+		|| (EndGameWidget && EndGameWidget->IsInViewport()))
+	{
+		return;
+	}
+	SetMouseCaptured(true);
 }
 
 void ASprawlPlayerController::OnSavePressed()

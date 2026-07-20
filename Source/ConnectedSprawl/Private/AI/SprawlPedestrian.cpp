@@ -10,6 +10,7 @@
 #include "EngineUtils.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Characters/SprawlAvatarLibrary.h"
+#include "Characters/SprawlCrowdAppearance.h"
 #include "Vehicles/SprawlCar.h"
 #include "World/SprawlCityGridSubsystem.h"
 
@@ -138,7 +139,8 @@ void ASprawlPedestrian::BeginPlay()
 
 void ASprawlPedestrian::InitializeAppearance()
 {
-	const TArray<FString>& Variants = FSprawlAvatarLibrary::PedestrianVariants();
+	// Only realistically proportioned extras share the street with Zarri.
+	const TArray<FString>& Variants = FSprawlCrowdAppearance::HumanVariants();
 	if (Variants.IsEmpty())
 	{
 		return;

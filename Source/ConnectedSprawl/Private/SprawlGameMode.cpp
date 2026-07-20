@@ -225,8 +225,12 @@ void ASprawlGameMode::CaptureVisualAudit()
 			VisualAuditTimeoutHandle, this,
 			&ASprawlGameMode::HandleVisualAuditTimeout, 20.f, false);
 	}
+	// -SprawlAuditShowUI composites the HUD (touch buttons, panels) into the
+	// captured frame so control layout can be verified headlessly.
+	const bool bShowUI = FParse::Param(
+		FCommandLine::Get(), TEXT("SprawlAuditShowUI"));
 	FScreenshotRequest::RequestScreenshot(
-		/*bInShowUI*/ false, /*bInRestrictToGameViewport*/ true);
+		bShowUI, /*bInRestrictToGameViewport*/ true);
 	UE_LOG(LogTemp, Display, TEXT("[VisualAudit] screenshot requested"));
 }
 

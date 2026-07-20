@@ -12,6 +12,8 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 ASprawlEnvironmentController::ASprawlEnvironmentController()
 {
@@ -22,6 +24,13 @@ ASprawlEnvironmentController::ASprawlEnvironmentController()
 void ASprawlEnvironmentController::BeginPlay()
 {
 	Super::BeginPlay();
+	// Validation hooks: -SprawlStartHour=22 screenshots the night look,
+	// -SprawlFreezeClock holds it there for stable captures.
+	FParse::Value(FCommandLine::Get(), TEXT("SprawlStartHour="), StartHour);
+	if (FParse::Param(FCommandLine::Get(), TEXT("SprawlFreezeClock")))
+	{
+		bPaused = true;
+	}
 	Hour = FMath::Fmod(StartHour, 24.f);
 	FindSceneActors();
 	BuildLampPool();
@@ -72,9 +81,9 @@ void ASprawlEnvironmentController::BuildLampPool()
 	{
 		UPointLightComponent* Light = NewObject<UPointLightComponent>(this);
 		Light->SetMobility(EComponentMobility::Movable);
-		Light->SetIntensity(9000.f);                       // lumens-ish; warm sodium
+		Light->SetIntensity(StreetlightIntensity);         // lumens-ish; warm sodium
 		Light->SetLightColor(FLinearColor(1.0f, 0.72f, 0.38f));
-		Light->SetAttenuationRadius(2400.f);
+		Light->SetAttenuationRadius(StreetlightRadius);
 		Light->SetCastShadows(false);                      // dozens of these — keep them cheap
 		Light->SetVisibility(false);
 		Light->SetupAttachment(RootComponent);
@@ -115,13 +124,14 @@ void ASprawlEnvironmentController::UpdateSunAndSky()
 		}
 		else
 		{
-			// Night: the directional light plays a dim blue moon opposite the sun.
+			// Night: the directional light plays a blue moon opposite the sun,
+			// bright enough that streets read without eye adaptation.
 			const float MoonElevation = FMath::Clamp(-SunElevation, 8.f, 45.f);
 			Sun->SetActorRotation(FRotator(-MoonElevation, SunYaw + 180.f, 0.f));
 			if (ULightComponent* L = Sun->GetLightComponent())
 			{
-				L->SetIntensity(0.6f);
-				L->SetLightColor(FLinearColor(0.55f, 0.65f, 0.95f));
+				L->SetIntensity(NightMoonIntensity);
+				L->SetLightColor(NightMoonColor);
 			}
 		}
 	}
@@ -131,7 +141,7 @@ void ASprawlEnvironmentController::UpdateSunAndSky()
 		if (USkyLightComponent* SkyComp = Cast<USkyLightComponent>(Sky->GetLightComponent()))
 		{
 			const float DayAmount = FMath::Clamp(SunElevation / 12.f, 0.f, 1.f);
-			SkyComp->SetIntensity(FMath::Lerp(0.25f, DaySkyIntensity, DayAmount));
+			SkyComp->SetIntensity(FMath::Lerp(NightSkyIntensity, DaySkyIntensity, DayAmount));
 		}
 	}
 
@@ -142,11 +152,11 @@ void ASprawlEnvironmentController::UpdateSunAndSky()
 		// Golden-hour haze: thickest right around sunrise/sunset.
 		const float Twilight = FMath::Clamp(1.f - FMath::Abs(SunElevation) / 10.f, 0.f, 1.f);
 		FogComp->SetFogDensity(
-			FMath::Lerp(0.010f, DayFogDensity, DayAmount) + Twilight * 0.008f);
+			FMath::Lerp(NightFogDensity, DayFogDensity, DayAmount) + Twilight * 0.008f);
 
 		const FLinearColor DayFog(0.45f, 0.55f, 0.72f);
 		const FLinearColor DuskFog(0.85f, 0.48f, 0.28f);
-		const FLinearColor NightFog(0.02f, 0.035f, 0.075f);
+		const FLinearColor NightFog(0.03f, 0.045f, 0.085f);
 		FLinearColor FogColor = FMath::Lerp(NightFog, DayFog, DayAmount);
 		FogColor = FMath::Lerp(FogColor, DuskFog, Twilight * 0.7f);
 		FogComp->SetFogInscatteringColor(FogColor);
