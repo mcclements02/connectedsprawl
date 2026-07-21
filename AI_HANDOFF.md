@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 40 · **Last updated:** 2026-07-20 13:57 PDT · **Updated by:** codex
+**Version:** 46 · **Last updated:** 2026-07-20 20:05 PDT · **Updated by:** claude
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -20,12 +20,287 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 | Branch | Worktree | Agent | Status | Summary | Updated |
 |--------|----------|-------|--------|---------|---------|
-| main | `/Users/matthewx/code/ConnectedSprawl` | codex | validated, uncommitted | Preserving the validated traffic/vehicle changes and upgrading the runtime waterfront to a fitted translucent ocean mesh with GPU waves, flow, depth/refraction, far shores, and controlled instanced mountain ranges; map and binary assets remain untouched. | 2026-07-20 13:57 PDT |
+| main | `/Users/matthewx/code/ConnectedSprawl` | claude | validated, uncommitted | Full-day world pass: checker repair, sunken flowing lake, Blender street/grass/water kit, Blender mountains (now ringing all four horizons), skyline ring with real facades (ISM usage-flag fix on three masters incl. the long-warned road paint), 19 city-limit gates at the street mouths, occupant headroom, street-dressing repair (30 signal poles snapped), and drive discoverability HUD hints. All suites + Traffic/Carjack audits PASS. | 2026-07-20 20:05 PDT |
 
 ## Log (append newest on top)
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-20 · main · claude (city gates, real skyline, full mountain ring — validated)
+- **Root cause of the flat-grey outer buildings found and fixed:** the skyline
+  facade MIs were bound correctly all along, but their masters lacked
+  `bUsedWithInstancedStaticMeshes`, so Unreal substituted the default grey on
+  every HISM — the exact failure class the ledger has warned about via
+  `MI_RoadPaint` for weeks. New `Content/Python/fix_ism_usage_flags.py`
+  resolves each instance to its base and flags + saves the masters:
+  `M_RealFacade2`, `M_RealGround`, and `M_RoadWhite` (all were False). This
+  also finally clears the road-paint substitution on the instanced stripes.
+  Belt-and-braces rebinding + per-facade logging added to
+  `ASprawlCitySkyline::BuildRing`, plus dark rooftop-mechanical crowns on
+  towers over 60 m (`CrownTransforms`, rendered via the roof HISM).
+- **New `ASprawlCityGates` module:** every crossing road now ends at a
+  city-limit gate — two concrete pillars carrying a beam over the carriageway
+  with flanking wall stubs, wearing the kit concrete (tint fallback). 19 gates
+  / 95 instanced pieces: 6 north, 3 south (bay skipped), 6 west, 4 east
+  (lake's east face skipped). Deterministic `FSprawlCityGateLayout` with
+  `ConnectedSprawl.World.CityGateLayout` (count, piece structure, bay
+  exclusion, beam clearance >5 m). Pillars block like street furniture.
+- **Mountain ring completed:** `FSprawlWaterfrontSceneryLayout` now rings all
+  four horizons (8 ranges + 11 foothills; north/west added) so no outward
+  view ends in empty sky. The lake remains the south-east bay by design —
+  from north/west edges you see mountains, not water. Layout test updated.
+- **Validation:** editor build clean; `ConnectedSprawl.World` 5/5 (gate test
+  included). Real-Metal `-SprawlAuditEdge` capture down a west street: the
+  concrete gate frames the mouth, the skyline behind it now shows real brick /
+  glass-grid / pale facades, and the new west ridge is silhouetted through the
+  arch. Engine "missing usage flag" warnings dropped 6 -> 1 in the capture log.
+- **Risk / remaining validation:** no cook/device/perf profile. The flag edit
+  re-saves three authored material masters (binary uassets — intentional,
+  user-visible in the diff). One residual usage-flag warning remains to chase.
+  Gate beams assume <=5 m vehicles; nothing taller exists today.
+- **Status:** validated and uncommitted on `main`. New files:
+  `Public/World/SprawlCityGates.h`, `Private/World/SprawlCityGates.cpp`,
+  `Private/Tests/SprawlCityGatesTests.cpp`,
+  `Content/Python/fix_ism_usage_flags.py`; modified masters
+  `Content/RealKit/Materials/M_RealFacade2.uasset`, `M_RealGround.uasset`,
+  `Content/CityArt/M_RoadWhite.uasset` (usage flag only). Edits:
+  `SprawlCitySkyline.{h,cpp}`, `SprawlWaterfrontScenery.cpp`,
+  `SprawlGameMode.cpp`, both scenery/skyline test files. No branch, worktree,
+  commit, or remote operation performed.
+<!-- entry:city-gates-real-skyline-mountain-ring-validated -->
+
+### 2026-07-20 · main · claude (drive verification, headroom, street dressing — validated)
+- **Enter/drive/reverse verified, not rebuilt:** the existing modules already
+  own this (`E`/`F` -> `EnterNearbyVehicle` -> possession;
+  `FSprawlVehicleDriveLogic` forward force + brake-before-reverse). CarjackAudit
+  re-run PASSED (possessed/fleeing_driver/lease_free/retired/backfilled all 1),
+  so no duplicate drive module was written. Discoverability was the real gap:
+  `USprawlNativeHUD` now shows a desktop-only contextual hint — "E — enter car
+  and drive" near an enterable car, "W accelerate · S brake/reverse · E exit"
+  while driving (touch keeps its real buttons; new public
+  `AZarriCharacter::HasNearbyEnterableVehicle`).
+- **New `FSprawlOccupantHeadroom` module:** the pelvis clamp had no head term,
+  so seated drivers' heads could breach low rooflines. The fit sinks the seat
+  within the containment volume first, then applies a bounded uniform shrink
+  (floor 0.80), and refuses the visual when even that cannot contain it.
+  Wired into `ASprawlCar::ApplySeatedDriverVariant`; covered by
+  `ConnectedSprawl.Vehicles.OccupantHeadroom` (tall cabin unchanged, low coupe
+  sunk-and-contained, uninhabitable body refused).
+- **New `ASprawlStreetDressing` module:** re-seats provably-wrong street
+  furniture by static-mesh identity (labels are editor-only, so cooked-safe):
+  A-board `sign_foldout_*` onto the kerb band facing traffic; stranded
+  junction dressing (food cart, fountain, light-signs, poster pillar) off
+  non-park block centres onto their junction corners (parks keep their plaza
+  dressing); wall shop signs pulled out of the carriageway; and **every
+  `ASprawlTrafficLight` pole snapped to its sidewalk corner at the live
+  1200 cm road width** — first run logged `foldout_signs=6
+  stranded_junction_props=4 wall_signs_off_road=1 signal_poles_snapped=30`,
+  confirming all 30 poles still stood at the pre-widening road edge. Pure
+  placement math is unit-tested (`ConnectedSprawl.World.KerbPlacement`);
+  phase logic untouched (indices snap identically). Added
+  `-SprawlAuditJunction` vantage.
+- **Validation:** editor build clean; automation 7/7 across
+  `ConnectedSprawl.Vehicles` + `ConnectedSprawl.World` (one stale skyline test
+  bound aligned to the tuned 2400-4400 near-row band). Real-Metal TrafficAudit
+  PASS with every gate green (14/14 movers, 12 signal stops at the snapped
+  poles, visible_drivers=14, outside_drivers=0, zero lane/wrong-way/boundary
+  violations, box occupancy 1). CarjackAudit PASS. Junction capture shows
+  crosswalks, corner islands, kerbside cars, and the corner signal pole.
+- **Risk / remaining validation:** no cook/device/perf profile. The headroom
+  shrink floor (0.80) and seated-head fraction (0.40) are estimates validated
+  by audit + tests, not by an in-cabin camera pass; a close-up drive-by eyeball
+  in play is the remaining check. Dressing moves are runtime-only (map
+  untouched) and idempotent.
+- **Status:** validated and uncommitted on `main`. New files:
+  `Public/Vehicles/SprawlOccupantHeadroom.h`,
+  `Private/Vehicles/SprawlOccupantHeadroom.cpp`,
+  `Public/World/SprawlStreetDressing.h`,
+  `Private/World/SprawlStreetDressing.cpp`,
+  `Private/Tests/SprawlOccupantHeadroomTests.cpp`,
+  `Private/Tests/SprawlStreetDressingTests.cpp`. Edits: `SprawlCar.cpp`,
+  `SprawlGameMode.cpp`, `SprawlNativeHUD.{h,cpp}`, `ZarriCharacter.h`,
+  `SprawlCitySkylineTests.cpp`. No branch/worktree/commit/remote operation
+  performed.
+<!-- entry:drive-headroom-street-dressing-validated -->
+
+### 2026-07-20 · main · claude (skyline ring + Blender mountains — validated)
+- **New Blender module `Tools/build_mountain_kit.py`:** two clean flat-shaded
+  ridges (`SM_MountainRidgeA` 400x80 m/1,957 tris, `SM_MountainRidgeB`
+  280x60 m/1,728 tris) — gaussian peak envelopes x cosine cross-falloff +
+  Perlin fBm, collapse-decimated, with rock/scree/snow CORNER vertex colours
+  (snow gated by altitude + face slope). New
+  `Content/Python/import_mountain_kit.py` imported both (bounds verified) and
+  built `M_MountainRock` (VertexColor->BaseColor, roughness 0.95, zero
+  textures). `ASprawlWaterfrontScenery` prefers the ridges for both mountain
+  and foothill HISMs — the pixelated marketplace vista mesh stays hidden.
+- **New module `ASprawlCitySkyline`:** deterministic `FSprawlSkylineLayout`
+  (unit-tested) rings the city with 113 low-poly proxy buildings + roof caps —
+  two rows (mid-rise near, towers behind) starting 30 m past the boundary,
+  wearing the same world-projected facade MIs as the real city, with a gap
+  across the lake's south face so the bay still opens to the mountains. A
+  four-slab ground apron runs from the city floor's edge (11,400) out past the
+  far row (20,400), so the towers stand on land. Spawned by the game mode; no
+  tick/collision/shadows. New test `ConnectedSprawl.World.CitySkylineLayout`.
+- **Legacy edge cards hidden:** the four ~95 m planes floating at Z=+1050
+  outside the city (the "edge of the world" horizon) are now hidden by
+  `ASprawlSurfaceRepair` instead of repainted — any repaint left them as a
+  white shelf slicing through the skyline. Added `-SprawlAuditEdge` vantage.
+- **Validation:** editor build clean; `ConnectedSprawl.World` automation 3/3
+  (new skyline test included). Real-Metal captures: the west-perimeter view
+  shows continuous ground to grounded towers framed by real city brick (no
+  void, no white shelf), and the waterfront shows rippled water -> quay ->
+  dark far shore -> skyline -> clean faceted snow-capped ridges. The elevated
+  edge capture passed the full visual gate (luma 112.9, red_blue 1.11).
+- **Risk / remaining validation:** no cook/device/perf profile. Proxy facades
+  read flat on their shadow side up close — acceptable at distance; a window
+  emissive pass at night is a natural follow-up. Skyline adds ~113 instanced
+  cubes + 4 slabs; mountains total ~25k background tris (textureless).
+- **Status:** validated and uncommitted on `main`. New files:
+  `Tools/build_mountain_kit.py`, `Content/Python/import_mountain_kit.py`,
+  `Public/World/SprawlCitySkyline.h`, `Private/World/SprawlCitySkyline.cpp`,
+  `Private/Tests/SprawlCitySkylineTests.cpp`, 3 kit uassets + 2 FBX. Edits:
+  `SprawlSurfaceRepair.cpp`, `SprawlWaterfrontScenery.cpp`,
+  `SprawlGameMode.cpp`. No branch/worktree/commit/remote operation performed.
+<!-- entry:skyline-ring-blender-mountains-validated -->
+
+### 2026-07-20 · main · claude (Blender authentic-city kit — validated)
+- **New Blender authoring module `Tools/build_city_kit.py`** (headless Blender
+  5.1, deterministic seed): bakes three seamless 1K PBR sets — worn street
+  asphalt with region-gated crack networks, jointed quay concrete, patchy grass
+  field (colour/roughness via 1-sample emit bakes, tangent normals from
+  procedural height; seamlessness via 4D-torus-mapped noise so the
+  world-projected tiling never seams) — and models `SM_GrassClump` (14 bent
+  tapered solid blades, 126 tris, root->tip vertex-colour ramp) plus
+  `SM_WaterSurface` (96x64 m, 19,200 tris, centred pivot). Outputs under
+  `Content/Import/CityKit/` with a report.
+- **New import module `Content/Python/import_city_kit.py`** (UE 5.8
+  pythonscript commandlet, sidecar report): imported 9 textures (normals
+  TC_Normalmap, roughness linear masks), both meshes (bounds verified in the
+  report: water exactly 4800x3200 cm half-extent, clump 36 cm tall), created
+  `MI_AsphaltWorn`/`MI_ConcreteWorn`/`MI_GrassField` on the world-projected
+  `M_RealGround` master (live param names verified: AlbedoTex/NormalTex/
+  RoughTex/AOTex) and a `M_GrassBlade` material driven by the clump's vertex
+  colours. `mobile_texture_budget.py` re-run after import (1K maps, no clamps).
+- **Runtime consumption (streets · grass · water):** `ASprawlSurfaceRepair`
+  and `ASprawlLakeBasin` now bind the textured MIs (worn asphalt for
+  ground/ring, jointed concrete for the promenade band and quay walls) with
+  the flat-tint MIDs kept as last-resort fallbacks; `ASprawlGroundCover`
+  replaces its squashed engine cones with uniform-scaled grass clumps
+  (GrassPerPark 1400 -> 800 since each clump carries 14 blades);
+  `ASprawlWaterfrontScenery` prefers the centred high-tessellation water mesh
+  so the GPU waves visibly ripple. Added `-SprawlAuditPark` capture vantage.
+- **Validation:** Blender bake + export clean (report in Content/Import/
+  CityKit/). UE import PASS with live param introspection. Editor build clean;
+  `ConnectedSprawl.World` automation 2/2. Real-Metal captures at the
+  waterfront, park, and boulevard show cracked worn asphalt streets, a lawn of
+  readable 3D grass clumps around the fountain plaza, and finely rippled water
+  in the sunken basin; `[SurfaceRepair] remaining large checker/missing = 0`
+  still holds. Visual-audit warmth/luma gates miss on the water/green-heavy
+  frames as before (crushed 0.00-0.01%) — judged by the saved PNGs.
+- **Risk / remaining validation:** no cook, package, iPhone/device, or
+  sustained performance profile. Grass worst case ~300k tris across 3 parks
+  before the 140 m cull — profile on device before shipping. The park/water
+  frames still read cool against the audit warmth gate. Kit assets are
+  tracked source; re-running the Blender + import modules regenerates them
+  deterministically.
+- **Status:** validated and uncommitted on `main`. New files:
+  `Tools/build_city_kit.py`, `Content/Python/import_city_kit.py`, 15 uassets +
+  9 PNGs + 2 FBX under `Content/Import/CityKit/`. Edits:
+  `SprawlGroundCover.{h,cpp}`, `SprawlSurfaceRepair.{h,cpp}`,
+  `SprawlLakeBasin.{h,cpp}`, `SprawlWaterfrontScenery.cpp`,
+  `SprawlGameMode.cpp`. No branch, worktree, commit, or remote operation
+  performed.
+<!-- entry:blender-authentic-city-kit-validated -->
+
+### 2026-07-20 · main · claude (flowing water + sunken lake basin — validated)
+- **Water now flows and moves:** a runtime probe confirmed the live lake material
+  is the animated DatasmithContent `MI_WaterPond` shader (`authoredBase=MI_WaterPond
+  broken=0`), so it was GPU-animated but far too subtle over the 96 m lake.
+  `FSprawlOceanWaveProfile` flow 0.15 -> 0.40 and wave strength 2.0 -> 2.6 (wave
+  size 1100 -> 900) for a clearly moving surface.
+- **New `ASprawlLakeBasin` module — the lake is a real dip below the ground:** the
+  probe showed `City_Ground` is a single opaque cube (top Z0, half-extent 11446)
+  that also spans the lake, so it occluded any lowered water. The module hides that
+  plane's visual (its collision is kept as an invisible no-fall floor), rebuilds
+  the visible city floor as a four-rectangle ring around the lake, and drops a
+  walled basin — four quay walls (a Z0 curb down to the bed, with collision so the
+  player stops at the water's edge) plus a bed — beneath the water, now at Z-120
+  (120 cm below the promenade). It also hides dressing left floating over the
+  lowered water (19 props).
+- **Waterfront cleanup:** the old flush-water far banks are removed (the basin
+  walls the water; the ring + mountains close the horizon), and
+  `-SprawlAuditWaterfront` now frames the shore from a raised angle so the dip is
+  visible headlessly.
+- **Validation:** `ConnectedSprawlEditor Mac Development` built clean.
+  `ConnectedSprawl.World` automation passed 2/2 after the far-bank removal. A
+  real-Metal `-SprawlVisualAudit -SprawlAuditWaterfront` logged `[LakeBasin] hid 1
+  city-ground plane(s), 19 floating prop(s); basin waterZ=-120` and `[SurfaceRepair]
+  ... remaining large checker/missing = 0`; the capture shows the promenade dropping
+  over a quay wall to a recessed water surface with the checker still gone. Water
+  motion rides the confirmed-animated material at 2.7x the previously-proven flow
+  (to be confirmed in interactive play).
+- **Risk / remaining validation:** no cook, package, iPhone/device, or performance
+  profile. The basin relies on the invisible `City_Ground` collision as the no-fall
+  floor and the quay curb to keep the player ashore. Vertex waves still come from
+  the DatasmithContent path in-editor; a cooked iOS build uses the static
+  translucent fallback until an engine-owned wave material is authored. A deeper
+  basin or sloped (vs vertical quay) banks are easy follow-ups if wanted.
+- **Status:** validated and uncommitted on `main`. New files
+  `Public/World/SprawlLakeBasin.h`, `Private/World/SprawlLakeBasin.cpp`; edits to
+  `SprawlGameMode.cpp`, `SprawlOceanSurface.{h,cpp}`, `SprawlWaterfrontScenery.cpp`,
+  and `Tests/SprawlWaterfrontSceneryTests.cpp`. No map, Blueprint, material, or
+  binary asset was authored; no branch, worktree, commit, or remote operation
+  performed.
+<!-- entry:flowing-water-sunken-basin-validated -->
+
+### 2026-07-20 · main · claude (waterfront checker + water repair — validated)
+- **New `ASprawlSurfaceRepair` module:** the bare ground plane and the four
+  ~95 m world-edge planes fall back to the engine checker (`WorldGridMaterial`)
+  because authored RealKit/marketplace parents do not resolve at runtime, and
+  `city_surfaces.py` skips the lake-edge blocks, so the checker was fully
+  exposed where the player stands (the reported tan diamond plaza). The new
+  actor — spawned once by `ASprawlGameMode` beside the waterfront scenery —
+  scans the live world at BeginPlay and rebinds every checker/default slot to a
+  project-owned `M_Simple_Opaque` MID: warm stone within a Step of the lake,
+  dark asphalt elsewhere. No tick, collision, or map/binary edit; a post-pass
+  re-scan proves 0 checker/missing large surfaces remain.
+- **Water hardened (`FSprawlOceanSurface` + `ASprawlWaterfrontScenery`):**
+  `MI_WaterPond`'s parent is `/DatasmithContent/Materials/Water/M_Water`, a
+  plugin material NOT in the enabled set, so its waves/flow/colour silently died
+  and the lake read as raw teal. `BuildWaveMaterial` now swaps to a project-
+  owned translucent master (`M_Simple_Glass`) whenever the authored base
+  collapses to the engine default, applies the corrected coastal colour +
+  opacity + refraction under both the Datasmith and Simple_Glass parameter
+  names, and `FitMesh` inflates the fit 4% so the water edge tucks under the
+  shore instead of a hard seam. The layout test's pure `CalculateScale`/
+  `CalculateLocation` math is unchanged.
+- **New audit hook:** `-SprawlAuditWaterfront` points the existing
+  `-SprawlVisualAudit` at the lake shore (derived from the live layout) so the
+  ground/water repair is verifiable headlessly instead of the inland boulevard.
+- **Validation:** `ConnectedSprawlEditor Mac Development` built clean.
+  `ConnectedSprawl.World` automation passed 2/2 (`WaterfrontSceneryLayout`,
+  `LightingContrastAndRoadMarkingFit`). A real-Metal `-SprawlVisualAudit
+  -SprawlAuditWaterfront` logged `rebound 64 checker/default surface slot(s);
+  remaining large checker/missing = 0`; three 1600x900 captures confirm the
+  checker is gone (asphalt street, cobblestone kerbs, crosswalk, grass verge)
+  and the lake reads as dark coastal water behind the promenade rail. The
+  overlook capture passed the full visual gate (luma 116.9, red_blue 1.20); the
+  shore-level frame reads cool on the warmth gate (red_blue 0.98) by design on
+  a water-heavy view, crushed 0.01%.
+- **Risk / remaining validation:** no cook, package, iPhone/device, or
+  sustained performance profile was run. Vertex waves still come from the
+  DatasmithContent path in-editor; a cooked iOS build will use the static
+  translucent fallback (correct colour/refraction, no moving waves) until an
+  engine-owned wave material is authored. The water reads slightly thin from the
+  promenade angle — a shoreline foam/beach band is a sensible follow-up.
+- **Status:** validated and uncommitted on `main`. New files
+  `Public/World/SprawlSurfaceRepair.h` and `Private/World/SprawlSurfaceRepair.cpp`;
+  edits to `SprawlGameMode.cpp`, `SprawlOceanSurface.{h,cpp}`, and
+  `SprawlWaterfrontScenery.{h,cpp}`. No map, Blueprint, material, or other binary
+  asset was authored; no branch, worktree, staging, commit, or remote operation
+  was performed.
+<!-- entry:waterfront-checker-water-repair-validated -->
 
 ### 2026-07-20 · main · codex (GPU ocean water and waves — validated)
 - **New `FSprawlOceanSurface` module:** fits the existing tessellated water mesh

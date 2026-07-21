@@ -56,18 +56,12 @@ bool FSprawlWaterfrontSceneryLayoutTest::RunTest(const FString& Parameters)
 		(ExampleLocation + ExampleBounds.Origin * ExampleScale)
 			.Equals(ExampleCenter));
 
-	TestEqual(TEXT("Two far banks close the open horizon"),
-		Layout.ShoreTransforms.Num(), 2);
-	TestEqual(TEXT("Four broad mountain ranges cover the south/east horizon"),
-		Layout.MountainTransforms.Num(), 4);
+	TestEqual(TEXT("The sunken basin replaces the old flush-water far banks"),
+		Layout.ShoreTransforms.Num(), 0);
+	TestEqual(TEXT("Broad mountain ranges ring all four horizons"),
+		Layout.MountainTransforms.Num(), 8);
 	TestEqual(TEXT("The horizon has a separate foothill layer"),
-		Layout.FoothillTransforms.Num(), 7);
-	for (const FTransform& Transform : Layout.ShoreTransforms)
-	{
-		const FVector Location = Transform.GetLocation();
-		TestFalse(TEXT("Far banks stay outside the playable city"),
-			Grid::IsInsideCityBounds(Location.X, Location.Y));
-	}
+		Layout.FoothillTransforms.Num(), 11);
 	for (const FTransform& Transform : Layout.MountainTransforms)
 	{
 		const FVector Location = Transform.GetLocation();

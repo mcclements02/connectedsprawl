@@ -1,0 +1,13 @@
+baked T_CityAsphalt_Color.png
+baked T_CityAsphalt_Roughness.png
+baked T_CityAsphalt_NormalGL.png
+baked T_CityConcrete_Color.png
+baked T_CityConcrete_Roughness.png
+baked T_CityConcrete_NormalGL.png
+baked T_CityGrassField_Color.png
+baked T_CityGrassField_Roughness.png
+baked T_CityGrassField_NormalGL.png
+SM_GrassClump: 14 blades, 126 tris, height<=0.36m
+exported SM_GrassClump.fbx (14.8 KB)
+SM_WaterSurface: 96x64m, 19200 tris, centred pivot
+exported SM_WaterSurface.fbx (200.0 KB)

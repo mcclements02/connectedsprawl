@@ -1,0 +1,4 @@
+SM_MountainRidgeA: 400x80m peak=87m tris=1957
+exported SM_MountainRidgeA.fbx (73.8 KB)
+SM_MountainRidgeB: 280x60m peak=74m tris=1728
+exported SM_MountainRidgeB.fbx (67.6 KB)

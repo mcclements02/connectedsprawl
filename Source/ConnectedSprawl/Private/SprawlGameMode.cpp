@@ -9,7 +9,12 @@
 #include "Missions/DecisionSubsystem.h"
 #include "Missions/SprawlGigSubsystem.h"
 #include "Save/SprawlSaveSubsystem.h"
+#include "World/SprawlCityGates.h"
 #include "World/SprawlCityGridSubsystem.h"
+#include "World/SprawlCitySkyline.h"
+#include "World/SprawlLakeBasin.h"
+#include "World/SprawlStreetDressing.h"
+#include "World/SprawlSurfaceRepair.h"
 #include "World/SprawlWaterfrontScenery.h"
 #include "Engine/World.h"
 #include "Engine/GameViewportClient.h"
@@ -41,6 +46,23 @@ void ASprawlGameMode::StartPlay()
 	UWorld* World = GetWorld();
 	if (!World) return;
 	ASprawlWaterfrontScenery::EnsureForWorld(World);
+	// Rebind any ground surface that fell back to the engine checker before the
+	// player ever sees it. Runs after the waterfront actor so its translucent
+	// water surface already exists and is skipped by the repair scan.
+	ASprawlSurfaceRepair::EnsureForWorld(World);
+	// Sink the lake into a basin below the ground (hides the flat city floor
+	// over the lake, rebuilds a ground ring, and walls the water in a dip).
+	ASprawlLakeBasin::EnsureForWorld(World);
+	// Ring the horizon with low-poly proxy buildings so the perimeter reads
+	// as more city instead of the edge of the world.
+	ASprawlCitySkyline::EnsureForWorld(World);
+	// Re-seat mis-placed street dressing: A-board signs onto the kerb band,
+	// stranded junction props onto junction corners, signal poles onto their
+	// sidewalk corners at the live road width.
+	ASprawlStreetDressing::EnsureForWorld(World);
+	// Close each street mouth with a city-limit gate so the perimeter reads
+	// as a boundary between the edge buildings, not the edge of the world.
+	ASprawlCityGates::EnsureForWorld(World);
 
 	World->GetTimerManager().SetTimer(
 		DayTimerHandle,
@@ -193,15 +215,67 @@ void ASprawlGameMode::BeginVisualAudit()
 			// The authored start is intentionally tucked beside the player car.
 			// Move only the audit pawn to an open boulevard so the capture measures
 			// the city grade rather than one nearby facade.
-			const FVector AuditLocation(
+			FVector AuditLocation(
 				USprawlCityGridSubsystem::LaneCenter(
 					2, ESprawlHeading::North),
 				USprawlCityGridSubsystem::BlockCenter(2), 130.f);
-			const FRotator AuditRotation(0.f, 90.f, 0.f);
+			FRotator AuditRotation(0.f, 90.f, 0.f);
+			float ViewPitch = -8.f;
+			// -SprawlAuditPark frames a park lawn so the Blender grass clumps
+			// and grass-field ground are verifiable headlessly.
+			if (FParse::Param(FCommandLine::Get(), TEXT("SprawlAuditPark")))
+			{
+				// Offset from the block centre so the mature park trees frame
+				// the lawn instead of swallowing the camera.
+				AuditLocation = FVector(
+					USprawlCityGridSubsystem::BlockCenter(2) - 620.f,
+					USprawlCityGridSubsystem::BlockCenter(2) - 760.f, 300.f);
+				AuditRotation = FRotator(0.f, 62.f, 0.f);
+				ViewPitch = -26.f;
+			}
+			// -SprawlAuditJunction frames an intersection corner, so signal
+			// poles, crosswalks, and re-seated kerb dressing are verifiable.
+			else if (FParse::Param(FCommandLine::Get(), TEXT("SprawlAuditJunction")))
+			{
+				const float RoadX = USprawlCityGridSubsystem::RoadCenter(2);
+				const float RoadY = USprawlCityGridSubsystem::RoadCenter(2);
+				AuditLocation = FVector(RoadX - 300.f, RoadY - 1500.f, 320.f);
+				AuditRotation = FRotator(0.f, 90.f, 0.f);
+				ViewPitch = -16.f;
+			}
+			// -SprawlAuditEdge stands at the west perimeter looking outward,
+			// so the skyline ring and horizon treatment are verifiable.
+			else if (FParse::Param(FCommandLine::Get(), TEXT("SprawlAuditEdge")))
+			{
+				// Down the street toward the west gate at RoadCenter(2), with
+				// the skyline and mountain ring behind it.
+				AuditLocation = FVector(
+					-USprawlCityGridSubsystem::CityBoundaryHalfExtent + 1900.f,
+					USprawlCityGridSubsystem::RoadCenter(2), 420.f);
+				AuditRotation = FRotator(0.f, 180.f, 0.f);
+				ViewPitch = -8.f;
+			}
+			// -SprawlAuditWaterfront frames the lake shore instead, so the
+			// capture measures the ground-surface and water repair (the reported
+			// checker + wrong-colour water) rather than an inland boulevard.
+			else if (FParse::Param(FCommandLine::Get(), TEXT("SprawlAuditWaterfront")))
+			{
+				const FSprawlWaterfrontSceneryLayout Lake =
+					FSprawlWaterfrontSceneryLayout::Build();
+				const FVector2D Half = Lake.WaterSize * 0.5f;
+				AuditLocation = FVector(
+					Lake.WaterCenter.X - Half.X * 0.30f,
+					Lake.WaterCenter.Y + Half.Y + 1500.f, 360.f);
+				const FVector ToLake = Lake.WaterCenter - AuditLocation;
+				AuditRotation = FRotator(0.f,
+					FMath::RadiansToDegrees(FMath::Atan2(ToLake.Y, ToLake.X)), 0.f);
+				ViewPitch = -22.f;
+			}
 			Pawn->SetActorLocationAndRotation(
 				AuditLocation, AuditRotation, false, nullptr,
 				ETeleportType::TeleportPhysics);
-			PC->SetControlRotation(FRotator(-8.f, 90.f, 0.f));
+			PC->SetControlRotation(
+				FRotator(ViewPitch, AuditRotation.Yaw, 0.f));
 		}
 	}
 	FTimerHandle CameraSettleHandle;

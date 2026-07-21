@@ -18,7 +18,9 @@ using Grid = USprawlCityGridSubsystem;
 
 namespace
 {
-constexpr float WaterSurfaceZ = 18.f;
+// The lake sits in a sunken basin (see ASprawlLakeBasin), so the water surface
+// is well below the Z0 promenade rather than flush with it.
+constexpr float WaterSurfaceZ = -120.f;
 constexpr float ShapeMeshSize = 100.f;
 
 FTransform NormalizeToMeshBounds(const FTransform& DesiredTransform,
@@ -88,14 +90,10 @@ FSprawlWaterfrontSceneryLayout FSprawlWaterfrontSceneryLayout::Build()
 		WaterSurfaceZ);
 	Layout.WaterSize = FVector2D(LakeMaxX - LakeMinX, LakeMaxY - LakeMinY);
 
-	// Low, non-colliding far banks prevent the water from meeting the sky as a
-	// white void. Both sit beyond the playable perimeter.
-	Layout.ShoreTransforms.Emplace(FRotator::ZeroRotator,
-		FVector(Layout.WaterCenter.X, LakeMinY - 260.f, 35.f),
-		FVector(Layout.WaterSize.X / ShapeMeshSize, 5.2f, 1.4f));
-	Layout.ShoreTransforms.Emplace(FRotator::ZeroRotator,
-		FVector(LakeMaxX + 260.f, Layout.WaterCenter.Y, 35.f),
-		FVector(5.2f, Layout.WaterSize.Y / ShapeMeshSize, 1.4f));
+	// Far banks are no longer added: the sunken basin (ASprawlLakeBasin) now
+	// walls the water on all four sides, and the ring ground plus the mountain
+	// backdrop close the horizon, so the old flush-water banks would only float
+	// above the lowered surface.
 
 	auto AddPeak = [&](float X, float Y, float Yaw, float Width,
 		float Depth, float Height)
@@ -106,12 +104,17 @@ FSprawlWaterfrontSceneryLayout FSprawlWaterfrontSceneryLayout::Build()
 	};
 	const float FarHorizon = Grid::CityBoundaryHalfExtent + 9000.f;
 	const float FoothillHorizon = Grid::CityBoundaryHalfExtent + 7000.f;
-	// The authored asset is a complete ridge, so four broad instances create a
-	// continuous south/east horizon with much less repetition than loose peaks.
+	// The authored asset is a complete ridge; broad instances now ring all
+	// four horizons so no outward view ends in empty sky (the lake stays the
+	// south-east bay by design).
 	AddPeak(-5200.f, -FarHorizon, 4.f, 190.f, 48.f, 35.f);
 	AddPeak(11200.f, -FarHorizon - 500.f, -7.f, 170.f, 44.f, 31.f);
 	AddPeak(FarHorizon, -7600.f, 94.f, 175.f, 45.f, 33.f);
 	AddPeak(FarHorizon + 300.f, 7600.f, 86.f, 165.f, 43.f, 29.f);
+	AddPeak(-FarHorizon, -4600.f, 88.f, 180.f, 46.f, 33.f);
+	AddPeak(-FarHorizon - 400.f, 6800.f, 95.f, 170.f, 44.f, 30.f);
+	AddPeak(-3800.f, FarHorizon, -4.f, 185.f, 47.f, 34.f);
+	AddPeak(8800.f, FarHorizon + 300.f, 6.f, 175.f, 45.f, 31.f);
 
 	auto AddFoothill = [&](float X, float Y, float Yaw, float Width, float Depth)
 	{
@@ -125,13 +128,16 @@ FSprawlWaterfrontSceneryLayout FSprawlWaterfrontSceneryLayout::Build()
 	AddFoothill(FoothillHorizon, -9500.f, 88.f, 48.f, 17.f);
 	AddFoothill(FoothillHorizon + 200.f, -3500.f, 94.f, 54.f, 19.f);
 	AddFoothill(FoothillHorizon, 2500.f, 86.f, 46.f, 17.f);
+	AddFoothill(-FoothillHorizon, -8800.f, 92.f, 50.f, 18.f);
+	AddFoothill(-FoothillHorizon - 200.f, 1200.f, 88.f, 52.f, 19.f);
+	AddFoothill(1800.f, FoothillHorizon, -3.f, 54.f, 19.f);
+	AddFoothill(-6800.f, FoothillHorizon + 200.f, 5.f, 50.f, 18.f);
 	return Layout;
 }
 
 bool FSprawlWaterfrontSceneryLayout::IsValid() const
 {
 	if (WaterSize.X <= 0.f || WaterSize.Y <= 0.f
-		|| ShoreTransforms.Num() != 2
 		|| MountainTransforms.IsEmpty() || FoothillTransforms.IsEmpty())
 	{
 		return false;
@@ -178,10 +184,23 @@ ASprawlWaterfrontScenery::ASprawlWaterfrontScenery()
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(
 		TEXT("/Engine/BasicShapes/Cube.Cube"));
+	// Blender-authored surface: centred pivot and ~19k tris, so the GPU wave
+	// displacement produces visible rippling instead of bending a few big
+	// quads. The legacy off-centre SM_Water remains the fallback.
+	static ConstructorHelpers::FObjectFinderOptional<UStaticMesh> KitOceanMesh(
+		TEXT("/Game/Import/CityKit/SM_WaterSurface.SM_WaterSurface"));
 	static ConstructorHelpers::FObjectFinderOptional<UStaticMesh> OceanMesh(
 		TEXT("/Game/Geometry/SM_Water.SM_Water"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneMesh(
 		TEXT("/Engine/BasicShapes/Plane.Plane"));
+	// Blender-authored clean ridges (Tools/build_mountain_kit.py) replace the
+	// pixelated marketplace vista; rocks/legacy remain as fallbacks.
+	static ConstructorHelpers::FObjectFinderOptional<UStaticMesh> KitRidgeA(
+		TEXT("/Game/Import/CityKit/SM_MountainRidgeA.SM_MountainRidgeA"));
+	static ConstructorHelpers::FObjectFinderOptional<UStaticMesh> KitRidgeB(
+		TEXT("/Game/Import/CityKit/SM_MountainRidgeB.SM_MountainRidgeB"));
+	static ConstructorHelpers::FObjectFinderOptional<UMaterialInterface> KitRockMat(
+		TEXT("/Game/Import/CityKit/M_MountainRock.M_MountainRock"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> MountainRock(
 		TEXT("/Game/Downtown_West/Assets/props/prop_rocks/SM_rock_large_a_low.SM_rock_large_a_low"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> FoothillRock(
@@ -192,6 +211,8 @@ ASprawlWaterfrontScenery::ASprawlWaterfrontScenery()
 		TEXT("/Game/Materials/MI_WaterPond.MI_WaterPond"));
 	static ConstructorHelpers::FObjectFinderOptional<UMaterialInterface> WaterFallback(
 		TEXT("/Game/CityArt/MI_Water.MI_Water"));
+	static ConstructorHelpers::FObjectFinderOptional<UMaterialInterface> SafeWater(
+		TEXT("/Game/Materials/Master/M_Simple_Glass.M_Simple_Glass"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShapeMaterial(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 
@@ -199,7 +220,11 @@ ASprawlWaterfrontScenery::ASprawlWaterfrontScenery()
 	{
 		Shoreline->SetStaticMesh(CubeMesh.Object);
 	}
-	if (OceanMesh.Get())
+	if (KitOceanMesh.Get())
+	{
+		WaterSurface->SetStaticMesh(KitOceanMesh.Get());
+	}
+	else if (OceanMesh.Get())
 	{
 		WaterSurface->SetStaticMesh(OceanMesh.Get());
 	}
@@ -208,7 +233,12 @@ ASprawlWaterfrontScenery::ASprawlWaterfrontScenery()
 		WaterSurface->SetStaticMesh(PlaneMesh.Object);
 	}
 	LegacyMountainMesh = LegacyMountains.Get();
-	if (LegacyMountainMesh)
+	SafeWaterFallback = SafeWater.Get();
+	if (KitRidgeA.Get())
+	{
+		Mountains->SetStaticMesh(KitRidgeA.Get());
+	}
+	else if (LegacyMountainMesh)
 	{
 		Mountains->SetStaticMesh(LegacyMountainMesh);
 	}
@@ -216,9 +246,24 @@ ASprawlWaterfrontScenery::ASprawlWaterfrontScenery()
 	{
 		Mountains->SetStaticMesh(MountainRock.Object);
 	}
-	if (FoothillRock.Succeeded())
+	if (KitRidgeB.Get())
+	{
+		Foothills->SetStaticMesh(KitRidgeB.Get());
+	}
+	else if (FoothillRock.Succeeded())
 	{
 		Foothills->SetStaticMesh(FoothillRock.Object);
+	}
+	if (KitRockMat.Get())
+	{
+		if (KitRidgeA.Get())
+		{
+			Mountains->SetMaterial(0, KitRockMat.Get());
+		}
+		if (KitRidgeB.Get())
+		{
+			Foothills->SetMaterial(0, KitRockMat.Get());
+		}
 	}
 	if (OceanWater.Get())
 	{
@@ -348,7 +393,7 @@ void ASprawlWaterfrontScenery::BuildRuntimeMaterials()
 	{
 		WaterMaterial = FSprawlOceanSurface::BuildWaveMaterial(
 			*WaterSurface, *this, *Base,
-			FSprawlOceanWaveProfile::CoastalOcean());
+			FSprawlOceanWaveProfile::CoastalOcean(), SafeWaterFallback);
 	}
 	MakeMaterial(Shoreline, ShoreMaterial,
 		FLinearColor(0.18f, 0.23f, 0.19f, 1.f), 0.92f);

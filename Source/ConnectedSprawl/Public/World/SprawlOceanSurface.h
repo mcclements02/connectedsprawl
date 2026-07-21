@@ -12,11 +12,11 @@ class UStaticMeshComponent;
 /** Mobile-conscious ocean parameters consumed by the authored water shader. */
 struct CONNECTEDSPRAWL_API FSprawlOceanWaveProfile
 {
-	FLinearColor WaterColor = FLinearColor(0.012f, 0.075f, 0.14f, 1.f);
-	float FlowSpeed = 0.15f;
+	FLinearColor WaterColor = FLinearColor(0.010f, 0.055f, 0.085f, 1.f);
+	float FlowSpeed = 0.40f;
 	float MaxDepthCm = 900.f;
-	float WaveSizeCm = 1100.f;
-	float WaveStrength = 2.f;
+	float WaveSizeCm = 900.f;
+	float WaveStrength = 2.6f;
 
 	static FSprawlOceanWaveProfile CoastalOcean();
 	bool IsValid() const;
@@ -35,8 +35,12 @@ struct CONNECTEDSPRAWL_API FSprawlOceanSurface
 		const FBoxSphereBounds& MeshBounds, const FVector& Scale);
 	static bool FitMesh(UStaticMeshComponent& Component,
 		const FVector2D& SurfaceSize, const FVector& SurfaceCenter);
+	// SafeFallbackBase is a project-owned translucent master used when the
+	// authored water parent (DatasmithContent's M_Water) fails to resolve, so
+	// the lake never renders as the flat default material or the checker.
 	static UMaterialInstanceDynamic* BuildWaveMaterial(
 		UStaticMeshComponent& Component, UObject& Owner,
 		UMaterialInterface& MaterialBase,
-		const FSprawlOceanWaveProfile& Profile);
+		const FSprawlOceanWaveProfile& Profile,
+		UMaterialInterface* SafeFallbackBase = nullptr);
 };

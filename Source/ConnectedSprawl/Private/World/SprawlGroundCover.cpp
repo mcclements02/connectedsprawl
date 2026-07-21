@@ -14,6 +14,13 @@ ASprawlGroundCover::ASprawlGroundCover()
 	PrimaryActorTick.bCanEverTick = false;
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 
+	// Blender-authored multi-blade clump (Tools/build_city_kit.py) with a
+	// root->tip vertex-colour ramp; the squashed engine cone remains the
+	// fallback if the kit import has not run.
+	static ConstructorHelpers::FObjectFinderOptional<UStaticMesh> ClumpMesh(
+		TEXT("/Game/Import/CityKit/SM_GrassClump.SM_GrassClump"));
+	static ConstructorHelpers::FObjectFinderOptional<UMaterialInterface> BladeMat(
+		TEXT("/Game/Import/CityKit/M_GrassBlade.M_GrassBlade"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(
 		TEXT("/Engine/BasicShapes/Cone.Cone"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> GrassMat(
@@ -23,13 +30,22 @@ ASprawlGroundCover::ASprawlGroundCover()
 	GrassMesh->SetupAttachment(RootComponent);
 	GrassMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GrassMesh->SetCastShadow(false); // thousands of blades; shadows would be pure cost
-	if (ConeMesh.Succeeded())
+	bUsingClumpMesh = ClumpMesh.Get() != nullptr;
+	if (bUsingClumpMesh)
+	{
+		GrassMesh->SetStaticMesh(ClumpMesh.Get());
+		if (BladeMat.Get())
+		{
+			GrassMesh->SetMaterial(0, BladeMat.Get());
+		}
+	}
+	else if (ConeMesh.Succeeded())
 	{
 		GrassMesh->SetStaticMesh(ConeMesh.Object);
-	}
-	if (GrassMat.Succeeded())
-	{
-		GrassMesh->SetMaterial(0, GrassMat.Object);
+		if (GrassMat.Succeeded())
+		{
+			GrassMesh->SetMaterial(0, GrassMat.Object);
+		}
 	}
 
 	// A few flower meshes ship with the sample scene; use whichever exist.
@@ -93,11 +109,15 @@ void ASprawlGroundCover::PlantParks()
 				Rand.FRandRange(-7.f, 7.f),
 				Rand.FRandRange(0.f, 360.f),
 				Rand.FRandRange(-7.f, 7.f));
-			// Engine cone is 100x100; squash into a thin 25-55cm blade tuft.
-			const FVector Scale(
-				Rand.FRandRange(0.05f, 0.11f),
-				Rand.FRandRange(0.05f, 0.11f),
-				Rand.FRandRange(0.25f, 0.55f));
+			// The authored clump is already blade-shaped at real size, so it
+			// only needs uniform variation; the engine cone fallback still
+			// needs squashing into a thin 25-55cm blade tuft.
+			const FVector Scale = bUsingClumpMesh
+				? FVector(Rand.FRandRange(0.8f, 1.5f))
+				: FVector(
+					Rand.FRandRange(0.05f, 0.11f),
+					Rand.FRandRange(0.05f, 0.11f),
+					Rand.FRandRange(0.25f, 0.55f));
 			GrassMesh->AddInstance(FTransform(Rot, Pos, Scale), /*bWorldSpace=*/true);
 		}
 

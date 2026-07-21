@@ -9,6 +9,7 @@
 #include "Characters/SprawlCharacterRender.h"
 #include "Characters/SprawlCrowdAppearance.h"
 #include "Vehicles/SprawlVehicleDriveLogic.h"
+#include "Vehicles/SprawlOccupantHeadroom.h"
 #include "Vehicles/SprawlVehicleOccupantPlacement.h"
 #include "Vehicles/SprawlVehicleStance.h"
 #include "Vehicles/SprawlVehicleVisualForward.h"
@@ -912,7 +913,24 @@ bool ASprawlCar::ApplySeatedDriverVariant(const FString& VariantName)
 		HideDriverVisual();
 		return false;
 	}
-	DriverMesh->SetRelativeLocationAndRotation(Seat.Location, DriverSeatRotation);
+	// The pelvis clamp alone lets heads poke through low rooflines; fit the
+	// head under the cabin ceiling by sinking the seat and, if needed, a
+	// bounded shrink — or refuse the visual when even that cannot contain it.
+	const FSprawlOccupantHeadroomFit Headroom =
+		FSprawlOccupantHeadroom::Fit(Seat, DriverVisualHeight);
+	if (!Headroom.bValid)
+	{
+		HideDriverVisual();
+		return false;
+	}
+	FVector SeatLocation = Seat.Location;
+	SeatLocation.Z = Headroom.SeatZ;
+	if (Headroom.Scale < 1.f)
+	{
+		DriverMesh->SetRelativeScale3D(
+			DriverMesh->GetRelativeScale3D() * Headroom.Scale);
+	}
+	DriverMesh->SetRelativeLocationAndRotation(SeatLocation, DriverSeatRotation);
 	DriverCurrentAnim = nullptr;
 	FSprawlAvatarLibrary::PlayLoop(DriverMesh, Sit, DriverCurrentAnim);
 	DriverMesh->SetVisibility(true, true);

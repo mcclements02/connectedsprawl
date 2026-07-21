@@ -57,6 +57,8 @@ protected:
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> WaterMaterial;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> ShoreMaterial;
 	UPROPERTY() TObjectPtr<UStaticMesh> LegacyMountainMesh;
+	/** Project-owned translucent master used when MI_WaterPond's DatasmithContent parent is absent. */
+	UPROPERTY() TObjectPtr<UMaterialInterface> SafeWaterFallback;
 
 private:
 	void RebuildGeometry();

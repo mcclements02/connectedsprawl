@@ -31,8 +31,10 @@ public:
 	UPROPERTY(EditAnywhere, Category="GroundCover")
 	TArray<FIntPoint> ParkBlocks = { FIntPoint(1, 5), FIntPoint(2, 2), FIntPoint(5, 5) };
 
-	/** Grass blades per park block. */
-	UPROPERTY(EditAnywhere, Category="GroundCover") int32 GrassPerPark = 1400;
+	/** Grass clumps per park block. Each Blender-authored clump carries 14
+	 *  blades, so fewer instances now cover more ground than the old
+	 *  single-blade cones did at 1400. */
+	UPROPERTY(EditAnywhere, Category="GroundCover") int32 GrassPerPark = 800;
 
 	/** Flowers per park block. */
 	UPROPERTY(EditAnywhere, Category="GroundCover") int32 FlowersPerPark = 26;
@@ -46,6 +48,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category="GroundCover")
 	TArray<TObjectPtr<UHierarchicalInstancedStaticMeshComponent>> FlowerMeshes;
+
+	/** True when the Blender clump mesh loaded (affects instance scaling). */
+	bool bUsingClumpMesh = false;
 
 	void PlantParks();
 };

@@ -4,6 +4,7 @@
 
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
+#include "Characters/ZarriCharacter.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
@@ -12,6 +13,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "SprawlPlayerController.h"
+#include "Vehicles/SprawlCar.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 
 namespace
@@ -92,6 +94,19 @@ void USprawlNativeHUD::BuildUI()
 		Slot->SetAlignment(FVector2D(0.5f, 1.f));
 		Slot->SetPosition(FVector2D(0.f, -34.f));
 		Slot->SetSize(FVector2D(660.f, 68.f));
+	}
+
+	InteractHintBorder = MakeNativeHUDPanel(WidgetTree, TEXT("InteractHintPanel"));
+	InteractHintBorder->SetVisibility(ESlateVisibility::Collapsed);
+	InteractHintText = MakeNativeHUDText(WidgetTree, TEXT("InteractHintText"), 17,
+		FLinearColor(0.95f, 0.92f, 0.55f), ETextJustify::Center);
+	InteractHintBorder->SetContent(InteractHintText);
+	if (UCanvasPanelSlot* Slot = Root->AddChildToCanvas(InteractHintBorder))
+	{
+		Slot->SetAnchors(FAnchors(0.5f, 1.f));
+		Slot->SetAlignment(FVector2D(0.5f, 1.f));
+		Slot->SetPosition(FVector2D(0.f, -116.f));
+		Slot->SetSize(FVector2D(520.f, 52.f));
 	}
 
 	BuildTouchControls(Root);
@@ -398,6 +413,46 @@ void USprawlNativeHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 		TouchModeRefreshAccumulator = 0.f;
 		RefreshTouchButtonLabels();
 	}
+	HintRefreshAccumulator += InDeltaTime;
+	if (HintRefreshAccumulator >= 0.25f)
+	{
+		HintRefreshAccumulator = 0.f;
+		RefreshInteractHint();
+	}
+}
+
+void USprawlNativeHUD::RefreshInteractHint()
+{
+	if (!InteractHintBorder || !InteractHintText)
+	{
+		return;
+	}
+	// Touch platforms surface real ENTER/GAS/BRAKE buttons instead of a hint.
+	if (bTouchControlsBuilt)
+	{
+		InteractHintBorder->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+	APlayerController* PC = GetOwningPlayer();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	FText Hint;
+	if (Cast<ASprawlCar>(Pawn))
+	{
+		Hint = FText::FromString(
+			TEXT("W accelerate  ·  S brake / reverse  ·  E exit"));
+	}
+	else if (const AZarriCharacter* Zarri = Cast<AZarriCharacter>(Pawn);
+		Zarri && Zarri->HasNearbyEnterableVehicle())
+	{
+		Hint = FText::FromString(TEXT("E — enter car and drive"));
+	}
+	if (Hint.IsEmpty())
+	{
+		InteractHintBorder->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+	InteractHintText->SetText(Hint);
+	InteractHintBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 
 void USprawlNativeHUD::NativeRefresh()

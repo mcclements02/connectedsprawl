@@ -42,6 +42,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Zarri")
 	void EnterNearbyVehicle();
 
+	/** True when an enterable vehicle is in reach (drives the HUD hint). */
+	UFUNCTION(BlueprintCallable, Category="Zarri")
+	bool HasNearbyEnterableVehicle() const { return FindNearbyVehicle() != nullptr; }
+
 	/** Possess a specific vehicle; used by interaction and save restoration. */
 	UFUNCTION(BlueprintCallable, Category="Zarri")
 	bool EnterVehicle(ASprawlCar* Vehicle);

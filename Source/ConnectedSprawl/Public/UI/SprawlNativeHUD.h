@@ -67,9 +67,16 @@ private:
 	UPROPERTY() TObjectPtr<UTextBlock> SecondaryLabel;
 	UPROPERTY() TObjectPtr<UTextBlock> InteractLabel;
 
+	void RefreshInteractHint();
+
+	/** Desktop key hint ("E — drive"); touch builds real buttons instead. */
+	UPROPERTY() TObjectPtr<UBorder> InteractHintBorder;
+	UPROPERTY() TObjectPtr<UTextBlock> InteractHintText;
+
 	FSprawlGigStatus CurrentGig;
 	float DistanceRefreshAccumulator = 0.f;
 	float CompletedMessageRemaining = 0.f;
+	float HintRefreshAccumulator = 0.f;
 
 	int32 LookFingerIndex = INDEX_NONE;
 	FVector2D LastLookPosition = FVector2D::ZeroVector;
