@@ -8,6 +8,8 @@ A GTA-style open-world game built in **Unreal Engine 5.8**, starring **Zarri** �
 
 ## 🚗 Setup
 
+0. Run `git lfs install` once per clone — binary assets (`.uasset`, `.umap`,
+   FBX/PNG sources) are stored in Git LFS.
 1. Install Unreal Engine 5.8 and set `UE_ROOT` to that installation:
    ```bash
    export UE_ROOT="/path/to/UE_5.8"

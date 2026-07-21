@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 46 · **Last updated:** 2026-07-20 20:05 PDT · **Updated by:** claude
+**Version:** 47 · **Last updated:** 2026-07-20 20:15 PDT · **Updated by:** claude
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -26,6 +26,27 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-20 · main · claude (Git LFS configured — closes the standing warning)
+- **LFS live (user-authorized):** `git lfs install` wrote its four hooks into
+  the repo's tracked `.githooks/` (core.hooksPath) beside the untouched ledger
+  pre-commit, so every clone gets them. New root `.gitattributes` tracks
+  `*.uasset`/`*.umap` plus binary source art (fbx/abc/png/tga/exr/hdr/psd) and
+  audio (wav/mp3/ogg). Existing files migrate lazily — each converts the next
+  time it is re-staged; history was NOT rewritten (old blobs remain in git).
+- **Three oversized files converted at tip** (all were past GitHub's 50 MB
+  warning band; the largest within 3 MB of the 100 MB hard block):
+  `MHC_Zarri.uasset` 97.5 MB, `jacaranda_tree_2k.uasset` 91.3 MB,
+  `T_Body_N.uasset` 62.5 MB — now LFS pointers, ~251 MB uploaded to LFS
+  storage on push. README gains a `git lfs install` setup step 0.
+- **Quota note:** GitHub free LFS is 1 GiB storage / 1 GiB-month bandwidth.
+  Current usage ~251 MB. As python passes re-save uassets they migrate to LFS
+  and storage grows with churn — watch the quota; data packs are $5/50 GB.
+- **Validation:** `git lfs status`/`ls-files` confirm the three pointers;
+  hooks verified in `.githooks/`; ledger pre-commit intact. No engine build
+  required (no source change).
+- **Status:** committed and pushed to origin/main (user-authorized).
+<!-- entry:git-lfs-configured -->
 
 ### 2026-07-20 · main · claude (city gates, real skyline, full mountain ring — validated)
 - **Root cause of the flat-grey outer buildings found and fixed:** the skyline

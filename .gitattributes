@@ -1,0 +1,24 @@
+# Git LFS tracking for binary-heavy content.
+#
+# Existing committed files migrate to LFS lazily: each converts the next time
+# it is re-staged. The three files that already exceeded GitHub's 50 MB
+# warning band were converted at tip when LFS was configured (2026-07-20).
+# Run `git lfs install` once per clone (ai-sync-install reminds you).
+
+# Unreal binary assets
+*.uasset filter=lfs diff=lfs merge=lfs -text
+*.umap filter=lfs diff=lfs merge=lfs -text
+
+# Binary source art
+*.fbx filter=lfs diff=lfs merge=lfs -text
+*.abc filter=lfs diff=lfs merge=lfs -text
+*.png filter=lfs diff=lfs merge=lfs -text
+*.tga filter=lfs diff=lfs merge=lfs -text
+*.exr filter=lfs diff=lfs merge=lfs -text
+*.hdr filter=lfs diff=lfs merge=lfs -text
+*.psd filter=lfs diff=lfs merge=lfs -text
+
+# Audio
+*.wav filter=lfs diff=lfs merge=lfs -text
+*.mp3 filter=lfs diff=lfs merge=lfs -text
+*.ogg filter=lfs diff=lfs merge=lfs -text
