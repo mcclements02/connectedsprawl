@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 70 · **Last updated:** 2026-07-21 19:32 PDT · **Updated by:** codex
+**Version:** 71 · **Last updated:** 2026-07-21 20:59 PDT · **Updated by:** codex
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -20,12 +20,26 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 | Branch | Worktree | Agent | Status | Summary | Updated |
 |--------|----------|-------|--------|---------|---------|
-| main | `/Users/matthewx/code/ConnectedSprawl` | codex | validated, uncommitted | Prior validated character, vehicle, city, interiors/map, and iOS launch work remains uncommitted. New `USprawlAthleticShoeModule` adds four swappable trainer presets; the fitted shoe follower now uses animated calf/IK position plus body-relative facing so both shoes stay at Zarri's feet during motion. Editor build, complete 7/7 character automation, and real-Metal moving wardrobe audit passed. | 2026-07-21 19:32 PDT |
 
 ## Log (append newest on top)
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-21 · main · codex (validated city/MetaHuman work published)
+- **Published:** committed the accumulated validated city, character, vehicle,
+  interiors/map, wardrobe, athletic-shoe, melee, parking, and iOS launch work as
+  `009c659` (`Expand city systems and MetaHuman characters`) and pushed it to
+  `origin/main`.
+- **Assets:** Git LFS uploaded all 134 new resident, clothing, groom, material,
+  and launch-image objects successfully (608 MB transferred). Generated build
+  output remained ignored except the explicitly authored iOS launch graphic.
+- **Checks before publication:** staged whitespace check and credential-pattern
+  scans passed; the prior feature logs retain their exact editor, automation,
+  runtime-audit, and visual-audit validation records.
+- **Status:** published to `origin/main`; the main worktree was clean after the
+  feature commit, and its completed Active Work row was removed here.
+<!-- entry:validated-city-metahuman-work-published -->
 
 ### 2026-07-21 · main · codex (swappable athletic shoes + animated binding — validated)
 - **Result:** new Blueprint-facing `USprawlAthleticShoeModule` develops four
