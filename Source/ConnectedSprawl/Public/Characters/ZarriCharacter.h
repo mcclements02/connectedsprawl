@@ -17,6 +17,7 @@ class UInputMappingContext;
 class USkeletalMeshComponent;
 class USprawlHumanCharacterModule;
 class USprawlLocomotionComponent;
+class USprawlStreetwearModule;
 class USprawlWardrobeModule;
 class ASprawlCar;
 struct FSprawlMeleeInput;
@@ -82,6 +83,14 @@ public:
 		return HumanCharacter;
 	}
 
+	/** Real clothing physics simulation and fabric solver profile module. */
+	UFUNCTION(BlueprintPure, Category="Zarri|Cloth Physics")
+	class USprawlClothPhysicsModule* GetClothPhysicsModule() const { return ClothPhysics; }
+
+	/** Authored hoodie, bomber, cargo, and beanie presentation. */
+	UFUNCTION(BlueprintPure, Category="Zarri|Streetwear")
+	USprawlStreetwearModule* GetStreetwearModule() const { return Streetwear; }
+
 	/** Asset-independent punch/kick gameplay and replicated attack state. */
 	UFUNCTION(BlueprintPure, Category="Zarri|Melee")
 	USprawlMeleeModule* GetMeleeModule() const { return Melee; }
@@ -132,6 +141,14 @@ protected:
 	/** Complete fitted clothing, shoes/socks, and optional accessory layers. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USprawlWardrobeModule> Wardrobe;
+
+	/** Fits project-owned static streetwear pieces to the live MetaHuman. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<USprawlStreetwearModule> Streetwear;
+
+	/** Real clothing physics simulation and fabric solver profile module. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<class USprawlClothPhysicsModule> ClothPhysics;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USprawlMeleeModule> Melee;

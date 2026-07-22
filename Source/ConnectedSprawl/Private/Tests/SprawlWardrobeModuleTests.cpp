@@ -74,6 +74,17 @@ bool FSprawlWardrobeModuleTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Wardrobe descriptions call out socks"),
 		USprawlWardrobeModule::DescribeOutfit(Zarri).Contains(TEXT("socks")));
 
+	const FSprawlWardrobeOutfit Nanobanana =
+		USprawlWardrobeModule::CreateNanobananaOutfit();
+	TestEqual(TEXT("Nanobanana wears tech bomber outerwear"),
+		Nanobanana.Outerwear, ESprawlWardrobeOuterwear::BomberJacket);
+	TestEqual(TEXT("Nanobanana wears oversized hoodie top"),
+		Nanobanana.Top, ESprawlWardrobeTop::Hoodie);
+	TestEqual(TEXT("Nanobanana wears cargo joggers bottom"),
+		Nanobanana.Bottom, ESprawlWardrobeBottom::Cargo);
+	TestTrue(TEXT("Nanobanana outfit validates cleanly"),
+		USprawlWardrobeModule::ValidateOutfit(Nanobanana, Error));
+
 	FSprawlWardrobeOutfit Invalid = Zarri;
 	Invalid.OutfitId = NAME_None;
 	TestFalse(TEXT("An outfit without an ID is rejected"),

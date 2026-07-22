@@ -201,10 +201,15 @@ The ambient streets are walked by assembled MetaHumans, not mannequins:
   styling. Shoes take position from an independently animated calf/IK anchor
   while retaining body-relative forward facing; the underlying Body foot bones
   can therefore be masked without detaching the pair or turning a running shoe
-  vertically. The two-shoe follower is the only ticking presentation element;
-  all wardrobe pieces remain collision-, navigation-, decal-, and shadow-free.
-  The complete outfit is replicated, so all clients render the same look;
-  Zarri wears the fixed navy/teal Zarri Velocity pair.
+  vertically. Zarri's Nanobanana preset takes a dedicated authored path through
+  `USprawlStreetwearModule`: 45 imported hoodie, tech-bomber, cargo, beanie, and
+  Zarri Velocity mesh assets replace his default shirt and shorts. Bounds-based
+  body fitting and post-animation upper/lower limb followers keep the rigid
+  source art on the live MetaHuman pose; failure to resolve any required asset
+  leaves the fitted defaults intact. The shoe and hero-streetwear followers are
+  the only ticking presentation elements; every generated component remains
+  collision-, navigation-, decal-, and shadow-free. The complete outfit is
+  replicated, so all clients render the same look.
 - **MetaHuman stand, walk, and run animations** come from Epic's installed
   MetaHuman Character locomotion preset and are LOD-synchronized across body,
   face, hair, and grooms. The older CC0 **Universal Animation Library** by

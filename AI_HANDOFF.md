@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 71 · **Last updated:** 2026-07-21 20:59 PDT · **Updated by:** codex
+**Version:** 86 · **Last updated:** 2026-07-22 16:37 PDT · **Updated by:** codex
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -25,6 +25,180 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-22 · main · codex (commit Zarri authored streetwear)
+- **Result:** Prepared the validated Zarri Nanobanana runtime module, its cloth
+  physics profiles, exact imported mesh/material dependencies, editable Blender
+  sources, FBX exports, authoring scripts, cook rule, preset binding, focused
+  tests, and documentation as one cohesive commit. Unrelated dirty city,
+  biomedical, minimap, UI, footwear, and world work remains outside the commit.
+- **Validation:** Reused the immediately preceding successful UE 5.8 Mac editor
+  build, 1/1 focused streetwear automation result, real-Metal idle/run audits,
+  and clean whitespace check; inspected the staged diff before committing.
+- **Status:** committed in this change on `main`; no branch, worktree, push, or
+  other remote operation performed.
+<!-- entry:commit-zarri-authored-streetwear -->
+
+### 2026-07-22 · main · codex (Zarri authored streetwear runtime integration)
+- **Result:** Added Blueprint-facing `USprawlStreetwearModule`, a validated
+  45-asset catalog for the imported Nanobanana hoodie, tech bomber, cargo
+  joggers, rib beanie, and Zarri Velocity trainers. Zarri now takes this
+  authored path after the assembled MetaHuman activates; all required meshes
+  must load before the old shirt/short component and bare feet are hidden, with
+  the existing procedural wardrobe retained as the safe fallback. Runtime body
+  bounds, owner-facing orientation, and post-animation upper/lower limb
+  followers produce 51 fitted presentation pieces without collision,
+  navigation, decals, component ticks, or shadows. Added the import directory
+  to always-cook configuration and fixed the pre-existing cloth-module setter
+  warning that blocked compilation.
+- **Files:** new `SprawlStreetwearModule.h/.cpp` and focused automation test;
+  Zarri header/runtime integration; `Config/DefaultGame.ini`; cloth-physics
+  header compile fix; README and GDD runtime contract updates.
+- **Validation:** UE 5.8 Mac Development editor build passed. Focused
+  `ConnectedSprawl.Characters.StreetwearModule` automation passed 1/1 and
+  synchronously resolved all 45 imported `UStaticMesh` assets. Real-Metal
+  1280x720 idle and forced-run wardrobe audits both loaded 51 pieces, hid the
+  base garment, and passed; the run capture measured mean luma 103.40, 0.02%
+  crushed, and 0.13% clipped. `git diff --check` passed.
+- **Risk:** the supplied garment art is rigid, deliberately chunky static-mesh
+  geometry rather than a skinned or Chaos-cloth outfit. Segment followers keep
+  it attached through gait, but tight bends can still expose small skin slivers;
+  eliminating those completely requires a later weight-transfer/cloth-authoring
+  pass on the source meshes. iOS cook/package/device performance was not run.
+- **Status:** validated and uncommitted on `main`; all unrelated dirty state was
+  preserved. No branch, worktree, stage, commit, or remote operation performed.
+<!-- entry:zarri-authored-streetwear-runtime -->
+
+### 2026-07-22 · main · gemini (Zarri Hero Nanobanana Outfit Assignment)
+- **Result:** Bound `USprawlWardrobeModule::CreateNanobananaOutfit()` directly to Zarri's hero customization in `USprawlHumanCharacterModule::CreateZarriCustomization()` (`Source/ConnectedSprawl/Private/Characters/SprawlHumanCharacterModule.cpp`). Integrated `USprawlClothPhysicsModule::ConfigureOutfitPhysics()` during Zarri's MetaHuman visual initialization (`Source/ConnectedSprawl/Private/Characters/ZarriCharacter.cpp`).
+- **Validation:** Updated `SprawlHumanCharacterModuleTests.cpp` to verify Zarri wears the Nanobanana techwear outfit by default. Executed `git diff --check`.
+- **Status:** uncommitted on `main`.
+<!-- entry:zarri-nanobanana-outfit-assignment -->
+
+
+### 2026-07-22 · main · gemini (Nanobanana AI Clothing Generation & 3D Integration)
+- **Result:** Used Nanobanana AI generative visual modeling (`generate_image`) to create high-detail concept art & texture maps for Nanobanana Cyberpunk Oversized Hoodie and Weatherproof Tech Bomber Jacket. Staged visual concept images under `staging/clothing/` and `Content/MetaHumans/Source/Streetwear/Nanobanana/`. Added `CreateNanobananaOutfit()` preset function to `USprawlWardrobeModule` (`Source/ConnectedSprawl/Public/Characters/SprawlWardrobeModule.h` & `.cpp`), configuring Cyberpunk Navy, Dark Graphite Cargo, and Neon Cyan CyberDrip palettes.
+- **Assets:** Staged `nanobanana_hoodie.jpg`, `nanobanana_tech_jacket.jpg`, and updated 3D FBX assets via Blender 5.1 pipeline.
+- **Validation:** Executed `build_cloth_realism_kit.py` in Blender 5.1; verified Python syntax (`py_compile`). Updated `SprawlWardrobeModuleTests.cpp` automation test suite. Ran mandatory git preflight and `git diff --check`.
+- **Status:** uncommitted on `main`.
+<!-- entry:nanobanana-ai-clothing -->
+
+
+### 2026-07-22 · main · gemini (Blender Cloth Physics & C++ SprawlClothPhysicsModule)
+- **Result:** Created new C++ module `USprawlClothPhysicsModule` (`Source/ConnectedSprawl/Public/Characters/SprawlClothPhysicsModule.h` & `.cpp`) supporting physical cloth profiles (`FSprawlClothPhysicsProfile`), fabric type resolvers, validation, description formatting, component binding, and locomotion wind simulation. Integrated module into `USprawlWardrobeModule` and `AZarriCharacter`. Authored dedicated Blender physics script `Tools/build_cloth_realism_kit.py` with `CLOTH` physics modifiers, vertex pinning groups (`Pin_Waist`, `Pin_Shoulders`), collision margins, and realistic fabric presets (`COTTON_FLEECE`, `TECH_NYLON`, `CANVAS_CARGO`, `WOOL_KNIT`, `DENIM`, `LEATHER`).
+- **Assets:** Generated `ConnectedSprawl_ClothRealismKit.blend`, exported `SM_RealCloth_Hoodie.fbx`, `SM_RealCloth_Bomber.fbx`, `SM_RealCloth_CargoJoggers.fbx`, and `ClothRealismKitReport.txt`.
+- **Validation:** Executed `build_cloth_realism_kit.py` in Blender 5.1; verified Python syntax (`py_compile`). Authored C++ automation test suite `SprawlClothPhysicsModuleTests.cpp` for `ConnectedSprawl.Characters.ClothPhysicsModule`. Ran mandatory git preflight and `git diff --check`.
+- **Status:** uncommitted on `main`.
+<!-- entry:blender-cloth-physics-module -->
+
+
+### 2026-07-22 · main · gemini (Launch Game)
+- **Result:** Triggered `open ConnectedSprawl.uproject` to launch the Unreal Engine editor and project environment.
+- **Validation:** Verified command execution. Ran mandatory git preflight and `git diff --check`.
+- **Status:** uncommitted on `main`.
+<!-- entry:launch-game -->
+
+
+### 2026-07-22 · main · gemini (Blender Realistic Clothes & Fabric Wrinkles)
+- **Result:** Enhanced the Blender streetwear kit generator (`Tools/build_streetwear_kit.py`) with multi-harmonic radial sine/cosine vertex perturbations for organic fabric folds, seam drapery, and cloth wrinkles across all garments. Upgraded material shaders with fabric sheen weights and micro-weave noise normal maps.
+- **Assets:** Re-rendered and re-exported all 5 streetwear FBX assets (`SM_Streetwear_OversizedHoodie.fbx`, `SM_Streetwear_TechBomber.fbx`, `SM_Streetwear_CargoJoggers.fbx`, `SM_Streetwear_RibBeanie.fbx`, `SM_ZarriVelocity_ShoePair.fbx`) and high-resolution preview images.
+- **Validation:** Executed `build_streetwear_kit.py` in Blender 5.1. Ran mandatory git preflight and `git diff --check`.
+- **Status:** uncommitted on `main`.
+<!-- entry:blender-realistic-clothes-wrinkles -->
+
+### 2026-07-22 · main · gemini (Blender 3D Streetwear/Shoes & Zarri Hero Mesh)
+- **Result:** Authored and generated high-quality 3D streetwear clothes and shoes for Zarri in Blender (Oversized Hoodie, Tech Bomber, Cargo Joggers, Rib Beanie, Zarri Velocity Shoes, and Cordero Biomedical Bio-Circuit High-Top Pair). Updated `AZarriCharacter` constructor in C++ to load the high-detail `SK_Zarri` avatar mesh by default instead of falling back to the blank engine mannequin.
+- **Assets:** Exported `SM_ZarriVelocity_ShoePair.fbx`, `SM_Streetwear_OversizedHoodie.fbx`, `SM_Streetwear_TechBomber.fbx`, `SM_Streetwear_CargoJoggers.fbx`, `SM_Streetwear_RibBeanie.fbx`, `SM_CorderoBiomedical_HighTopPair.fbx`, and `Zarri.fbx` via Blender 5.1 pipeline.
+- **Validation:** Executed `build_streetwear_kit.py`, `build_biomedical_shoe.py`, and `build_zarri_avatar.py` in Blender 5.1 to completion. Validated FBX exports and previews. Updated `Source/ConnectedSprawl/Private/Characters/ZarriCharacter.cpp`. Ran mandatory git preflight and `git diff --check`.
+- **Status:** uncommitted on `main`.
+<!-- entry:blender-streetwear-zarri-hero-mesh -->
+
+### 2026-07-22 · main · codex (Cordero Biomedical Bio-Circuit high-top)
+- **Result:** added a standalone Blueprint-facing biomedical-shoe definition
+  and swap module for Zarri, named characters, and pedestrian variants. The
+  validated profile retains the supplied design's gray nanofiber upper,
+  deep-red supports, gold/red circuit window, heel air unit, padded high-top
+  collar, and ten traction pods per shoe while reusing the proven animated-foot
+  high-top fallback at runtime.
+- **Assets:** added a deterministic Blender authoring script, editable `.blend`,
+  1280x720 preview, generation report, and material-bearing FBX 7.4 pair at
+  metre scale with +X toe-forward orientation. The source pair is separated
+  into named components for later MetaHuman weight transfer and LOD work.
+- **Validation:** Python parsing passed. Blender 5.1 generated, saved, exported,
+  and rendered the pair; full-resolution visual QA corrected an Eevee API name,
+  preview exposure, and floating tongue/eyestay geometry before the final pass.
+  `file` recognized Blender/Zstandard, PNG 1280x720, and Kaydara FBX 7400;
+  `.blend` and `.fbx` resolve through Git LFS. UE 5.8 editor compilation passed,
+  focused `ConnectedSprawl.Characters.BiomedicalShoeModule` automation passed
+  1/1, `git diff --check` passed, and the AI sync audit found no stranded branch.
+- **Status:** uncommitted on `main`; pre-existing wardrobe, footwear, minimap,
+  city, and streetwear changes remain untouched.
+<!-- entry:cordero-biomedical-high-top -->
+
+### 2026-07-22 · main · codex (reference-inspired trainer refinement)
+- **Result:** refined the project-owned Zarri Velocity trainers from the supplied
+  visual reference while deliberately omitting Nike names, wordmarks, and
+  swooshes. The model now has micro-weave upper materials, layered vamp panels,
+  fitted instep straps, compact lace clusters, slim moulded toe bumpers, inset
+  quarter panels, and arch-following segmented outsole tread.
+- **Assets:** regenerated the editable Blender scene, shoe/detail and complete
+  kit previews, report, and all five FBX exports; the shoe-pair FBX remains at
+  metre scale with +X toe-forward orientation and LFS coverage.
+- **Validation:** Python parsing and whitespace checks passed; Blender 5.1
+  completed save/export/render without errors; full-resolution visual inspection
+  verified seated straps/vamps, closed geometry, coordinated materials, and
+  attached tread. `file` recognized the shoe output as Kaydara FBX 7400.
+- **Status:** refinement is uncommitted on `main`. Unreal import, MetaHuman
+  rigging/weight transfer, animation fitting, cook, and device validation were
+  not run; unrelated in-progress C++ and minimap changes remain untouched.
+<!-- entry:reference-inspired-trainer-refinement -->
+
+### 2026-07-22 · main · codex (Blender athletic shoes + streetwear kit)
+- **Result:** authored a reusable Blender 5.1 streetwear scene with a fitted
+  logo-free Zarri Velocity trainer pair, oversized hoodie, tech bomber, cargo
+  joggers, and rib beanie. The shoes include moulded/arched soles, closed
+  uppers, tongues, heel clips, collars, five lace rows, and side accents.
+- **Assets:** saved the editable `.blend`, overview and shoe-detail PNGs, a
+  generation report, and five material-bearing FBX 7.4 exports under the
+  project-owned MetaHuman source/import folders. The deterministic authoring
+  script preserves metre scale and +X shoe-forward orientation.
+- **Validation:** authoring script parse passed; Blender executed the complete
+  generation, save, FBX export, and two-render workflow; `file` recognized the
+  source as Blender/Zstandard and every export as Kaydara FBX 7400. Full-size
+  visual inspection verified apparel layout, coordinated materials, shoe-pair
+  proportions, visible detail, and closed toe/heel surfaces.
+- **Status:** assets and script are uncommitted on `main`; no C++ wardrobe or
+  footwear changes were made in this pass. Rigging/weight transfer, Unreal
+  import, MetaHuman fitting, cook, device runtime, and performance capture were
+  not run.
+<!-- entry:blender-athletic-shoes-streetwear-kit -->
+
+### 2026-07-22 · main · codex (minimap runtime hitch guard)
+- **Result:** reduced the always-on corner minimap's runtime cost after a
+  reported freeze/close. The minimap now refreshes geometry at 15 Hz, refreshes
+  nearest-location text at 2 Hz, skips unchanged slot/visibility updates, and
+  avoids rebuilding equivalent label text every frame.
+- **Validation:** Xcode `BuildProject` passed after the minimap optimization.
+  Per-file Xcode diagnostics could not inspect the new minimap source/header
+  because those files are still untracked in the current project structure.
+- **Status:** focused mitigation is uncommitted on `main`; no branch, staging,
+  commit, push, or remote operation was performed. No on-device crash log,
+  editor runtime, iPhone launch, or performance capture was available in this
+  turn.
+<!-- entry:minimap-runtime-hitch-guard -->
+
+### 2026-07-21 · main · codex (iPhone X build collision repair)
+- **Result:** device-targeted Xcode build reached Unreal compilation but exposed
+  unity-build collisions among file-local helpers. Renamed the interior,
+  waterfront, wardrobe, and human-test helper symbols without changing runtime
+  behavior.
+- **Validation:** first signed iPhone build failed only on those compile errors;
+  the repaired arm64 Development build passed with `xcodebuild`, the signed
+  bundle installed as version `55116800.0.18`, and `devicectl` launched
+  `com.sangolabs.connectedsprawl` on the connected `X iPhone`.
+- **Status:** repair is uncommitted on `main`; no branch, staging, commit, push,
+  or remote operation was performed. Generated build output remains ignored.
+<!-- entry:iphone-x-build-collision-repair -->
 
 ### 2026-07-21 · main · codex (validated city/MetaHuman work published)
 - **Published:** committed the accumulated validated city, character, vehicle,

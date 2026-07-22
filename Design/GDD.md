@@ -117,6 +117,7 @@ World
  ├─ USprawlCharacterDeveloper → District roles, schedules, gait, wardrobe, authoring briefs
  ├─ USprawlHumanCharacterModule → Replicated customization plus six-action human state
  ├─ USprawlWardrobeModule → Deterministic fitted layers, palette, shoes, socks, hats
+ ├─ USprawlStreetwearModule → Zarri's imported Nanobanana kit, live bounds/limb fitting
  ├─ USprawlFootwearModule → Human-scale shoe geometry, material layers, safe bone anchors
  ├─ USprawlAthleticShoeModule → Validated swappable trainer presets and runtime cycling
  ├─ FSprawlCrowdMetaHuman → Strict assembled-resident roster, styling, locomotion, LOD
@@ -187,8 +188,14 @@ roughly level through a run cycle even though hidden MetaHuman foot transforms
 freeze. `USprawlAthleticShoeModule` supplies four validated, Blueprint-swappable
 trainer presets and wraps the same footwear replacement path; Zarri defaults to
 the navy/teal Zarri Velocity pair while residents can cycle deterministic
-variants. Added presentation stays non-colliding, shadow-free, decal-free, and
-navigation-free; only the fitted shoe pair ticks for the iPhone crowd budget.
+variants. Zarri's Nanobanana outfit uses `USprawlStreetwearModule` instead of
+that procedural presentation path: all 45 project-owned imported hoodie,
+bomber, cargo, beanie, and Zarri Velocity mesh assets are validated before his
+default garments are hidden. Torso and head pieces follow their nearest
+skeleton anchor; paired post-animation limb segments refit the rigid sleeves
+and cargo legs across elbows and knees. This extra ticking work is hero-only.
+Added presentation stays non-colliding, shadow-free, decal-free, and
+navigation-free for the iPhone crowd budget.
 
 `USprawlMeleeModule` is a separate gameplay contract rather than another
 locomotion state. It gives Zarri explicit Punch/Kick Blueprint calls plus one

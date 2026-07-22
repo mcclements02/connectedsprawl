@@ -94,6 +94,8 @@ bool FSprawlHumanCharacterModuleTest::RunTest(const FString& Parameters)
 		Zarri.LightweightAvatarVariant, FString(TEXT("Zarri")));
 	TestEqual(TEXT("Zarri keeps his assembled hero identity"),
 		Zarri.AppearanceId, FName(TEXT("Zarri")));
+	TestEqual(TEXT("Zarri wears Nanobanana techwear outfit by default"),
+		Zarri.Outfit, USprawlWardrobeModule::CreateNanobananaOutfit());
 
 	TestEqual(TEXT("Zero speed stands"),
 		USprawlHumanCharacterModule::ResolveAction(0.f, false, false, false),

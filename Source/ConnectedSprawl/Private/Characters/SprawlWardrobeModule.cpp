@@ -466,6 +466,27 @@ FSprawlWardrobeOutfit USprawlWardrobeModule::CreateZarriOutfit(int32 Seed)
 	return Result;
 }
 
+FSprawlWardrobeOutfit USprawlWardrobeModule::CreateNanobananaOutfit(int32 Seed)
+{
+	FSprawlWardrobeOutfit Result = DevelopOutfit(
+		ESprawlWardrobeStyle::Streetwear, Seed);
+	Result.OutfitId = FName(*FString::Printf(
+		TEXT("NanobananaTech_%08X"), static_cast<uint32>(Seed)));
+	Result.Top = ESprawlWardrobeTop::Hoodie;
+	Result.Bottom = ESprawlWardrobeBottom::Cargo;
+	Result.Outerwear = ESprawlWardrobeOuterwear::BomberJacket;
+	Result.Headwear = ESprawlWardrobeHeadwear::Beanie;
+	Result.Footwear = ESprawlWardrobeFootwear::HighTopSneakers;
+	Result.Socks = ESprawlWardrobeSocks::Crew;
+	Result.TopColor = FLinearColor(0.04f, 0.07f, 0.16f, 1.f);      // Deep Cyberpunk Navy
+	Result.BottomColor = FLinearColor(0.02f, 0.025f, 0.035f, 1.f);  // Dark Graphite Cargo
+	Result.OuterwearColor = FLinearColor(0.05f, 0.09f, 0.22f, 1.f); // Weatherproof Tech Navy
+	Result.AccentColor = FLinearColor(0.15f, 0.85f, 0.95f, 1.f);   // Neon Cyan CyberDrip
+	Result.ShoeColor = FLinearColor(0.08f, 0.10f, 0.14f, 1.f);     // High-Top Cyber Black
+	Result.SockColor = FLinearColor(0.85f, 0.88f, 0.92f, 1.f);
+	return Result;
+}
+
 bool USprawlWardrobeModule::ValidateOutfit(
 	const FSprawlWardrobeOutfit& Outfit, FString& OutError)
 {

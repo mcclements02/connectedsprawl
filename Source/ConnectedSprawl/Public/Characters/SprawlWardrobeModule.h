@@ -135,6 +135,10 @@ public:
 	UFUNCTION(BlueprintPure, Category="Connected Sprawl|Wardrobe")
 	static FSprawlWardrobeOutfit CreateZarriOutfit(int32 Seed = 20050101);
 
+	/** Nanobanana AI-designed cyberpunk techwear outfit profile. */
+	UFUNCTION(BlueprintPure, Category="Connected Sprawl|Wardrobe")
+	static FSprawlWardrobeOutfit CreateNanobananaOutfit(int32 Seed = 20260722);
+
 	UFUNCTION(BlueprintCallable, Category="Connected Sprawl|Wardrobe")
 	static bool ValidateOutfit(
 		const FSprawlWardrobeOutfit& Outfit, FString& OutError);

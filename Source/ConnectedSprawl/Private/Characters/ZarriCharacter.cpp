@@ -23,10 +23,12 @@
 #include "Animation/AnimSingleNodeInstance.h"
 #include "Characters/SprawlAvatarLibrary.h"
 #include "Characters/SprawlCharacterRender.h"
+#include "Characters/SprawlClothPhysicsModule.h"
 #include "Characters/SprawlHumanCharacterModule.h"
 #include "Characters/SprawlLocomotionComponent.h"
 #include "Characters/SprawlMeleeInput.h"
 #include "Characters/SprawlMeleeModule.h"
+#include "Characters/SprawlStreetwearModule.h"
 #include "Characters/SprawlWardrobeModule.h"
 #include "Engine/Engine.h"
 #include "Phone/PhoneSubsystem.h"
@@ -84,6 +86,8 @@ AZarriCharacter::AZarriCharacter()
 	HumanCharacter = CreateDefaultSubobject<USprawlHumanCharacterModule>(
 		TEXT("HumanCharacter"));
 	Wardrobe = CreateDefaultSubobject<USprawlWardrobeModule>(TEXT("Wardrobe"));
+	Streetwear = CreateDefaultSubobject<USprawlStreetwearModule>(TEXT("Streetwear"));
+	ClothPhysics = CreateDefaultSubobject<USprawlClothPhysicsModule>(TEXT("ClothPhysics"));
 	Melee = CreateDefaultSubobject<USprawlMeleeModule>(TEXT("Melee"));
 
 	MetaHumanVisualComponent = CreateDefaultSubobject<UChildActorComponent>(TEXT("MetaHumanVisual"));
@@ -542,12 +546,24 @@ bool AZarriCharacter::TryInitializeMetaHumanVisual()
 	Locomotion->AlignVisualToOwnerForward();
 	if (Wardrobe && HumanCharacter && HumanCharacter->IsConfigured())
 	{
-		if (!Wardrobe->ApplyToMetaHuman(
-			VisualActor, MetaHumanBodyComponent,
-			HumanCharacter->GetRuntimeState().Customization.Outfit))
+		const FSprawlWardrobeOutfit& HeroOutfit =
+			HumanCharacter->GetRuntimeState().Customization.Outfit;
+		const bool bUseAuthoredStreetwear = Streetwear
+			&& USprawlStreetwearModule::SupportsOutfit(HeroOutfit);
+		const bool bAuthoredStreetwearApplied = bUseAuthoredStreetwear
+			&& Streetwear->ApplyToMetaHuman(
+				VisualActor, MetaHumanBodyComponent, HeroOutfit);
+		if (!bAuthoredStreetwearApplied
+			&& !Wardrobe->ApplyToMetaHuman(
+				VisualActor, MetaHumanBodyComponent, HeroOutfit))
 		{
 			UE_LOG(LogTemp, Warning,
 				TEXT("[Wardrobe] Zarri kept his fitted base garment; an accessory layer was unavailable"));
+		}
+		if (ClothPhysics)
+		{
+			ClothPhysics->ConfigureOutfitPhysics(
+				VisualActor, HeroOutfit);
 		}
 	}
 	AttachEquipmentToVisual(MetaHumanBodyComponent, true);

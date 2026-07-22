@@ -1,0 +1,12 @@
+Connected Sprawl Streetwear Kit
+Editable source: /Users/matthewx/code/ConnectedSprawl/Content/MetaHumans/Source/Streetwear/ConnectedSprawl_StreetwearKit.blend
+Preview: /Users/matthewx/code/ConnectedSprawl/Content/MetaHumans/Source/Streetwear/StreetwearKitPreview.png
+Shoe preview: /Users/matthewx/code/ConnectedSprawl/Content/MetaHumans/Source/Streetwear/ZarriVelocityShoesPreview.png
+Mesh objects: 90
+Base triangles before modifiers: 5300
+Exports:
+- /Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/Streetwear/SM_ZarriVelocity_ShoePair.fbx
+- /Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/Streetwear/SM_Streetwear_OversizedHoodie.fbx
+- /Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/Streetwear/SM_Streetwear_TechBomber.fbx
+- /Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/Streetwear/SM_Streetwear_CargoJoggers.fbx
+- /Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/Streetwear/SM_Streetwear_RibBeanie.fbx

@@ -372,7 +372,7 @@ FSprawlHumanCustomization USprawlHumanCharacterModule::CreateZarriCustomization(
 	Result.SkinTone = ESprawlHumanSkinTone::MediumDeep;
 	Result.HairTexture = ESprawlHumanHairTexture::Coily;
 	Result.Wardrobe = ESprawlWardrobeStyle::Streetwear;
-	Result.Outfit = USprawlWardrobeModule::CreateZarriOutfit(Seed);
+	Result.Outfit = USprawlWardrobeModule::CreateNanobananaOutfit(Seed);
 	Result.HeightCm = 178.f;
 	Result.LightweightAvatarVariant = TEXT("Zarri");
 	Result.bOptimizedMetaHuman = true;

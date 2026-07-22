@@ -1,0 +1,20 @@
+Connected Sprawl - Cloth Physics & Realism Generator Report
+============================================================
+Authoring Engine: Blender 5.1
+Source Scene: /Users/matthewx/code/ConnectedSprawl/Content/MetaHumans/Source/Streetwear/ConnectedSprawl_ClothRealismKit.blend
+Export Directory: /Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/Streetwear
+
+Configured Fabric Physics Presets:
+  - COTTON_FLEECE: Mass=0.42kg, Stretch=15.0, Bending=0.42, Sheen=0.35
+  - TECH_NYLON: Mass=0.18kg, Stretch=45.0, Bending=0.65, Sheen=0.85
+  - CANVAS_CARGO: Mass=0.5kg, Stretch=55.0, Bending=1.2, Sheen=0.2
+  - WOOL_KNIT: Mass=0.35kg, Stretch=8.0, Bending=0.25, Sheen=0.4
+  - DENIM: Mass=0.45kg, Stretch=60.0, Bending=1.1, Sheen=0.25
+  - LEATHER: Mass=0.6kg, Stretch=85.0, Bending=2.2, Sheen=0.6
+
+Authored Garments:
+  - SM_RealCloth_Hoodie (COTTON_FLEECE, Pin_Shoulders)
+  - SM_RealCloth_Bomber (TECH_NYLON, Pin_Shoulders)
+  - SM_RealCloth_CargoJoggers (CANVAS_CARGO, Pin_Waist)
+
+Status: Success
