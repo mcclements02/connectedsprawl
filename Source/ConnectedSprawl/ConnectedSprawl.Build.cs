@@ -21,7 +21,8 @@ public class ConnectedSprawl : ModuleRules
 			"GameplayTasks",
 			"AIModule",
 			"NavigationSystem",
-			"Niagara"
+			"Niagara",
+			"ProceduralMeshComponent"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {

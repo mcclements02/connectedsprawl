@@ -57,7 +57,7 @@ public:
 	/** Claim the driver seat and suspend AI until the player exits. */
 	bool AssignDriver(AZarriCharacter* InDriver);
 
-	/** Eject the visible AI driver, retire the traffic car, and seat Zarri. */
+	/** Eject the logical AI driver, retire the traffic car, and seat Zarri. */
 	bool CarjackDriver(AZarriCharacter* InDriver);
 
 	/** Finalize side effects only after the player controller owns this car. */
@@ -68,7 +68,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Car|Occupant")
 	bool HasVisibleDriver() const;
-	/** True only while the visible driver pelvis remains inside measured bodywork. */
+
+	/** True when a logical occupant is seated and the mounted mesh is suppressed. */
+	UFUNCTION(BlueprintPure, Category="Car|Occupant")
+	bool HasHiddenSeatedDriver() const;
+
+	/** Legacy containment diagnostic; hidden mounted drivers return false. */
 	bool HasContainedDriverVisual() const;
 
 	const FString& GetAIDriverVariant() const { return AIDriverVariant; }
@@ -97,8 +102,16 @@ public:
 
 	/** Invalid edge/topology states stop and ask the manager for a safe recycle. */
 	bool NeedsTrafficRecycle() const { return bNeedsTrafficRecycle; }
+	bool IsGarageEgressActive() const { return bGarageEgressActive; }
 	int32 GetAICompletedTurnCount() const { return AICompletedTurnCount; }
 	int32 GetAICompletedUTurnCount() const { return AICompletedUTurnCount; }
+
+	/**
+	 * Start behind a parking-deck facade and follow a slow driveway path to a
+	 * legal directed lane. Normal traffic routing begins only after the merge.
+	 */
+	bool BeginGarageEgress(FName ExitId, const TArray<FVector>& WorldPath,
+		ESprawlHeading MergeHeading, int32 MergeRoadIndex);
 
 	/** Shared obstruction-tested side-door exit used by Zarri and ejected drivers. */
 	bool FindClearSideExit(float CapsuleRadius, float CapsuleHalfHeight,
@@ -165,7 +178,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<USkeletalMeshComponent> FullSkeletalBodyMesh;
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<UStaticMeshComponent> BodyMesh;
 	UPROPERTY(VisibleAnywhere, Category="Car") TObjectPtr<UStaticMeshComponent> CabinMesh;
-	/** Lightweight pose-only visible occupant; never owns collision or gameplay. */
+	/** Legacy mounted occupant component; policy keeps it hidden and unticked. */
 	UPROPERTY(VisibleAnywhere, Category="Car|Occupant") TObjectPtr<USkeletalMeshComponent> DriverMesh;
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> BodyPaintMeshes;
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> DetailMeshes;
@@ -247,14 +260,22 @@ protected:
 	bool bNeedsTrafficRecycle = false;
 	int32 AICompletedTurnCount = 0;
 	int32 AICompletedUTurnCount = 0;
+	bool bGarageEgressActive = false;
+	FName AIGarageExitId = NAME_None;
+	TArray<FVector> AIGarageEgressPath;
+	int32 AIGarageEgressPoint = INDEX_NONE;
+	ESprawlHeading AIGarageMergeHeading = ESprawlHeading::East;
+	int32 AIGarageMergeRoadIndex = INDEX_NONE;
 
 	/** Lane-follow the road grid: keep lane, obey signals, avoid traffic. */
 	void RunAutoDrive(float DeltaSeconds);
+	/** Low-speed covered-driveway phase before lane following is seeded. */
+	void RunGarageEgress(float DeltaSeconds);
+	void CancelGarageEgress(bool bRequestTrafficRecycle);
 
-	/** Lazily attach one deterministic seated pedestrian to an active traffic car. */
+	/** Lazily assign deterministic logical occupancy to an active traffic car. */
 	void InitializeAIDriverVisual();
-	void ShowSeatedDriver(const FString& VariantName);
-	bool ApplySeatedDriverVariant(const FString& VariantName);
+	void ApplyDriverVisibilityPolicy();
 	void HideDriverVisual();
 	bool AssignDriverInternal(AZarriCharacter* InDriver, bool bResumeAIOnExit);
 	void CompletePendingCarjack();
@@ -290,6 +311,10 @@ protected:
 
 	/** Use cooked split vehicle assets for runtime-spawned traffic when present. */
 	void TryApplyRuntimeVehicleParts();
+	/** Align imported visual geometry to the physics hull's +X forward axis. */
+	void NormalizeExternalVisualForward();
+	/** Rotate direct visual children around the hull without affecting camera or physics. */
+	void ApplyExternalVisualYawCorrection(float CorrectionYawDegrees);
 
 	/**
 	 * Lift or drop the whole visual so its lowest point meets the hull's

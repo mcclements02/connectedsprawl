@@ -239,6 +239,23 @@ bool FSprawlVehicleVisualForwardTest::RunTest(const FString& Parameters)
 			FMath::FindDeltaAngleDegrees(
 				TestCase.ExpectedYaw, Result.RelativeYawDegrees), 0.f, 0.01f);
 	}
+
+	const FRotator AuthoredRotation(7.f, 90.f, -3.f);
+	const FRotator AxleAligned = FSprawlVehicleVisualForward::ResolveAlignedRotation(
+		AuthoredRotation,
+		FVector(-40.f, 100.f, 0.f), FVector(40.f, 100.f, 0.f),
+		FVector(-40.f, -100.f, 0.f), FVector(40.f, -100.f, 0.f));
+	TestNearlyEqual(TEXT("Named axle alignment corrects a stale positive yaw"),
+		FMath::FindDeltaAngleDegrees(-90.f, AxleAligned.Yaw), 0.0, 0.01);
+	TestNearlyEqual(TEXT("Named axle alignment retains authored pitch"),
+		AxleAligned.Pitch, AuthoredRotation.Pitch, 0.01);
+	TestNearlyEqual(TEXT("Named axle alignment retains authored roll"),
+		AxleAligned.Roll, AuthoredRotation.Roll, 0.01);
+
+	const FRotator BlenderAligned =
+		FSprawlVehicleVisualForward::ResolveBlenderYForwardRotation(AuthoredRotation);
+	TestNearlyEqual(TEXT("Blender Y-forward default points at physics forward"),
+		FMath::FindDeltaAngleDegrees(-90.f, BlenderAligned.Yaw), 0.0, 0.01);
 	return true;
 }
 

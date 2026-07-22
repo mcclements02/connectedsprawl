@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "Characters/SprawlMeleeModule.h"
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "ZarriCharacter.generated.h"
@@ -14,8 +15,11 @@ class USpringArmComponent;
 class UInputAction;
 class UInputMappingContext;
 class USkeletalMeshComponent;
+class USprawlHumanCharacterModule;
 class USprawlLocomotionComponent;
+class USprawlWardrobeModule;
 class ASprawlCar;
+struct FSprawlMeleeInput;
 struct FInputActionValue;
 
 /**
@@ -23,7 +27,7 @@ struct FInputActionValue;
  * ---------------
  * Third-person on-foot character. Key interactions:
  *   - Move, look, sprint, jump
- *   - "Interact" to enter the Mobile Office when near it
+ *   - "Interact" to enter buildings or the Mobile Office when near them
  *   - Answer a phone call (scripted, same interact key)
  */
 UCLASS()
@@ -41,6 +45,13 @@ public:
 	/** Look for a nearby vehicle, possess it, leave Zarri behind as an actor. */
 	UFUNCTION(BlueprintCallable, Category="Zarri")
 	void EnterNearbyVehicle();
+
+	/** Phone, building doorway, then nearby vehicle in deterministic priority. */
+	UFUNCTION(BlueprintCallable, Category="Zarri")
+	bool TryContextInteraction();
+
+	/** Building-only context label used by the native desktop HUD. */
+	bool GetBuildingInteractionPrompt(FText& OutPrompt) const;
 
 	/** True when an enterable vehicle is in reach (drives the HUD hint). */
 	UFUNCTION(BlueprintCallable, Category="Zarri")
@@ -61,11 +72,37 @@ public:
 	UFUNCTION(BlueprintPure, Category="Zarri|Appearance")
 	bool IsUsingMetaHumanVisual() const { return bUsingMetaHumanVisual; }
 
+	/** Tight, stable full-body framing used only by -SprawlAuditWardrobe. */
+	void PrepareWardrobeVisualAudit();
+
+	/** Shared identity/action state used by Zarri and every city resident. */
+	UFUNCTION(BlueprintPure, Category="Zarri|Appearance")
+	USprawlHumanCharacterModule* GetHumanCharacterModule() const
+	{
+		return HumanCharacter;
+	}
+
+	/** Asset-independent punch/kick gameplay and replicated attack state. */
+	UFUNCTION(BlueprintPure, Category="Zarri|Melee")
+	USprawlMeleeModule* GetMeleeModule() const { return Melee; }
+
+	UFUNCTION(BlueprintCallable, Category="Zarri|Melee")
+	bool TryPunch();
+
+	UFUNCTION(BlueprintCallable, Category="Zarri|Melee")
+	bool TryKick();
+
+	/** Shared desktop/gamepad/touch action: alternate punch then kick. */
+	UFUNCTION(BlueprintCallable, Category="Zarri|Melee")
+	bool TryMeleeAttack();
+
 	/** Sprint toggle shared by keyboard, gamepad, and the touch HUD. */
 	UFUNCTION(BlueprintCallable, Category="Zarri")
 	void SetSprinting(bool bSprinting);
 
 protected:
+	friend struct FSprawlMeleeInput;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USpringArmComponent> SpringArm;
 
@@ -87,6 +124,17 @@ protected:
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USprawlLocomotionComponent> Locomotion;
+
+	/** Replicated stand/walk/run/talk/sit/drive intent and customization. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<USprawlHumanCharacterModule> HumanCharacter;
+
+	/** Complete fitted clothing, shoes/socks, and optional accessory layers. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<USprawlWardrobeModule> Wardrobe;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<USprawlMeleeModule> Melee;
 
 	// --- Enhanced Input assets (assigned in BP) ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Input")
@@ -170,6 +218,17 @@ protected:
 	TSoftObjectPtr<UAnimSequence> MetaHumanWalkAnim;
 	UPROPERTY(EditAnywhere, Category="Zarri|Appearance|MetaHuman|Animation")
 	TSoftObjectPtr<UAnimSequence> MetaHumanRunAnim;
+	UPROPERTY(EditAnywhere, Category="Zarri|Appearance|MetaHuman|Animation")
+	TSoftObjectPtr<UAnimSequence> MetaHumanTalkAnim;
+	UPROPERTY(EditAnywhere, Category="Zarri|Appearance|MetaHuman|Animation")
+	TSoftObjectPtr<UAnimSequence> MetaHumanSitAnim;
+	UPROPERTY(EditAnywhere, Category="Zarri|Appearance|MetaHuman|Animation")
+	TSoftObjectPtr<UAnimSequence> MetaHumanDriveAnim;
+	/** Optional skeleton-compatible one-shots; gameplay remains active when unset. */
+	UPROPERTY(EditAnywhere, Category="Zarri|Appearance|MetaHuman|Animation")
+	TSoftObjectPtr<UAnimSequence> MetaHumanPunchAnim;
+	UPROPERTY(EditAnywhere, Category="Zarri|Appearance|MetaHuman|Animation")
+	TSoftObjectPtr<UAnimSequence> MetaHumanKickAnim;
 
 	/** Capsule-root-relative transform for the assembled actor (feet at Z=0). */
 	UPROPERTY(EditAnywhere, Category="Zarri|Appearance|MetaHuman")
@@ -188,6 +247,10 @@ protected:
 	UPROPERTY() TObjectPtr<UAnimSequence> HeroWalkAnim;
 	UPROPERTY() TObjectPtr<UAnimSequence> HeroJogAnim;
 	UPROPERTY() TObjectPtr<UAnimSequence> HeroSprintAnim;
+	UPROPERTY() TObjectPtr<UAnimSequence> HeroTalkAnim;
+	UPROPERTY() TObjectPtr<UAnimSequence> HeroSitAnim;
+	UPROPERTY() TObjectPtr<UAnimSequence> HeroPunchAnim;
+	UPROPERTY() TObjectPtr<UAnimSequence> HeroKickAnim;
 	FString ActiveHeroVariant = TEXT("Zarri");
 	bool bHasHeroAvatar = false;
 	bool bUsingMetaHumanVisual = false;
@@ -200,6 +263,16 @@ protected:
 	TObjectPtr<UAnimSequence> LoadedMetaHumanWalkAnim;
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimSequence> LoadedMetaHumanRunAnim;
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimSequence> LoadedMetaHumanTalkAnim;
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimSequence> LoadedMetaHumanSitAnim;
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimSequence> LoadedMetaHumanDriveAnim;
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimSequence> LoadedMetaHumanPunchAnim;
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimSequence> LoadedMetaHumanKickAnim;
 
 	float LastLookInputTime = -100.f;
 
@@ -248,8 +321,18 @@ protected:
 	void HandleStopSprint(const FInputActionValue& Value);
 	void HandleInteract(const FInputActionValue& Value);
 
+	UFUNCTION()
+	void HandleMeleeAttackStarted(
+		ESprawlMeleeAttack Attack, float RecoverySeconds, bool bHitCharacter);
+
 	/** Legacy direct key handler — reliable interact regardless of Enhanced Input. */
 	void OnInteractKey();
+
+	/** Pawn-layer melee route used by keyboard X and the gamepad X button. */
+	void OnMeleeKey();
+
+	/** -SprawlMeleeInputAudit: verify live pawn bindings and first attack. */
+	void RunMeleeInputAudit();
 
 	ASprawlCar* FindNearbyVehicle() const;
 };

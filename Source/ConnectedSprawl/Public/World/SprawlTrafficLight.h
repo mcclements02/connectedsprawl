@@ -11,14 +11,14 @@
 
 class UStaticMeshComponent;
 class UMaterialInstanceDynamic;
+class USceneComponent;
 
 /**
  * ASprawlTrafficLight
  * -------------------
- * A signal pole for one intersection: a vertical pole on the corner with two
- * lamp heads, one facing north/south traffic and one facing east/west. Each
- * head is a single lamp whose color tracks that axis' phase (green / amber /
- * red). Drop it near IntersectionCenter(Ix, Iy); it figures the rest out.
+ * A complete signal set for one intersection: four sidewalk-corner poles,
+ * each with a north/south and east/west three-lens head. The actor owns only
+ * visuals; its colors always query the authoritative city-grid signal phase.
  */
 UCLASS()
 class CONNECTEDSPRAWL_API ASprawlTrafficLight : public AActor
@@ -35,19 +35,37 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Signal") int32 IntersectionX = -1;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Signal") int32 IntersectionY = -1;
 
-protected:
-	UPROPERTY(VisibleAnywhere, Category="Signal") TObjectPtr<UStaticMeshComponent> Pole;
-	UPROPERTY(VisibleAnywhere, Category="Signal") TObjectPtr<UStaticMeshComponent> HeadNS;
-	UPROPERTY(VisibleAnywhere, Category="Signal") TObjectPtr<UStaticMeshComponent> HeadEW;
-	UPROPERTY(VisibleAnywhere, Category="Signal") TObjectPtr<UStaticMeshComponent> LampNS;
-	UPROPERTY(VisibleAnywhere, Category="Signal") TObjectPtr<UStaticMeshComponent> LampEW;
+	/** Move the actor to the logical intersection centre, retaining its phase IDs. */
+	void SnapToIntersection(float GroundZ = 14.f);
 
-	UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> LampMatNS;
-	UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> LampMatEW;
+protected:
+	UPROPERTY(VisibleAnywhere, Category="Signal") TObjectPtr<USceneComponent> SignalRoot;
+	UPROPERTY(VisibleAnywhere, Category="Signal") TArray<TObjectPtr<UStaticMeshComponent>> Poles;
+	UPROPERTY(VisibleAnywhere, Category="Signal") TArray<TObjectPtr<UStaticMeshComponent>> HeadsNS;
+	UPROPERTY(VisibleAnywhere, Category="Signal") TArray<TObjectPtr<UStaticMeshComponent>> HeadsEW;
+	UPROPERTY(VisibleAnywhere, Category="Signal") TArray<TObjectPtr<UStaticMeshComponent>> RedLampsNS;
+	UPROPERTY(VisibleAnywhere, Category="Signal") TArray<TObjectPtr<UStaticMeshComponent>> AmberLampsNS;
+	UPROPERTY(VisibleAnywhere, Category="Signal") TArray<TObjectPtr<UStaticMeshComponent>> GreenLampsNS;
+	UPROPERTY(VisibleAnywhere, Category="Signal") TArray<TObjectPtr<UStaticMeshComponent>> RedLampsEW;
+	UPROPERTY(VisibleAnywhere, Category="Signal") TArray<TObjectPtr<UStaticMeshComponent>> AmberLampsEW;
+	UPROPERTY(VisibleAnywhere, Category="Signal") TArray<TObjectPtr<UStaticMeshComponent>> GreenLampsEW;
+
+	UPROPERTY() TArray<TObjectPtr<UMaterialInstanceDynamic>> RedMatsNS;
+	UPROPERTY() TArray<TObjectPtr<UMaterialInstanceDynamic>> AmberMatsNS;
+	UPROPERTY() TArray<TObjectPtr<UMaterialInstanceDynamic>> GreenMatsNS;
+	UPROPERTY() TArray<TObjectPtr<UMaterialInstanceDynamic>> RedMatsEW;
+	UPROPERTY() TArray<TObjectPtr<UMaterialInstanceDynamic>> AmberMatsEW;
+	UPROPERTY() TArray<TObjectPtr<UMaterialInstanceDynamic>> GreenMatsEW;
 
 	ESprawlSignal LastNS = ESprawlSignal::Red;
 	ESprawlSignal LastEW = ESprawlSignal::Red;
 	bool bFirstUpdate = true;
 
-	void ApplySignalColor(UMaterialInstanceDynamic* Mat, ESprawlSignal Signal) const;
+	void ResolveIntersectionIndices();
+	void ApplySignalState(const TArray<TObjectPtr<UMaterialInstanceDynamic>>& RedMats,
+		const TArray<TObjectPtr<UMaterialInstanceDynamic>>& AmberMats,
+		const TArray<TObjectPtr<UMaterialInstanceDynamic>>& GreenMats,
+		ESprawlSignal Signal) const;
+	void ApplyLensColor(UMaterialInstanceDynamic* Mat, const FLinearColor& Color,
+		bool bActive) const;
 };

@@ -4,15 +4,18 @@
 #include "AI/SprawlPedestrian.h"
 #include "AI/SprawlTrafficLaneDiscipline.h"
 #include "AI/SprawlTrafficRoute.h"
+#include "Characters/SprawlCrowdMetaHuman.h"
 #include "Characters/ZarriCharacter.h"
 #include "Components/PrimitiveComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
+#include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Vehicles/SprawlCar.h"
 #include "World/SprawlCityGridSubsystem.h"
+#include "World/SprawlParkingGarage.h"
 #include "HAL/PlatformMisc.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -21,9 +24,16 @@ DEFINE_LOG_CATEGORY_STATIC(LogSprawlTrafficAudit, Log, All);
 
 namespace
 {
+constexpr float CarjackAuditTimeoutSeconds = 40.f;
+
 bool IsTrafficSpawnClear(UWorld* World, const FVector& Location,
-	const FQuat& Rotation, const AActor* IgnoredActor)
+	const FQuat& Rotation, const AActor* IgnoredActor,
+	AActor** OutBlockingActor = nullptr)
 {
+	if (OutBlockingActor)
+	{
+		*OutBlockingActor = nullptr;
+	}
 	if (!World)
 	{
 		return false;
@@ -37,8 +47,72 @@ bool IsTrafficSpawnClear(UWorld* World, const FVector& Location,
 	{
 		Params.AddIgnoredActor(IgnoredActor);
 	}
-	return !World->OverlapAnyTestByObjectType(Location, Rotation, Objects,
+	TArray<FOverlapResult> Overlaps;
+	const bool bBlocked = World->OverlapMultiByObjectType(
+		Overlaps, Location, Rotation, Objects,
 		FCollisionShape::MakeBox(FVector(330.f, 125.f, 90.f)), Params);
+	if (bBlocked && OutBlockingActor)
+	{
+		for (const FOverlapResult& Overlap : Overlaps)
+		{
+			if (AActor* Actor = Overlap.GetActor())
+			{
+				*OutBlockingActor = Actor;
+				break;
+			}
+		}
+	}
+	return !bBlocked;
+}
+
+bool IsGarageExitClear(UWorld* World, const FSprawlParkingGarageExit& Exit,
+	const ASprawlParkingGarage* Garage)
+{
+	if (!World || !Garage || !Exit.IsValid())
+	{
+		return false;
+	}
+	AActor* Blocker = nullptr;
+	auto ReportBlocker = [&](const TCHAR* Phase, int32 PointIndex,
+		const FVector& Location)
+	{
+		static TSet<FString> Reported;
+		const FString Key = FString::Printf(TEXT("%s:%s:%d"),
+			*Exit.Id.ToString(), Phase, PointIndex);
+		if (!Reported.Contains(Key))
+		{
+			Reported.Add(Key);
+			UE_LOG(LogTemp, Warning,
+				TEXT("[TrafficGarage] exit=%s blocked_at=%s[%d] location=(%.0f,%.0f) by=%s"),
+				*Exit.Id.ToString(), Phase, PointIndex, Location.X, Location.Y,
+				Blocker ? *Blocker->GetName() : TEXT("<component>"));
+		}
+	};
+	if (!IsTrafficSpawnClear(World, Exit.SpawnTransform.GetLocation(),
+		Exit.SpawnTransform.GetRotation(), Garage, &Blocker))
+	{
+		ReportBlocker(TEXT("spawn"), 0, Exit.SpawnTransform.GetLocation());
+		return false;
+	}
+
+	FVector Previous = Exit.SpawnTransform.GetLocation();
+	for (int32 PointIndex = 0; PointIndex < Exit.DeparturePath.Num(); ++PointIndex)
+	{
+		const FVector& Point = Exit.DeparturePath[PointIndex];
+		FVector Direction = Point - Previous;
+		Direction.Z = 0.f;
+		const FQuat Rotation = Direction.IsNearlyZero()
+			? Exit.SpawnTransform.GetRotation()
+			: Direction.Rotation().Quaternion();
+		Blocker = nullptr;
+		if (!IsTrafficSpawnClear(World, Point, Rotation, Garage, &Blocker))
+		{
+			ReportBlocker(TEXT("path"), PointIndex, Point);
+			return false;
+		}
+		Previous = Point;
+	}
+	return true;
 }
 }
 
@@ -201,8 +275,8 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 	int32 EnterableCarsThisSample = 0;
 	int32 BoundaryViolationsThisSample = 0;
 	int32 UprightViolationsThisSample = 0;
-	int32 VisibleDriversThisSample = 0;
-	int32 OutsideDriversThisSample = 0;
+	int32 HiddenDriversThisSample = 0;
+	int32 VisibleDriverViolationsThisSample = 0;
 	int32 DriverReadyCarsThisSample = 0;
 	int32 CompletedTurnsThisSample = 0;
 	int32 CompletedUTurnsThisSample = 0;
@@ -230,13 +304,13 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 		if (Car->HasAIDriver())
 		{
 			++DriverReadyCarsThisSample;
+			if (Car->HasHiddenSeatedDriver())
+			{
+				++HiddenDriversThisSample;
+			}
 			if (Car->HasVisibleDriver())
 			{
-				++VisibleDriversThisSample;
-				if (!Car->HasContainedDriverVisual())
-				{
-					++OutsideDriversThisSample;
-				}
+				++VisibleDriverViolationsThisSample;
 			}
 		}
 		Cars.Add(Car);
@@ -367,19 +441,19 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 		TrafficAuditMaxBoundaryViolations, BoundaryViolationsThisSample);
 	TrafficAuditMaxUprightViolations = FMath::Max(
 		TrafficAuditMaxUprightViolations, UprightViolationsThisSample);
-	TrafficAuditMaxVisibleDrivers = FMath::Max(
-		TrafficAuditMaxVisibleDrivers, VisibleDriversThisSample);
-	TrafficAuditMaxOutsideDrivers = FMath::Max(
-		TrafficAuditMaxOutsideDrivers, OutsideDriversThisSample);
+	TrafficAuditMaxHiddenDrivers = FMath::Max(
+		TrafficAuditMaxHiddenDrivers, HiddenDriversThisSample);
+	TrafficAuditMaxVisibleDriverViolations = FMath::Max(
+		TrafficAuditMaxVisibleDriverViolations, VisibleDriverViolationsThisSample);
 	TrafficAuditMaxCompletedTurns = FMath::Max(
 		TrafficAuditMaxCompletedTurns, CompletedTurnsThisSample);
 	TrafficAuditMaxCompletedUTurns = FMath::Max(
 		TrafficAuditMaxCompletedUTurns, CompletedUTurnsThisSample);
 	if (TrafficAuditElapsed >= 5.f)
 	{
-		TrafficAuditMaxMissingDriversAfterWarmup = FMath::Max(
-			TrafficAuditMaxMissingDriversAfterWarmup,
-			DriverReadyCarsThisSample - VisibleDriversThisSample);
+		TrafficAuditMaxMissingHiddenDriversAfterWarmup = FMath::Max(
+			TrafficAuditMaxMissingHiddenDriversAfterWarmup,
+			DriverReadyCarsThisSample - HiddenDriversThisSample);
 	}
 	for (const TPair<int32, int32>& Pair : IntersectionOccupancy)
 	{
@@ -397,6 +471,7 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 
 	int32 PedestrianCount = 0;
 	int32 RealAvatarCount = 0;
+	TSet<FName> ActiveMetaHumanIdentities;
 	for (TActorIterator<ASprawlPedestrian> It(World); It; ++It)
 	{
 		ASprawlPedestrian* Pedestrian = *It;
@@ -404,6 +479,7 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 		if (Pedestrian->HasRealAvatar())
 		{
 			++RealAvatarCount;
+			ActiveMetaHumanIdentities.Add(Pedestrian->GetAppearanceId());
 		}
 		const TWeakObjectPtr<ASprawlPedestrian> PedKey(Pedestrian);
 		float& OffRoadDuration = TrafficAuditPedOffRoadDurations.FindOrAdd(PedKey);
@@ -424,12 +500,27 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 	}
 	TrafficAuditMaxPedestrians = FMath::Max(TrafficAuditMaxPedestrians, PedestrianCount);
 	TrafficAuditMaxRealAvatars = FMath::Max(TrafficAuditMaxRealAvatars, RealAvatarCount);
+	TrafficAuditMaxDistinctMetaHumans = FMath::Max(
+		TrafficAuditMaxDistinctMetaHumans, ActiveMetaHumanIdentities.Num());
+	if (TrafficAuditElapsed >= 5.f)
+	{
+		TrafficAuditMaxNonMetaHumansAfterWarmup = FMath::Max(
+			TrafficAuditMaxNonMetaHumansAfterWarmup,
+			PedestrianCount - RealAvatarCount);
+	}
 
 	if (TrafficAuditElapsed < 30.f)
 	{
 		return;
 	}
 	bTrafficAuditComplete = true;
+	const int32 MetaHumanCap =
+		FSprawlCrowdMetaHuman::PopulationCap(PLATFORM_IOS != 0);
+	const int32 RequiredPedestrians = PLATFORM_IOS
+		? FMath::Min(2, MetaHumanCap)
+		: FMath::Max(1, MetaHumanCap - 2);
+	const int32 RequiredDistinctMetaHumans =
+		FMath::Min(3, RequiredPedestrians);
 	const bool bPassed = TrafficAuditPeakCars >= 10
 		&& TrafficAuditPeakTotalCars >= 45
 		&& TrafficAuditMaxEnterableCars >= 30
@@ -443,11 +534,13 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 		&& TrafficAuditMinSpacing >= 220.f
 		&& TrafficAuditLaneViolators.IsEmpty()
 		&& TrafficAuditWrongWayViolators.IsEmpty()
-		&& TrafficAuditMaxPedestrians >= 20
-		&& TrafficAuditMaxRealAvatars >= 20
-		&& TrafficAuditMaxVisibleDrivers >= 10
-		&& TrafficAuditMaxOutsideDrivers == 0
-		&& TrafficAuditMaxMissingDriversAfterWarmup == 0
+		&& TrafficAuditMaxPedestrians >= RequiredPedestrians
+		&& TrafficAuditMaxRealAvatars >= RequiredPedestrians
+		&& TrafficAuditMaxDistinctMetaHumans >= RequiredDistinctMetaHumans
+		&& TrafficAuditMaxNonMetaHumansAfterWarmup == 0
+		&& TrafficAuditMaxHiddenDrivers >= 10
+		&& TrafficAuditMaxVisibleDriverViolations == 0
+		&& TrafficAuditMaxMissingHiddenDriversAfterWarmup == 0
 		&& TrafficAuditPedOffsideViolators.IsEmpty();
 	bTrafficAuditPassed = bPassed;
 	const TCHAR* Result = bPassed ? TEXT("PASS") : TEXT("FAIL");
@@ -458,9 +551,10 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 				"boundary_violators=%d upright_violators=%d moved=%d signal_stops=%d wheel_cars=%d "
 				"max_box_occupancy=%d unauthorized_entries=%d min_spacing=%.1f "
 				"lane_violators=%d wrong_way=%d turns=%d uturns=%d "
-				"route_recycles=%d spawn_route_rejects=%d "
-				"pedestrians=%d real_avatars=%d visible_drivers=%d "
-				"outside_drivers=%d missing_drivers=%d ped_offside=%d"),
+				"route_recycles=%d spawn_route_rejects=%d garage_spawns=%d garage_blocked=%d "
+				"pedestrians=%d metahumans=%d distinct_metahumans=%d non_metahumans=%d "
+				"hidden_drivers=%d "
+				"visible_driver_violations=%d missing_hidden_drivers=%d ped_offside=%d"),
 			Result, TrafficAuditPeakCars, TrafficAuditPeakTotalCars,
 			TrafficAuditMaxEnterableCars, TrafficAuditMaxBoundaryViolations,
 			TrafficAuditMaxUprightViolations, TrafficAuditMovedCars.Num(),
@@ -469,10 +563,13 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 			TrafficAuditMinSpacing, TrafficAuditLaneViolators.Num(),
 			TrafficAuditWrongWayViolators.Num(), TrafficAuditMaxCompletedTurns,
 			TrafficAuditMaxCompletedUTurns, TrafficRouteRecycles,
-			TrafficSpawnRouteRejects,
+			TrafficSpawnRouteRejects, TrafficGarageSpawnSuccesses,
+			TrafficGarageBlockedExits,
 			TrafficAuditMaxPedestrians, TrafficAuditMaxRealAvatars,
-			TrafficAuditMaxVisibleDrivers, TrafficAuditMaxOutsideDrivers,
-			TrafficAuditMaxMissingDriversAfterWarmup,
+			TrafficAuditMaxDistinctMetaHumans,
+			TrafficAuditMaxNonMetaHumansAfterWarmup,
+			TrafficAuditMaxHiddenDrivers, TrafficAuditMaxVisibleDriverViolations,
+			TrafficAuditMaxMissingHiddenDriversAfterWarmup,
 			TrafficAuditPedOffsideViolators.Num());
 	}
 	else
@@ -482,9 +579,10 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 				"boundary_violators=%d upright_violators=%d moved=%d signal_stops=%d wheel_cars=%d "
 				"max_box_occupancy=%d unauthorized_entries=%d min_spacing=%.1f "
 				"lane_violators=%d wrong_way=%d turns=%d uturns=%d "
-				"route_recycles=%d spawn_route_rejects=%d "
-				"pedestrians=%d real_avatars=%d visible_drivers=%d "
-				"outside_drivers=%d missing_drivers=%d ped_offside=%d"),
+				"route_recycles=%d spawn_route_rejects=%d garage_spawns=%d garage_blocked=%d "
+				"pedestrians=%d metahumans=%d distinct_metahumans=%d non_metahumans=%d "
+				"hidden_drivers=%d "
+				"visible_driver_violations=%d missing_hidden_drivers=%d ped_offside=%d"),
 			Result, TrafficAuditPeakCars, TrafficAuditPeakTotalCars,
 			TrafficAuditMaxEnterableCars, TrafficAuditMaxBoundaryViolations,
 			TrafficAuditMaxUprightViolations, TrafficAuditMovedCars.Num(),
@@ -493,10 +591,13 @@ void AProceduralTrafficManager::RunTrafficAudit(float DeltaSeconds)
 			TrafficAuditMinSpacing, TrafficAuditLaneViolators.Num(),
 			TrafficAuditWrongWayViolators.Num(), TrafficAuditMaxCompletedTurns,
 			TrafficAuditMaxCompletedUTurns, TrafficRouteRecycles,
-			TrafficSpawnRouteRejects,
+			TrafficSpawnRouteRejects, TrafficGarageSpawnSuccesses,
+			TrafficGarageBlockedExits,
 			TrafficAuditMaxPedestrians, TrafficAuditMaxRealAvatars,
-			TrafficAuditMaxVisibleDrivers, TrafficAuditMaxOutsideDrivers,
-			TrafficAuditMaxMissingDriversAfterWarmup,
+			TrafficAuditMaxDistinctMetaHumans,
+			TrafficAuditMaxNonMetaHumansAfterWarmup,
+			TrafficAuditMaxHiddenDrivers, TrafficAuditMaxVisibleDriverViolations,
+			TrafficAuditMaxMissingHiddenDriversAfterWarmup,
 			TrafficAuditPedOffsideViolators.Num());
 	}
 	RequestAuditExitIfComplete();
@@ -516,7 +617,7 @@ void AProceduralTrafficManager::RunCarjackAudit(float DeltaSeconds)
 	{
 		if (CarjackAuditElapsed < 2.f)
 		{
-			return; // allow lazy driver visuals to initialize
+			return; // allow lazy logical driver state to initialize
 		}
 
 		AZarriCharacter* Zarri = Cast<AZarriCharacter>(PC->GetPawn());
@@ -524,7 +625,7 @@ void AProceduralTrafficManager::RunCarjackAudit(float DeltaSeconds)
 		for (APawn* Pawn : ActiveTraffic)
 		{
 			ASprawlCar* Car = Cast<ASprawlCar>(Pawn);
-			if (Car && Car->HasAIDriver() && Car->HasVisibleDriver()
+			if (Car && Car->HasAIDriver() && Car->HasHiddenSeatedDriver()
 				&& !Car->HasActiveIntersectionReservation())
 			{
 				Candidate = Car;
@@ -534,7 +635,7 @@ void AProceduralTrafficManager::RunCarjackAudit(float DeltaSeconds)
 
 		if (!Zarri || !Candidate)
 		{
-			if (CarjackAuditElapsed >= 20.f)
+			if (CarjackAuditElapsed >= CarjackAuditTimeoutSeconds)
 			{
 				bCarjackAuditComplete = true;
 				UE_LOG(LogSprawlTrafficAudit, Error,
@@ -555,7 +656,7 @@ void AProceduralTrafficManager::RunCarjackAudit(float DeltaSeconds)
 			- Candidate->GetActorRightVector() * 190.f + FVector(0.f, 0.f, 100.f);
 		if (!Candidate->FindClearSideExit(40.f, 92.f, EntryPoint, Zarri, true))
 		{
-			if (CarjackAuditElapsed >= 20.f)
+			if (CarjackAuditElapsed >= CarjackAuditTimeoutSeconds)
 			{
 				bCarjackAuditComplete = true;
 				UE_LOG(LogSprawlTrafficAudit, Error,
@@ -575,7 +676,7 @@ void AProceduralTrafficManager::RunCarjackAudit(float DeltaSeconds)
 
 		if (!Candidate->CanBeCarjacked() || !Zarri->EnterVehicle(Candidate))
 		{
-			if (CarjackAuditElapsed >= 20.f)
+			if (CarjackAuditElapsed >= CarjackAuditTimeoutSeconds)
 			{
 				bCarjackAuditComplete = true;
 				UE_LOG(LogSprawlTrafficAudit, Error,
@@ -605,7 +706,11 @@ void AProceduralTrafficManager::RunCarjackAudit(float DeltaSeconds)
 	ASprawlPedestrian* EjectedDriver = ClaimedCar
 		? ClaimedCar->GetLastEjectedDriver() : nullptr;
 	if (EjectedDriver && EjectedDriver->IsFleeing()
-		&& EjectedDriver->GetActiveVariant() == CarjackAuditDriverVariant)
+		&& EjectedDriver->GetActiveVariant() == CarjackAuditDriverVariant
+		&& EjectedDriver->IsUsingMetaHumanVisual()
+		&& !EjectedDriver->GetRequestedAppearanceId().IsNone()
+		&& EjectedDriver->GetAppearanceId()
+			== EjectedDriver->GetRequestedAppearanceId())
 	{
 		bCarjackAuditSawFleeingDriver = true;
 	}
@@ -616,14 +721,27 @@ void AProceduralTrafficManager::RunCarjackAudit(float DeltaSeconds)
 		&& RetiredTraffic.Contains(ClaimedCar);
 	const bool bLeaseFree = ClaimedCar
 		&& !ClaimedCar->HasActiveIntersectionReservation();
-	const bool bBackfilled = ActiveTraffic.Num() >= TargetActiveCount;
+	bool bGarageDeparturePending = false;
+	for (const APawn* Pawn : ActiveTraffic)
+	{
+		if (const ASprawlCar* Car = Cast<ASprawlCar>(Pawn);
+			Car && Car->IsGarageEgressActive())
+		{
+			bGarageDeparturePending = true;
+			break;
+		}
+	}
+	const bool bBackfilled = ActiveTraffic.Num() >= TargetActiveCount
+		&& TrafficGarageSpawnSuccesses > 0 && !bGarageDeparturePending;
 	const bool bPedestrianStable = PedestrianCountAfter
 		>= CarjackAuditPedestrianCountBefore;
 	const bool bPassed = bPossessed && bRetired && bLeaseFree && bBackfilled
 		&& bFleeingDriverFound && bPedestrianStable
 		&& ClaimedCar && !ClaimedCar->bAutoDrive && !ClaimedCar->HasAIDriver();
 
-	if (!bPassed && CarjackAuditElapsed - CarjackAuditTriggerTime < 20.f)
+	if (!bPassed
+		&& CarjackAuditElapsed - CarjackAuditTriggerTime
+			< CarjackAuditTimeoutSeconds)
 	{
 		return;
 	}
@@ -634,8 +752,10 @@ void AProceduralTrafficManager::RunCarjackAudit(float DeltaSeconds)
 	{
 		UE_LOG(LogSprawlTrafficAudit, Display,
 			TEXT("[CarjackAudit] PASS possessed=%d fleeing_driver=%d lease_free=%d "
-				"retired=%d backfilled=%d active=%d target=%d peds_before=%d peds_after=%d"),
+				"retired=%d backfilled=%d garage_spawns=%d garage_pending=%d "
+				"active=%d target=%d peds_before=%d peds_after=%d"),
 			bPossessed, bFleeingDriverFound, bLeaseFree, bRetired, bBackfilled,
+			TrafficGarageSpawnSuccesses, bGarageDeparturePending,
 			ActiveTraffic.Num(), TargetActiveCount,
 			CarjackAuditPedestrianCountBefore, PedestrianCountAfter);
 	}
@@ -643,8 +763,10 @@ void AProceduralTrafficManager::RunCarjackAudit(float DeltaSeconds)
 	{
 		UE_LOG(LogSprawlTrafficAudit, Error,
 			TEXT("[CarjackAudit] FAIL possessed=%d fleeing_driver=%d lease_free=%d "
-				"retired=%d backfilled=%d active=%d target=%d peds_before=%d peds_after=%d"),
+				"retired=%d backfilled=%d garage_spawns=%d garage_pending=%d "
+				"active=%d target=%d peds_before=%d peds_after=%d"),
 			bPossessed, bFleeingDriverFound, bLeaseFree, bRetired, bBackfilled,
+			TrafficGarageSpawnSuccesses, bGarageDeparturePending,
 			ActiveTraffic.Num(), TargetActiveCount,
 			CarjackAuditPedestrianCountBefore, PedestrianCountAfter);
 	}
@@ -663,6 +785,12 @@ void AProceduralTrafficManager::Evaluate()
 
 void AProceduralTrafficManager::CullDistant(const FVector& PlayerLoc)
 {
+	// A replacement now has one physical source instead of teleporting into an
+	// annulus. Keep the fixed-size traffic pool alive across the whole playable
+	// city so a garage car is not deleted merely because Zarri is across town.
+	// This changes retention distance, never the TargetActiveCount actor budget.
+	const float ManagedTrafficCullRadius = FMath::Max(
+		SpawnRadius, Grid::CityBoundaryHalfExtent * 2.85f);
 	for (int32 i = ActiveTraffic.Num() - 1; i >= 0; --i)
 	{
 		APawn* P = ActiveTraffic[i];
@@ -692,7 +820,7 @@ void AProceduralTrafficManager::CullDistant(const FVector& PlayerLoc)
 		}
 
 		const float D = FVector::Dist(P->GetActorLocation(), PlayerLoc);
-		if (D > SpawnRadius)
+		if (D > ManagedTrafficCullRadius)
 		{
 			P->Destroy();
 			ActiveTraffic.RemoveAtSwap(i);
@@ -780,87 +908,77 @@ void AProceduralTrafficManager::CullDistant(const FVector& PlayerLoc)
 void AProceduralTrafficManager::SpawnNeeded(const FVector& PlayerLoc)
 {
 	UWorld* World = GetWorld();
-	if (!World) return;
-
-	int32 Attempts = 0;
-	while (ActiveTraffic.Num() < TargetActiveCount && Attempts++ < 40)
+	if (!World || ActiveTraffic.Num() >= TargetActiveCount)
 	{
-		// Random point in the outer annulus (InterestRadius..SpawnRadius),
-		// snapped onto a road lane so the car starts mid-traffic-flow.
-		const float Angle = FMath::FRandRange(0.f, 2.f * PI);
-		const float Dist  = FMath::FRandRange(InterestRadius, SpawnRadius);
-		FVector SpawnLoc = PlayerLoc + FVector(FMath::Cos(Angle) * Dist, FMath::Sin(Angle) * Dist, 0.f);
+		return;
+	}
 
-		// Snap to the nearest road on a random axis and pick a travel direction.
-		const bool bVerticalRoad = FMath::RandBool();
-		ESprawlHeading Heading;
-		int32 RoadIndex = INDEX_NONE;
-		if (bVerticalRoad)
-		{
-			RoadIndex = Grid::NearestRoadIndex(SpawnLoc.X);
-			Heading = FMath::RandBool() ? ESprawlHeading::North : ESprawlHeading::South;
-			SpawnLoc.X = Grid::LaneCenter(RoadIndex, Heading);
-		}
-		else
-		{
-			RoadIndex = Grid::NearestRoadIndex(SpawnLoc.Y);
-			Heading = FMath::RandBool() ? ESprawlHeading::East : ESprawlHeading::West;
-			SpawnLoc.Y = Grid::LaneCenter(RoadIndex, Heading);
-		}
-		SpawnLoc.Z = 180.f;
+	ASprawlParkingGarage* Garage =
+		ASprawlParkingGarage::EnsureForWorld(World);
+	if (!Garage || !Garage->IsReadyForTraffic())
+	{
+		return;
+	}
 
-		// A spawn owns a directed lane, not just a clear point. Prefer the
-		// sampled heading, then try its opposite lane; reject the candidate if
-		// neither direction reaches a dry intersection with a forward exit.
-		if (!FSprawlTrafficRoute::IsSpawnRouteViable(
-			SpawnLoc, Heading, RoadIndex))
+	const TArray<FSprawlParkingGarageExit>& Exits = Garage->GetVehicleExits();
+	constexpr float MinimumPlayerDistance = 900.f;
+	for (int32 Attempt = 0; Attempt < Exits.Num(); ++Attempt)
+	{
+		const int32 ExitIndex = (NextGarageExitIndex + Attempt) % Exits.Num();
+		const FSprawlParkingGarageExit& Exit = Exits[ExitIndex];
+		++TrafficGarageSpawnAttempts;
+		if (!Exit.IsValid())
 		{
-			const ESprawlHeading Opposite =
-				FSprawlTrafficRoute::OppositeHeading(Heading);
-			if (bVerticalRoad)
-			{
-				SpawnLoc.X = Grid::LaneCenter(RoadIndex, Opposite);
-			}
-			else
-			{
-				SpawnLoc.Y = Grid::LaneCenter(RoadIndex, Opposite);
-			}
-			if (!FSprawlTrafficRoute::IsSpawnRouteViable(
-				SpawnLoc, Opposite, RoadIndex))
-			{
-				++TrafficSpawnRouteRejects;
-				continue;
-			}
-			Heading = Opposite;
+			++TrafficSpawnRouteRejects;
+			continue;
 		}
-
-		const FQuat SpawnRotation = FRotator(
-			0.f, Grid::HeadingYaw(Heading), 0.f).Quaternion();
-		if (!IsTrafficSpawnClear(World, SpawnLoc, SpawnRotation, this))
+		if (FVector::DistSquared2D(
+			PlayerLoc, Exit.SpawnTransform.GetLocation())
+			< FMath::Square(MinimumPlayerDistance)
+			|| !IsGarageExitClear(World, Exit, Garage))
 		{
+			++TrafficGarageBlockedExits;
 			continue;
 		}
 
-		TSubclassOf<APawn> Cls = ASprawlCar::StaticClass();
-		if (TrafficPawnClasses.Num() > 0)
+		TSubclassOf<APawn> SpawnClass = ASprawlCar::StaticClass();
+		if (!TrafficPawnClasses.IsEmpty())
 		{
-			Cls = TrafficPawnClasses[FMath::RandRange(0, TrafficPawnClasses.Num() - 1)];
+			SpawnClass = TrafficPawnClasses[
+				FMath::RandRange(0, TrafficPawnClasses.Num() - 1)];
 		}
-		if (!Cls) break;
+		if (!SpawnClass || !SpawnClass->IsChildOf(ASprawlCar::StaticClass()))
+		{
+			// Garage egress requires the shared car contract. A stale generic pawn
+			// entry must not reintroduce a lane-pop fallback.
+			SpawnClass = ASprawlCar::StaticClass();
+		}
 
 		FActorSpawnParameters Params;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::DontSpawnIfColliding;
-		APawn* Spawned = World->SpawnActor<APawn>(
-			Cls, SpawnLoc, FRotator(0.f, Grid::HeadingYaw(Heading), 0.f), Params);
-		if (!Spawned)
+		Params.SpawnCollisionHandlingOverride =
+			ESpawnActorCollisionHandlingMethod::DontSpawnIfColliding;
+		APawn* Spawned = World->SpawnActor<APawn>(SpawnClass,
+			Exit.SpawnTransform.GetLocation(),
+			Exit.SpawnTransform.Rotator(), Params);
+		ASprawlCar* Car = Cast<ASprawlCar>(Spawned);
+		if (!Car || !Car->BeginGarageEgress(
+			Exit.Id, Exit.DeparturePath, Exit.MergeHeading, Exit.RoadIndex))
 		{
+			if (Spawned)
+			{
+				Spawned->Destroy();
+			}
+			++TrafficGarageBlockedExits;
 			continue;
 		}
 
-		if (ASprawlCar* Car = Cast<ASprawlCar>(Spawned))
-		{
-			Car->bAutoDrive = true;
-		}
-		ActiveTraffic.Add(Spawned);
+		ActiveTraffic.Add(Car);
+		++TrafficGarageSpawnSuccesses;
+		NextGarageExitIndex = (ExitIndex + 1) % Exits.Num();
+		UE_LOG(LogTemp, Display,
+			TEXT("[TrafficGarage] spawned %s inside exit=%s active=%d target=%d"),
+			*Car->GetName(), *Exit.Id.ToString(), ActiveTraffic.Num(),
+			TargetActiveCount);
+		return; // one realistic departure per evaluation pass
 	}
 }

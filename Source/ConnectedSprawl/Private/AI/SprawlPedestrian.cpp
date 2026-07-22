@@ -1,16 +1,18 @@
 // The Connected Sprawl - Pedestrian NPC.
 
 #include "AI/SprawlPedestrian.h"
+#include "Animation/AnimSingleNodeInstance.h"
+#include "Animation/AnimSequence.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/ChildActorComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Engine/SkeletalMesh.h"
-#include "Animation/AnimInstance.h"
-#include "Animation/AnimSequence.h"
 #include "EngineUtils.h"
-#include "UObject/ConstructorHelpers.h"
-#include "Characters/SprawlAvatarLibrary.h"
-#include "Characters/SprawlCrowdAppearance.h"
+#include "Characters/SprawlCharacterDeveloper.h"
+#include "Characters/SprawlCrowdMetaHuman.h"
+#include "Characters/SprawlHumanCharacterModule.h"
+#include "Characters/SprawlLocomotionComponent.h"
+#include "Characters/SprawlWardrobeModule.h"
 #include "Vehicles/SprawlCar.h"
 #include "World/SprawlCityGridSubsystem.h"
 
@@ -19,6 +21,16 @@ using Grid = USprawlCityGridSubsystem;
 ASprawlPedestrian::ASprawlPedestrian()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	HumanCharacter = CreateDefaultSubobject<USprawlHumanCharacterModule>(
+		TEXT("HumanCharacter"));
+	Wardrobe = CreateDefaultSubobject<USprawlWardrobeModule>(TEXT("Wardrobe"));
+	Locomotion = CreateDefaultSubobject<USprawlLocomotionComponent>(
+		TEXT("Locomotion"));
+	MetaHumanVisualComponent = CreateDefaultSubobject<UChildActorComponent>(
+		TEXT("MetaHumanVisual"));
+	MetaHumanVisualComponent->SetupAttachment(RootComponent);
+	MetaHumanVisualComponent->SetRelativeLocation(FVector(0.f, 0.f, -92.f));
+	MetaHumanVisualComponent->SetChildActorOwnerOnCreation(true);
 
 	GetCapsuleComponent()->InitCapsuleSize(34.f, 88.f);
 
@@ -32,26 +44,13 @@ ASprawlPedestrian::ASprawlPedestrian()
 	Move->MaxWalkSpeed              = 150.f;
 	Move->bUseRVOAvoidance          = true;  // don't clip through each other
 
-	// Fallback look only — BeginPlay swaps in a real human avatar when the
-	// imported art exists (see InitializeAppearance / import_artwork.py).
+	// Keep ACharacter's inherited mesh hidden as a debug attachment only. No
+	// mannequin or legacy pedestrian asset is loaded for an ambient citizen.
 	if (USkeletalMeshComponent* MeshComp = GetMesh())
 	{
 		MeshComp->SetRelativeLocationAndRotation(
 			FVector(0.f, 0.f, -89.f), FRotator(0.f, -90.f, 0.f));
-
-		static ConstructorHelpers::FObjectFinder<USkeletalMesh> PedMesh(
-			TEXT("/Game/Mannequin/Character/Mesh/SK_Mannequin.SK_Mannequin"));
-		if (PedMesh.Succeeded())
-		{
-			MeshComp->SetSkeletalMeshAsset(PedMesh.Object);
-		}
-
-		static ConstructorHelpers::FClassFinder<UAnimInstance> PedAnim(
-			TEXT("/Game/Mannequin/Animations/ThirdPerson_AnimBP"));
-		if (PedAnim.Succeeded())
-		{
-			MeshComp->SetAnimInstanceClass(PedAnim.Class);
-		}
+		MeshComp->SetHiddenInGame(true, true);
 	}
 
 	// Self-driven — no controller / nav mesh needed.
@@ -124,92 +123,287 @@ void ASprawlPedestrian::AnchorToNearestCorner()
 void ASprawlPedestrian::BeginPlay()
 {
 	Super::BeginPlay();
+	if (!bHasDevelopedProfile
+		&& (GetNetMode() == NM_Standalone || HasAuthority()))
+	{
+		const int32 Seed = static_cast<int32>(HashCombineFast(
+			GetTypeHash(GetName()), GetTypeHash(FMath::RoundToInt(GetActorLocation().X))));
+		FSprawlCharacterProfile GeneratedProfile =
+			USprawlCharacterDeveloper::DevelopCharacter(
+				Seed, GetActorLocation(),
+				USprawlCharacterDeveloper::ResolveCityHour(GetWorld()));
+		if (!ForcedVariant.IsEmpty())
+		{
+			GeneratedProfile.PreferredAvatarVariant = ForcedVariant;
+		}
+		SetDevelopedProfile(GeneratedProfile);
+	}
+	if (!ForcedVariant.IsEmpty() && HumanCharacter
+		&& HumanCharacter->IsConfigured()
+		&& (GetNetMode() == NM_Standalone || HasAuthority()))
+	{
+		FSprawlHumanCustomization DriverCustomization =
+			HumanCharacter->GetRuntimeState().Customization;
+		DriverCustomization.AppearanceId =
+			FSprawlCrowdMetaHuman::ChooseAppearanceId(
+				static_cast<int32>(GetTypeHash(ForcedVariant)),
+				DriverCustomization.Presentation);
+		FString CustomizationError;
+		if (!HumanCharacter->SetCustomization(
+			DriverCustomization, CustomizationError))
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[CrowdMetaHuman] driver identity rejected: %s"),
+				*CustomizationError);
+		}
+	}
+	// Subscribe only after deferred/profile customization is complete. This
+	// avoids constructing an intermediate MetaHuman when an ejected driver's
+	// stable variant immediately changes its requested roster identity.
+	if (HumanCharacter)
+	{
+		HumanCharacter->OnRuntimeStateChanged.AddDynamic(
+			this, &ASprawlPedestrian::HandleHumanRuntimeStateChanged);
+	}
 
-	BaseSpeed = FMath::FRandRange(MinWalkSpeed, MaxWalkSpeed);
+	const float SpeedScale = bHasDevelopedProfile
+		? CharacterProfile.WalkSpeedScale : 1.f;
+	FRandomStream MovementStream(bHasDevelopedProfile
+		? CharacterProfile.Seed ^ 0x4D4F5645 : FMath::Rand());
+	BaseSpeed = MovementStream.FRandRange(MinWalkSpeed, MaxWalkSpeed) * SpeedScale;
 	GetCharacterMovement()->MaxWalkSpeed = BaseSpeed;
 
-	// Subtle build variety so a crowd doesn't read as clones.
-	const float Stature = FMath::FRandRange(0.93f, 1.04f);
-	SetActorScale3D(FVector(Stature));
+	if (bHasDevelopedProfile)
+	{
+		DesiredHeight = CharacterProfile.HeightCm;
+		CrossChance = CharacterProfile.CrossChance;
+	}
+	WalkDir = MovementStream.RandRange(0, 1) == 1 ? 1 : -1;
+	if (HumanCharacter && HumanCharacter->IsConfigured())
+	{
+		InitializeAppearance();
+	}
+	AnchorToNearestCorner();
+}
 
-	WalkDir = FMath::RandBool() ? 1 : -1;
-	InitializeAppearance();
+void ASprawlPedestrian::SetDevelopedProfile(
+	const FSprawlCharacterProfile& InProfile)
+{
+	FString Error;
+	if (!USprawlCharacterDeveloper::ValidateProfile(InProfile, Error))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CharacterDeveloper] rejected pedestrian profile: %s"), *Error);
+		return;
+	}
+	CharacterProfile = InProfile;
+	bHasDevelopedProfile = true;
+	if (HumanCharacter)
+	{
+		HumanCharacter->ConfigureFromProfile(CharacterProfile);
+	}
+}
+
+bool ASprawlPedestrian::SetHumanAction(
+	ESprawlHumanAction Action, bool bHoldAction)
+{
+	if (!HumanCharacter || !HumanCharacter->SetAction(Action, bHoldAction))
+	{
+		return false;
+	}
+	if (bHoldAction && (Action == ESprawlHumanAction::Stand
+		|| Action == ESprawlHumanAction::Talk
+		|| Action == ESprawlHumanAction::Sit
+		|| Action == ESprawlHumanAction::Drive))
+	{
+		GetCharacterMovement()->StopMovementImmediately();
+	}
+	return true;
+}
+
+void ASprawlPedestrian::ResumeCityActivity()
+{
+	if (HumanCharacter)
+	{
+		HumanCharacter->ClearHeldAction();
+		HumanCharacter->SetAction(ESprawlHumanAction::Stand, false);
+	}
+	GetCharacterMovement()->MaxWalkSpeed = BaseSpeed;
 	AnchorToNearestCorner();
 }
 
 void ASprawlPedestrian::InitializeAppearance()
 {
-	// Only realistically proportioned extras share the street with Zarri.
-	const TArray<FString>& Variants = FSprawlCrowdAppearance::HumanVariants();
-	if (Variants.IsEmpty())
+	if (!HumanCharacter || !HumanCharacter->IsConfigured())
 	{
 		return;
 	}
-	const FString Variant = ForcedVariant.IsEmpty()
-		? Variants[FMath::RandRange(0, Variants.Num() - 1)]
-		: ForcedVariant;
-
-	USkeletalMesh* Mesh = FSprawlAvatarLibrary::LoadAvatarMesh(Variant);
-	UAnimSequence* LoadedIdle = FSprawlAvatarLibrary::LoadAvatarAnim(Variant, TEXT("Idle"));
-	UAnimSequence* LoadedWalk = FSprawlAvatarLibrary::LoadAvatarAnim(Variant,
-		FSprawlAvatarLibrary::UsesFormalWalk(Variant) ? TEXT("WalkFormal") : TEXT("Walk"));
-	UAnimSequence* LoadedJog = FSprawlAvatarLibrary::LoadAvatarAnim(Variant, TEXT("Jog"));
-	if (!Mesh || !LoadedIdle || !LoadedWalk || !LoadedJog)
+	const FSprawlHumanCustomization& Customization =
+		HumanCharacter->GetRuntimeState().Customization;
+	// Semantic Talk is deterministic and authority-authored even on a dedicated
+	// server; only the expensive assembled visual is skipped there.
+	const float TalkChance = bHasDevelopedProfile
+		? CharacterProfile.IdleTalkChance : 0.25f;
+	FRandomStream PoseStream(Customization.Seed ^ 0x17A1C710);
+	bIdleTalkPose = PoseStream.FRand() < TalkChance;
+	if (GetNetMode() == NM_DedicatedServer)
 	{
-		// A partial art import must not replace the working mannequin with a
-		// frozen human mesh. Keep the complete fallback until every locomotion
-		// asset needed by this actor is available.
+		return;
+	}
+	if (!MetaHumanVisualComponent || !Locomotion)
+	{
+		return;
+	}
+	if (bUsingMetaHumanVisual
+		&& bHasActiveVisualCustomization
+		&& ActiveVisualCustomization == Customization)
+	{
 		return;
 	}
 
-	const float Height = DesiredHeight * FMath::FRandRange(0.94f, 1.06f);
-	if (!FSprawlAvatarLibrary::ApplyAvatar(GetMesh(), Mesh, Height,
-		GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()))
+	UAnimSequence* LoadedIdle = nullptr;
+	UAnimSequence* LoadedWalk = nullptr;
+	UAnimSequence* LoadedRun = nullptr;
+	if (!FSprawlCrowdMetaHuman::LoadLocomotion(
+		LoadedIdle, LoadedWalk, LoadedRun))
 	{
-		return; // art not imported yet — keep the mannequin + its AnimBP
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdMetaHuman] locomotion is unavailable for %s"),
+			*GetName());
+		return;
 	}
 
+	USkeletalMeshComponent* LoadedBody = nullptr;
+	FName ResolvedAppearanceId;
+	if (Wardrobe)
+	{
+		Wardrobe->ClearWardrobe();
+	}
+	if (!FSprawlCrowdMetaHuman::Activate(
+		MetaHumanVisualComponent, Customization,
+		LoadedBody, ResolvedAppearanceId))
+	{
+		Locomotion->ClearVisual();
+		bUsingMetaHumanVisual = false;
+		bHasActiveVisualCustomization = false;
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdMetaHuman] no assembled real-human visual could be activated "
+				"for %s (requested=%s)"),
+			*GetName(), *Customization.AppearanceId.ToString());
+		return;
+	}
+
+	MetaHumanBodyMesh = LoadedBody;
 	IdleAnim = LoadedIdle;
 	WalkAnim = LoadedWalk;
-	JogAnim = LoadedJog;
-	ActiveVariant = Variant;
-
-	// A few locals idle on the phone instead of just standing.
-	if (FMath::FRand() < 0.25f)
+	JogAnim = LoadedRun;
+	Locomotion->SetVisual(MetaHumanBodyMesh, MetaHumanVisualComponent);
+	Locomotion->SetGaits({
+		FSprawlGait(JogAnim, 315.f, 520.f, 0.8f, 1.55f),
+		FSprawlGait(WalkAnim, 25.f, 150.f, 0.7f, 1.75f),
+		FSprawlGait(IdleAnim, 0.f, 0.f, 1.f, 1.f),
+	});
+	Locomotion->UpdateLocomotion(0.f);
+	const UAnimSingleNodeInstance* SingleNode =
+		MetaHumanBodyMesh->GetSingleNodeInstance();
+	if (!SingleNode || SingleNode->GetAnimationAsset() != IdleAnim)
 	{
-		if (UAnimSequence* Talk = FSprawlAvatarLibrary::LoadAvatarAnim(Variant, TEXT("Talk")))
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdMetaHuman] %s rejected MetaHuman locomotion; hiding resident"),
+			*GetName());
+		MetaHumanVisualComponent->SetChildActorClass(nullptr);
+		if (Wardrobe)
 		{
-			IdleAnim = Talk;
+			Wardrobe->ClearWardrobe();
+		}
+		Locomotion->ClearVisual();
+		MetaHumanBodyMesh = nullptr;
+		bUsingMetaHumanVisual = false;
+		bHasActiveVisualCustomization = false;
+		return;
+	}
+	Locomotion->AlignVisualToOwnerForward();
+	if (Wardrobe)
+	{
+		AActor* VisualActor = MetaHumanVisualComponent->GetChildActor();
+		if (!Wardrobe->ApplyToMetaHuman(
+			VisualActor, MetaHumanBodyMesh, Customization.Outfit))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Wardrobe] %s kept its fitted base garment; an accessory layer was unavailable"),
+				*GetName());
 		}
 	}
 
-	bHasAvatar = true;
-	FSprawlAvatarLibrary::PlayLoop(GetMesh(), IdleAnim, CurrentAnim);
+	RequestedAppearanceId = Customization.AppearanceId;
+	ActiveAppearanceId = ResolvedAppearanceId;
+	ActiveVisualCustomization = Customization;
+	bHasActiveVisualCustomization = true;
+	ActiveVariant = ForcedVariant.IsEmpty()
+		? ResolvedAppearanceId.ToString() : ForcedVariant;
+
+	bUsingMetaHumanVisual = true;
+	if (USkeletalMeshComponent* DebugMesh = GetMesh())
+	{
+		DebugMesh->SetHiddenInGame(true, true);
+	}
+	UE_LOG(LogTemp, Display,
+		TEXT("[CrowdMetaHuman] %s activated %s (requested=%s seed=%d)"),
+		*GetName(), *ResolvedAppearanceId.ToString(),
+		*Customization.AppearanceId.ToString(), Customization.Seed);
 }
 
 void ASprawlPedestrian::UpdateAnimation()
 {
-	if (!bHasAvatar)
+	const float Speed = GetVelocity().Size2D();
+	const bool bTalkingAtRest = bIdleTalkPose
+		&& State != EPedState::Flee && Speed < 25.f;
+	const bool bCanAuthorAction =
+		GetNetMode() == NM_Standalone || HasAuthority();
+	ESprawlHumanAction Action = USprawlHumanCharacterModule::ResolveAction(
+		Speed, bTalkingAtRest, false, false, State == EPedState::Flee);
+	if (HumanCharacter)
+	{
+		Action = bCanAuthorAction
+			? HumanCharacter->UpdateActionFromMovement(
+				Speed, bTalkingAtRest, false, false, State == EPedState::Flee)
+			: HumanCharacter->GetRuntimeState().Action;
+	}
+
+	if (!bUsingMetaHumanVisual || !Locomotion)
 	{
 		return;
 	}
+	// Talk/sit/drive are retained in replicated gameplay state.  Without a
+	// compatible optional clip, stopping movement naturally resolves to the
+	// neutral stand loop instead of ever falling back to a legacy avatar.
+	if (Action == ESprawlHumanAction::Talk
+		|| Action == ESprawlHumanAction::Sit
+		|| Action == ESprawlHumanAction::Drive)
+	{
+		Locomotion->ClearActionAnimation();
+	}
+	Locomotion->UpdateLocomotion(Speed);
+}
 
-	const float Speed = GetVelocity().Size2D();
-	if (State == EPedState::Flee || Speed > BaseSpeed * 1.6f)
+void ASprawlPedestrian::HandleHumanRuntimeStateChanged(
+	FSprawlHumanRuntimeState RuntimeState)
+{
+	if (RuntimeState.CharacterId.IsNone())
 	{
-		FSprawlAvatarLibrary::PlayLoop(GetMesh(), JogAnim, CurrentAnim,
-			FMath::Clamp(Speed / 260.f, 0.9f, 1.7f));
+		return;
 	}
-	else if (Speed > 25.f)
+	if (!bUsingMetaHumanVisual || !bHasActiveVisualCustomization
+		|| ActiveVisualCustomization != RuntimeState.Customization)
 	{
-		// Match foot cadence to actual ground speed so feet don't skate.
-		FSprawlAvatarLibrary::PlayLoop(GetMesh(), WalkAnim, CurrentAnim,
-			FMath::Clamp(Speed / 105.f, 0.7f, 1.8f));
+		InitializeAppearance();
 	}
-	else
-	{
-		FSprawlAvatarLibrary::PlayLoop(GetMesh(), IdleAnim, CurrentAnim);
-	}
+}
+
+void ASprawlPedestrian::SetMetaHumanHighDetail(bool bHighDetail)
+{
+	FSprawlCrowdMetaHuman::SetHighDetail(
+		MetaHumanVisualComponent, bHighDetail);
 }
 
 void ASprawlPedestrian::OnReachedCorner()
@@ -313,6 +507,10 @@ bool ASprawlPedestrian::HasPedestrianRightOfWay() const
 void ASprawlPedestrian::StartFleeFrom(
 	const AActor* DangerActor, float DurationSeconds)
 {
+	if (HumanCharacter)
+	{
+		HumanCharacter->ClearHeldAction();
+	}
 	const FVector DangerLocation = DangerActor
 		? DangerActor->GetActorLocation()
 		: GetActorLocation() - GetActorForwardVector();
@@ -430,6 +628,10 @@ void ASprawlPedestrian::CheckForDanger()
 		{
 			FleeDir = Away.IsNearlyZero() ? FVector::ForwardVector : Away;
 		}
+		if (HumanCharacter)
+		{
+			HumanCharacter->ClearHeldAction();
+		}
 		State = EPedState::Flee;
 		StateTimer = 2.2f;
 		GetCharacterMovement()->MaxWalkSpeed = RunSpeed;
@@ -443,7 +645,10 @@ void ASprawlPedestrian::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	UpdateAnimation();
-	EnforceSidewalkBoundary(DeltaSeconds);
+	if (GetNetMode() != NM_Standalone && !HasAuthority())
+	{
+		return;
+	}
 
 	// Danger scan at ~5Hz keeps a big crowd cheap.
 	DangerScanTimer -= DeltaSeconds;
@@ -452,6 +657,23 @@ void ASprawlPedestrian::Tick(float DeltaSeconds)
 		DangerScanTimer = 0.2f;
 		CheckForDanger();
 	}
+
+	if (HumanCharacter && HumanCharacter->IsActionHeld()
+		&& State != EPedState::Flee)
+	{
+		const ESprawlHumanAction Action =
+			HumanCharacter->GetRuntimeState().Action;
+		if (Action == ESprawlHumanAction::Stand
+			|| Action == ESprawlHumanAction::Talk
+			|| Action == ESprawlHumanAction::Sit
+			|| Action == ESprawlHumanAction::Drive)
+		{
+			GetCharacterMovement()->StopMovementImmediately();
+			return;
+		}
+	}
+
+	EnforceSidewalkBoundary(DeltaSeconds);
 
 	switch (State)
 	{

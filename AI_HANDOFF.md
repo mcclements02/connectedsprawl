@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 47 · **Last updated:** 2026-07-20 20:15 PDT · **Updated by:** claude
+**Version:** 70 · **Last updated:** 2026-07-21 19:32 PDT · **Updated by:** codex
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -20,12 +20,545 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 | Branch | Worktree | Agent | Status | Summary | Updated |
 |--------|----------|-------|--------|---------|---------|
-| main | `/Users/matthewx/code/ConnectedSprawl` | claude | validated, uncommitted | Full-day world pass: checker repair, sunken flowing lake, Blender street/grass/water kit, Blender mountains (now ringing all four horizons), skyline ring with real facades (ISM usage-flag fix on three masters incl. the long-warned road paint), 19 city-limit gates at the street mouths, occupant headroom, street-dressing repair (30 signal poles snapped), and drive discoverability HUD hints. All suites + Traffic/Carjack audits PASS. | 2026-07-20 20:05 PDT |
+| main | `/Users/matthewx/code/ConnectedSprawl` | codex | validated, uncommitted | Prior validated character, vehicle, city, interiors/map, and iOS launch work remains uncommitted. New `USprawlAthleticShoeModule` adds four swappable trainer presets; the fitted shoe follower now uses animated calf/IK position plus body-relative facing so both shoes stay at Zarri's feet during motion. Editor build, complete 7/7 character automation, and real-Metal moving wardrobe audit passed. | 2026-07-21 19:32 PDT |
 
 ## Log (append newest on top)
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-21 · main · codex (swappable athletic shoes + animated binding — validated)
+- **Result:** new Blueprint-facing `USprawlAthleticShoeModule` develops four
+  validated presets—Zarri Velocity, Metro Runner, Court High-Top, and Night
+  Sprint—with stable IDs, shoe/sock types, coordinated colors, deterministic
+  cycling, and a one-call runtime swap through `USprawlFootwearModule`.
+- **Presentation/integration:** new `AthleticTrainers` geometry adds a cushioned
+  last, layered sole, low flexible upper, laces/collar, twin support stripes,
+  heel clip, and toe bumper. Wardrobe integration gives Zarri the navy/teal
+  Zarri Velocity pair and allows other characters to use the same catalog.
+- **Motion correction:** moving visual validation proved hidden MetaHuman foot
+  sockets freeze. The final two-shoe post-animation follower uses the live
+  calf/usable IK anchor for position and body-relative facing for orientation,
+  so the pair follows running legs without detaching or pointing vertically.
+- **Validation:** final UE 5.8 editor build PASS. Complete
+  `ConnectedSprawl.Characters` automation PASS 7/7. Real-Metal 1280x720 moving
+  wardrobe audit PASS at mean luma 105.81, 0.02% crushed, and 0.18% clipped;
+  Zarri resolved 14.55 cm heel-to-ball chains into a 26.78 x 10.45 cm pair and
+  screenshot inspection confirmed both trainers fitted at the running ankles.
+- **Files:** new athletic-shoe module and focused test; footwear, wardrobe,
+  wardrobe/footwear tests, Zarri moving visual-audit setup, README, GDD, city
+  notes, and this ledger updated.
+- **Remaining risk:** no cook, package, iPhone/device-profile run, physical
+  input session, dedicated server/client session, on-device performance
+  capture, or long traversal soak.
+- **Status:** validated and uncommitted on `main`. No branch, worktree, staging,
+  commit, push, or remote operation was performed.
+<!-- entry:swappable-athletic-shoes-validated -->
+
+### 2026-07-21 · main · codex (fitted MetaHuman footwear repair — validated)
+- **Result:** new Blueprint-facing `USprawlFootwearModule` measures each live
+  MetaHuman foot/ball/calf chain and develops a human-scale shoe pair. Rounded
+  uppers, layered soles, toe lift, collars/laces, fitted socks, style-specific
+  proportions, and lit material layers replace the coarse four-station boxes.
+- **Attachment fix:** current assemblies render bare feet in the main Body.
+  Shoes now bind to an independent usable IK-foot or calf anchor before the
+  Body foot bones are masked, eliminating skin overlap without scaling or
+  displacing the new presentation. Clear/reapply restores all hidden state.
+- **Validation:** final UE 5.8 editor build PASS. Complete
+  `ConnectedSprawl.Characters` automation PASS 6/6, including the new footwear
+  dimension contract. Real-Metal 1280x720 wardrobe audit PASS at mean luma
+  106.77, 0.02% crushed, and 0.16% clipped; both Zarri sides resolved a 14.55 cm
+  heel-to-ball chain into a 26.78 x 9.91 cm shoe and close inspection confirmed
+  that bare feet no longer draw through it.
+- **Corrected during validation:** one cap-normal visual run asserted because a
+  `TArray` append referenced its own reallocating buffer. Copying the source
+  vertex before growth removed the unsafe access; rebuild and visual rerun pass.
+- **Remaining risk:** no cook, package, iPhone/device-profile run, physical
+  input session, dedicated server/client session, on-device performance
+  capture, or long walk/run animation soak.
+- **Status:** validated and uncommitted on `main`. No branch, worktree, staging,
+  commit, push, or remote operation was performed.
+<!-- entry:fitted-metahuman-footwear-validated -->
+
+### 2026-07-21 · main · codex (deterministic MetaHuman wardrobe — validated)
+- **Result:** new `USprawlWardrobeModule` develops a complete deterministic,
+  Blueprint-facing outfit from each profile's broad style: top, bottom,
+  optional outerwear, optional cap/beanie, five shoe types, three sock lengths,
+  and a coordinated palette. The outfit is embedded in replicated human
+  customization and applied to Zarri and every strict crowd MetaHuman.
+- **Presentation:** fitted authored garments receive per-outfit palettes;
+  low-cost procedural shoes, socks, and hats follow the MetaHuman skeleton.
+  Underlying foot bones are masked to prevent skin clipping while absolute
+  accessory scale preserves footwear. Outerwear uses fitted garment color and
+  a chest accent; rejected rigid arm overlays are not shipped. Accessories
+  have no collision, navigation, tick, decals, or shadows.
+- **Assets and integration:** two project-owned, explicitly cooked wardrobe
+  materials plus reproducible authoring script; ProceduralMeshComponent
+  runtime dependency; Zarri, pedestrians, crowd assembly, game-mode visual
+  audit, human validation, and authoring descriptions wired to the wardrobe
+  contract.
+- **Validation:** final UE 5.8 editor build PASS. Full
+  `ConnectedSprawl.Characters` automation PASS 5/5 after correcting its
+  footwear-description contract. Real-Metal 1280x720 wardrobe audit PASS at
+  mean luma 104.67, 0.02% crushed, and 0.16% clipped; close inspection verified
+  garment color, clean arms, masked feet, and shoe/sock attachment.
+- **Remaining risk:** no cook, package, iPhone/device-profile run, physical
+  touch session, dedicated server/client session, on-device performance
+  capture, close hat-variant capture, or long walk/run animation soak.
+- **Status:** validated and uncommitted on `main`. No branch, worktree, staging,
+  commit, push, or other remote operation was performed.
+<!-- entry:deterministic-metahuman-wardrobe-validated -->
+
+### 2026-07-21 · main · codex (real interior furniture and items — validated)
+- **Result:** new `FSprawlInteriorPropLibrary` resolves ten textured Downtown
+  West furniture/item mesh types into 77 fitted, grounded placements across
+  Junction Market, Founder House Offices, and Canal View Condos. Repeated
+  tables, chairs, bench, stock, planters, foliage, bins, and poster stands use
+  one HISM per mesh while retaining authored materials.
+- **Fallback and presentation:** the former oversized blocks are now segmented
+  counters, open shelves, reception/storage, monitors, layered bed, upholstered
+  sofa, and a cabinet/sink/cooktop kitchen. These modular fixtures remain if an
+  optional mesh is absent. Large furniture owns collision/shadows; small stock
+  stays non-colliding and shadow-free. Total interior instances rose from 60 to
+  169 without changing portals, city geometry, map resolution, or controls.
+- **Validation:** final UE 5.8 editor build PASS. Focused prop-library and
+  enterable-layout automation PASS 1/1 each; all ten primary packages were
+  found. Null-RHI InteriorsAudit PASS with 169 instances, 77 real props, all 10
+  types, 3 buildings, 5 landmarks, real entry/containment/map/exit behavior,
+  map lifecycle, and one M binding. Real-Metal 1280x720 store, office, and condo
+  audits PASS their luma/clipping gates and visual inspection.
+- **Files:** new interior-prop library and focused test; enterable-interiors
+  layout/renderer and game-mode live/visual audit enhanced; README, GDD, city
+  notes, and this ledger updated.
+- **Remaining risk:** no cook, package, iPhone/device-profile run, physical
+  touch session, dedicated server/client session, on-device performance
+  capture, or long traversal soak. Downtown West remains the documented
+  re-downloadable marketplace dependency; modular fixtures remain if its real
+  prop meshes are unavailable, but the lower-detail fallback was not separately
+  captured in this pass.
+- **Status:** validated and uncommitted on `main`. No branch, worktree, staging,
+  commit, push, or other remote operation was performed.
+<!-- entry:real-interior-furniture-validated -->
+
+### 2026-07-21 · main · codex (enterable destinations + native city map — validated)
+- **Result:** new `ASprawlEnterableInteriors` supplies signed sidewalk entrances
+  and isolated enclosed interiors for Junction Market, Founder House Offices,
+  and Canal View Condos. Five HISM groups render 60 themed room pieces, paired
+  entry/exit transforms prevent immediate bounce-back, and existing authored
+  city actors remain intact.
+- **Interaction and map:** E/F and touch context input prioritize nearby
+  building doors before cars. New `USprawlCityMapSubsystem` and
+  `USprawlCityMapWidget` expose five landmarks, city projection, interior-to-
+  exterior position resolution, Zarri's live marker, nearest distance, and a
+  paused-safe M/MAP/Escape lifecycle.
+- **Validation:** final UE 5.8 `ConnectedSprawlEditor Mac Development` build
+  PASS. The first compile reached all production sources and failed only on two
+  test-only float/double assertion overloads; those literals were corrected and
+  the full rebuild passed. Focused interiors and map automation PASS 1/1 each.
+  Null-RHI `-SprawlInteriorsAudit` PASS with 3 buildings, 60 instances, 5
+  landmarks, real store entry, containment, door-map resolution, exit route,
+  map open/close, and one M binding. Real-Metal 1280x720 map and store-interior
+  captures passed their luma/clipping/readability gates and visual inspection.
+- **Files:** new enterable-interiors actor/layout, city-map subsystem/widget,
+  and focused tests; Zarri interaction, controller input, native HUD, game-mode
+  setup/audit, README, GDD, city notes, and this ledger updated.
+- **Remaining risk:** no cook, package, iPhone/device-profile run, physical
+  touch session, dedicated server/client session, long traversal soak, or
+  on-device performance capture. The live audit traversed the store; office and
+  condo use the same validated portal contract but were not each manually
+  walked in this pass.
+- **Status:** validated and uncommitted on `main`. No branch, worktree, staging,
+  commit, push, or other remote operation was performed.
+<!-- entry:enterable-destinations-city-map-validated -->
+
+### 2026-07-21 · main · codex (Angry Cordero iOS startup branding — validated)
+- **Result:** the standard Unreal iOS launch storyboard now resolves a
+  project-owned 2048×2048 startup image that places the supplied Angry Cordero
+  ram mark and Production Studio wordmark above the preserved Unreal Engine
+  lockup. The composition stays centered on an opaque black square for iPhone
+  and iPad orientation safety.
+- **Validation:** rendered launch artwork inspection PASS; `file`, `sips`, and
+  ImageMagick metadata checks PASS (2048×2048, 8-bit RGB/sRGB, no alpha);
+  `xcrun pngcrush -n -q` PASS; Git's exclude-aware file listing finds the one
+  authored launch image while other `Build/` output stays ignored. UE 5.8
+  Xcode project source inspection confirms the project path is checked before
+  the engine default. `ConnectedSprawlEditor Mac Development` build PASS
+  (`Result: Succeeded`, target up to date).
+- **Files:** new `Build/IOS/Resources/Graphics/LaunchScreenIOS.png`; narrow
+  `.gitignore` exception for that authored asset; README and GDD startup-brand
+  documentation; this ledger.
+- **Remaining risk:** no packaged IPA, iOS Simulator/device launch, signing,
+  startup-time measurement, or physical iPhone/iPad orientation sweep was run.
+- **Status:** validated and uncommitted on `main`. No branch, worktree, staging,
+  commit, push, or other remote operation was performed.
+<!-- entry:angry-cordero-ios-launch-validated -->
+
+### 2026-07-21 · main · codex (reliable X punch/kick routing — validated)
+- **Result:** keyboard X and the gamepad left-face/X button now bind once on
+  Zarri's possessed pawn input component through new `FSprawlMeleeInput`, above
+  the controller layer that Enhanced Input could shadow. Mouse recapture/melee
+  and touch stay controller-owned; every path reaches the same alternating
+  replicated melee module and shows short PUNCH/KICK confirmation.
+- **Validation:** final UE 5.8 `ConnectedSprawlEditor Mac Development` build
+  PASS. Focused melee automation PASS 1/1 and final complete
+  `ConnectedSprawl.Characters` PASS 4/4. The new headless
+  `-SprawlMeleeInputAudit` PASS inspected Zarri's live possessed input component
+  (`keyboard_x=1`, `gamepad_x=1`), invoked the X handler, advanced revision to
+  1 with Punch active, and confirmed Kick next. Full-Metal gameplay also
+  launched and rendered the on-foot melee HUD.
+- **Files:** new melee input module; Zarri/controller routing and live audit;
+  expanded melee automation; README, GDD, city notes, and this ledger.
+- **Remaining risk:** no packaged build, iPhone/device-profile run, physical
+  gamepad/touch-device session, dedicated client/server session, or long combat
+  soak. The desktop accessibility harness did not deliver a trustworthy raw
+  keyboard event before its game window closed, so acceptance uses Unreal's
+  deterministic possessed-input audit instead.
+- **Status:** validated and uncommitted on `main`. No branch, worktree, staging,
+  commit, push, or other remote operation was performed.
+<!-- entry:reliable-melee-input-validated -->
+
+### 2026-07-21 · main · codex (reliable X punch/kick routing — validation pending)
+- **Input result:** new `FSprawlMeleeInput` binds keyboard X and gamepad
+  left-face/X directly on Zarri's possessed pawn input component, eliminating
+  the lower-priority controller route that Enhanced Input could shadow.
+  Controller-owned left mouse still handles cursor recapture and melee; the
+  existing touch button remains routed through the controller.
+- **Feedback and tests:** successful shared actions emit a `[MeleeInput]` trace
+  and short PUNCH/KICK on-screen confirmation. The melee automation contract
+  now covers the exact direct-key set and rejects an unrelated movement key.
+- **Files:** new melee input module; Zarri/controller routing; melee automation;
+  README, GDD, city notes, and this ledger.
+- **Validation:** pending final editor build, focused automation, and live X-key
+  smoke test.
+- **Status:** implementation complete and uncommitted on `main`. No branch,
+  worktree, staging, commit, push, or other remote operation was performed.
+<!-- entry:reliable-melee-input-pending -->
+
+### 2026-07-21 · main · codex (strict MetaHuman ambient residents — validated)
+- **Character result:** new `FSprawlCrowdMetaHuman` maps replicated human
+  customization onto a strict Zarri/Amina/Andre roster with distinct face
+  packages, deterministic uniform stature and wardrobe copies, and shared
+  MetaHuman Stand/Walk/Run locomotion. `/Game/Pedestrians` and the mannequin are
+  no longer runtime crowd fallbacks. Mac budgets 8 residents / 3 near LODs;
+  iPhone budgets 3 / 1.
+- **Runtime and network result:** the population manager guarantees one complete
+  roster cycle, owns spawning only on standalone/server net modes, and lets
+  each rendering client select LOD across replicated pedestrians. Dedicated
+  servers skip visual loads; Optimized/Low assemblies select near LOD 0 and
+  their actual farthest LOD instead of collapsing two-LOD residents to one
+  presentation. First-use assembly work is staggered to one new resident per
+  population pass, and ejected drivers resolve their stable logical variant to
+  the same requested/rendered roster identity without an intermediate load.
+- **Authored content:** `create_city_metahuman_residents.py` generated and saved
+  `/Game/MetaHumans/Residents/Amina`, `/Andre`, their source characters, and
+  required project-owned groom/clothing dependencies. Full Editor authoring
+  logged both verified runtime classes and PASS; commandlet mode is invalid for
+  this operation because UE 5.8 TextureGraph baking is editor-initialized. The
+  script now stages and validates future rebuilds before promotion.
+- **Validation:** final UE 5.8 Editor target build PASS. Complete
+  `ConnectedSprawl.Characters` automation PASS 4/4. Strict 30-second
+  TrafficAudit PASS with 8 pedestrians / 8 MetaHumans / 3 distinct identities /
+  0 non-MetaHumans, 14 moving cars, 13 signal stops, 14 hidden drivers, and zero
+  traffic, visibility, or sidewalk violations. Final CarjackAudit PASS with a
+  matching real-human ejected driver, legal garage backfill, and 14/14 traffic.
+  Full-Metal gameplay launched; the close view resolved body, clothing, and
+  hair after shader warm-up.
+- **Files:** new crowd module/test and resident generator; generated Amina/Andre
+  source/runtime assets plus owned dependencies; human customization,
+  pedestrian, crowd manager, traffic audit, cook configuration, README, GDD,
+  city notes, and this ledger updated.
+- **Remaining risk:** no cook, package, iPhone/device-profile/on-device capture,
+  dedicated server/client session, or long crowd soak. A single first-use class
+  load can still hitch before caching, though loads no longer batch in one
+  population frame. The broad Common force-cook was removed so resident hard
+  references pull only used dependencies, but cooked size is unmeasured. The
+  generator's new staging promotion path is syntax-checked but was added after
+  the successful asset run.
+- **Status:** validated and uncommitted on `main`. No branch, worktree, staging,
+  commit, push, or other remote operation was performed.
+<!-- entry:strict-metahuman-ambient-residents-validated -->
+
+### 2026-07-21 · main · codex (parking deck + garage traffic origins — validated)
+- **Building and site result:** the runtime deck reports four levels, two valid
+  exits, 121 instanced pieces, 83 cleared elevated lot/corridor actors, and one
+  conflicting authored car preserved in an upper-deck bay. Ground-level city,
+  street, sidewalk, and thin service surfaces remain intact.
+- **Garage-only traffic result:** replacement cars no longer materialize in a
+  lane. Full-path occupancy gates at most one covered departure per manager
+  pass; the car follows low-speed waypoints and performs a swept legal merge
+  before existing directed, signal-aware traffic AI resumes. The managed cull
+  radius spans the city diagonal so a cross-city player does not immediately
+  retire a newly merged replacement; the target count remains 14.
+- **Validation:** final UE 5.8 editor build PASS; focused
+  `ConnectedSprawl.World.ParkingGarageLayout` automation PASS 1/1. CarjackAudit
+  PASS with an observed `NorthWestbound` garage spawn, road-3 merge, 14/14
+  target recovery, and zero pending departures. Standalone TrafficAudit PASS:
+  14 movers, 51 total / 37 enterable cars, 12 signal stops, 359.5 cm minimum
+  spacing, 26 pedestrians, 14 hidden drivers, and zero lane, wrong-way,
+  boundary, upright, visibility, or intersection violations. A 1600x900
+  real-Metal garage capture passed its visual gates (luma 108.27, red/blue
+  1.127) and shows the deck, signed portal, sidewalk, and road connection.
+- **Remaining validation:** no cook, package, iPhone/device-profile run,
+  on-device performance capture, or long interactive traffic soak was run.
+- **Status:** validated and uncommitted on `main`. New parking-garage module and
+  focused test; edits to traffic manager, car, game mode, README, GDD, city
+  notes, and this ledger. No map, Blueprint, material, binary asset, branch,
+  worktree, staging, commit, or remote operation was performed.
+<!-- entry:parking-garage-traffic-validated -->
+
+### 2026-07-21 · main · codex (parking deck + garage traffic origins — validation pending)
+- **New building module:** `ASprawlParkingGarage` procedurally replaces one
+  central lot with a four-level instanced deck containing concrete structure,
+  asphalt slabs, ramps, barriers, marked bays, static parked-car silhouettes,
+  warm lights, ventilation detail, a parking sign, and two covered exits. Site
+  preparation preserves the block/sidewalk surfaces and hides only taller
+  authored geometry intersecting the exact garage footprint.
+- **No more lane-pop replenishment:** the traffic manager now validates an
+  entire garage exit corridor, emits no more than one replacement per pass,
+  waits when the route/player reveal area is occupied, and has no active-lane
+  spawn fallback. Cars use a new obstruction-aware low-speed egress phase and
+  seed their existing directed, signal-aware lane state only after a swept
+  legal merge completes.
+- **Regression scope:** map-independent automation covers deck/detail counts,
+  unique off-road birth points, exact right-hand merge lanes, and dry forward
+  routes. Editor build, focused automation, live garage departure, TrafficAudit,
+  and documentation validation remain pending.
+- **Status:** implementation in progress and uncommitted on `main`. No map,
+  Blueprint, material, binary asset, branch, worktree, staging, commit, or
+  remote operation has been performed for this pass.
+<!-- entry:parking-garage-traffic-pending -->
+
+### 2026-07-21 · main · codex (Zarri punch/kick module — validated)
+- **Build and automation:** `ConnectedSprawlEditor Mac Development` build PASS.
+  The focused `ConnectedSprawl.Characters.MeleeModule` test passed 1/1, then
+  the complete `ConnectedSprawl.Characters` suite passed 3/3 (Character
+  Developer, Human Character, and Melee). This exercises attack balance/spec
+  validation, forward-cone/reach/height rejection, alternation, replication
+  defaults, and safe rejection without an owner.
+- **Runtime safety:** final 30-second null-RHI TrafficAudit PASS with 14/14
+  moving traffic cars, 51 total / 37 enterable cars, 12 signal stops, 14 wheel
+  animations, 359.5 cm minimum spacing, 26 pedestrians / 26 real avatars, 14
+  hidden drivers, and zero visible/missing driver, pedestrian-offside, lane,
+  wrong-way, boundary, upright, or intersection violations.
+- **Remaining validation:** no cook, package, iPhone device-profile run,
+  on-device performance capture, or hands-on combat playback was performed.
+  No skeleton-compatible punch/kick clips exist in the project or installed
+  MetaHuman content, so the optional one-shot bridge compiled but remains
+  visually dormant until art is assigned; damage, targeting, reaction, and all
+  input paths remain asset-independent.
+- **Status:** validated and uncommitted on `main`. No map, Blueprint, material,
+  binary asset, branch, worktree, staging, commit, or remote operation was
+  performed for this pass.
+<!-- entry:zarri-melee-module-validated -->
+
+### 2026-07-21 · main · codex (Zarri punch/kick module — validation pending)
+- **New combat module:** `USprawlMeleeModule` supplies explicit Punch/Kick calls
+  plus a one-button alternating action. Authority-owned, replicated state
+  drives a validated short-range cone, cooldown/recovery timing, standard point
+  damage, modest knockback, and the existing pedestrian flee response. Hidden
+  in-car Zarri cannot attack, and only one visible character can be hit.
+- **Input and presentation:** left mouse, X, and the gamepad left face button
+  route through the persistent player controller. The native mobile HUD gains
+  one PUNCH/KICK button that disappears while driving. Locomotion now supports
+  optional bounded one-shots for assigned lightweight or MetaHuman combat
+  clips; no such binary assets exist locally, so missing clips preserve the
+  working body and gameplay instead of forcing an incompatible animation.
+- **Regression scope:** map-independent automation covers default attack
+  balance, spec validation, cone/reach/height rejection, alternation,
+  replication defaults, and rejected unowned attacks. Editor build, focused
+  character automation, and living-city runtime audit remain pending.
+- **Status:** implementation in progress and uncommitted on `main`. No map,
+  Blueprint, material, binary asset, branch, worktree, staging, commit, or
+  remote operation has been performed for this pass.
+<!-- entry:zarri-melee-module-pending -->
+
+### 2026-07-20 · main · codex (replicated diverse human characters — validated)
+- **Build and focused automation:** final `ConnectedSprawlEditor Mac
+  Development` build PASS. `ConnectedSprawl.Characters` found and passed 2/2
+  tests: the prior Character Developer suite plus the new Human Character
+  module suite. The latter covers all customization ranges, deterministic
+  diversity, exact Zarri profile validity, six actions, held poses, revisions,
+  replication defaults, and MetaHuman/fallback animation selection.
+- **Runtime safety:** final 30-second null-RHI TrafficAudit PASS with 14/14
+  traffic cars moving, 51 total / 37 enterable cars, 13 signal stops, 14 wheel
+  animations, 344.6 cm minimum spacing, 26 pedestrians, 26 real avatars, 14
+  hidden drivers, and zero visible/missing driver, pedestrian-offside, lane,
+  wrong-way, boundary, upright, or intersection violations.
+- **Remaining validation:** no cook, package, iPhone device-profile run, or
+  on-device performance capture. Unique assembled MetaHuman assets beyond the
+  existing Zarri must still be created/reviewed in Creator and assigned through
+  `USprawlCharacterDefinition`; ordinary crowds intentionally retain the
+  lightweight mobile avatar tier.
+- **Status:** validated and uncommitted on `main`. No map, Blueprint, material,
+  binary asset, branch, worktree, staging, commit, or remote operation was
+  performed for this pass.
+<!-- entry:replicated-diverse-human-characters-validated -->
+
+### 2026-07-20 · main · codex (replicated diverse human characters — validation pending)
+- **New human module:** `USprawlHumanCharacterModule` holds compact replicated
+  identity/customization plus Stand/Walk/Run/Talk/Sit/Drive state. It derives
+  deterministic age, presentation, build, skin-tone direction, hair texture,
+  wardrobe, stature, and safe fallback avatar data from each developed profile.
+  Zarri is a technical joints-only rig/action baseline, never a cloned face.
+- **Runtime integration:** Zarri and every pedestrian now own the same module.
+  Lightweight crowds play optional Talk/Sit action clips without weakening the
+  existing Idle/Walk/Jog completeness gate; named definitions gain soft
+  MetaHuman talk/sit/drive bindings. Zarri records Drive while possessed, but
+  the hidden in-car driver policy remains authoritative for rendering and tick.
+- **Regression scope:** new automation covers deterministic population
+  diversity, customization validation, all six action transitions, held poses,
+  revision changes, component replication defaults, fallback clip mapping, and
+  named MetaHuman drive-to-sit fallback. Build and focused automation remain
+  pending.
+- **Status:** implementation in progress and uncommitted on `main`. No map,
+  Blueprint, material, binary asset, branch, worktree, staging, commit, or
+  remote operation has been performed for this pass.
+<!-- entry:replicated-diverse-human-characters-pending -->
+
+### 2026-07-20 · main · codex (sidewalk signs + complete signals — validated)
+- **Validation:** `ConnectedSprawlEditor Mac Development` build PASS, including
+  the new signal model, street-dressing module, and expanded kerb-placement
+  automation source. The two changed city-authoring scripts passed AST syntax
+  validation, and `git diff --check` PASS.
+- **Focused automation limitation:** the `ConnectedSprawl.World.KerbPlacement`
+  command was submitted, but the headless launcher exited after platform
+  validation before the editor opened because the interactive Unreal instance
+  remains active. No test assertion or game-code failure was reported.
+- **Status:** validated and uncommitted on `main`. No map, Blueprint, material,
+  binary asset, branch, worktree, staging, commit, or remote operation was
+  performed for this pass.
+<!-- entry:sidewalk-signals-validated -->
+
+### 2026-07-20 · main · codex (sidewalk signs + complete signals — validation pending)
+- **Sidewalk contract:** expanded the shared kerb-placement module with an
+  explicit pedestrian-band predicate. Freestanding foldout signs now repair
+  whenever they are anywhere outside that band, including parking bays and
+  road-free asphalt that the former lane-only check missed.
+- **Intersection model:** replaced the single ambiguous pole with one
+  low-poly, four-corner, two-axis, three-lens `ASprawlTrafficLight` model per
+  dry intersection. Street dressing recentres legacy instances and creates a
+  missing model at runtime, while the actor continues to source every phase
+  from `USprawlCityGridSubsystem`.
+- **Authoring and docs:** both living-city scripts now place a signal actor at
+  its intersection centre, and the map-independent runtime model lays the
+  poles out on sidewalks. C++ build and focused world tests remain pending.
+- **Status:** implementation in progress and uncommitted on `main`. No map,
+  Blueprint, material, binary asset, branch, worktree, staging, commit, or
+  remote operation has been performed for this pass.
+<!-- entry:sidewalk-signals-pending -->
+
+### 2026-07-20 · main · codex (vehicle visual-forward repair — validated)
+- **Validation:** `ConnectedSprawlEditor Mac Development` rebuild PASS after
+  compiling the changed car, visual-forward module, and expanded traffic-rule
+  automation source. `vehicle_realism.py` AST syntax check PASS and
+  `git diff --check` PASS.
+- **Focused automation limitation:** the `ConnectedSprawl.Vehicles.VisualForward.NamedFrontAxle`
+  command was submitted twice, but the headless launcher exited after platform
+  validation before opening the editor because an interactive Unreal instance
+  was already active. No test assertion or game-code failure was reported; the
+  newly compiled automation will run on the next editor-safe test pass.
+- **Status:** validated and uncommitted on `main`. No map, Blueprint, material,
+  binary asset, branch, worktree, staging, commit, or remote operation was
+  performed for this repair.
+<!-- entry:vehicle-visual-forward-repair-validated -->
+
+### 2026-07-20 · main · codex (vehicle visual-forward repair — validation pending)
+- **Root cause:** vehicle physics already treats pawn +X as forward, and the
+  shared input action maps W/Up to positive throttle. The legacy importer used
+  a +90° Blender Y-forward visual transform, which turns a visible vehicle nose
+  toward physics -X and makes correct forward motion look like reversing.
+- **Module update:** `FSprawlVehicleVisualForward` now resolves a complete
+  rotation from named FL/FR/RL/RR axle centers while retaining authored pitch
+  and roll. It also exposes the documented Blender Y-forward fallback.
+  `ASprawlCar` uses the named-axle result for all newly installed split kits and
+  corrects serialized animated or one-piece imported car visuals in `BeginPlay`
+  without changing the hull, camera, AI route, throttle, or reverse/brake
+  contract.
+- **Editor tooling / regression:** `vehicle_realism.py` now uses -90° for the
+  source convention instead of +90°, and the vehicle automation covers the
+  stale +90° correction plus pitch/roll preservation. Build and focused
+  automation are still pending for this entry.
+- **Status:** implementation in progress and uncommitted on `main`. No map,
+  Blueprint, material, binary asset, branch, worktree, staging, commit, or
+  remote operation has been performed for this repair.
+<!-- entry:vehicle-visual-forward-repair-pending -->
+
+### 2026-07-20 · main · codex (hidden in-car drivers — validated)
+- **New `FSprawlDriverVisibility` module:** treats occupancy and rendering as
+  separate concerns. A seated AI/player driver remains a logical occupant but
+  the legacy car-mounted skeletal mesh is hidden, cleared, and unticked. This
+  removes the roof-clipping failure shown in the supplied city screenshot and
+  avoids a skeletal avatar load/tick per active traffic car.
+- **Vehicle integration:** `ASprawlCar` enforces suppression before the first
+  rendered frame and through enter, exit, carjack, restore, and hot-reload
+  paths. AI drivers retain a deterministic variant string so an ejected driver
+  can still spawn as the same visible exterior pedestrian. Parked-car access,
+  possession, save state, physical driving, and pedestrian visuals are not
+  coupled to the mounted component.
+- **Regression contract:** TrafficAudit now requires hidden logical drivers,
+  fails on any visible mounted driver, and reports missing hidden state after
+  warmup. CarjackAudit selects a hidden logical occupant rather than requiring
+  a visible mesh. New deterministic automation covers empty and seated policy
+  decisions, including no avatar load and no pose tick.
+- **Validation:** `git diff --check` PASS before docs; final editor build PASS;
+  `ConnectedSprawl.Vehicles.DriverVisibility` 1/1 PASS; 30-second standalone
+  TrafficAudit PASS (`cars=14`, `total_cars=51`, `moved=14`, `signal_stops=13`,
+  `min_spacing=368.0`, `hidden_drivers=14`, `visible_driver_violations=0`,
+  `missing_hidden_drivers=0`, `pedestrians=26`, `real_avatars=26`, every other
+  violation count zero).
+- **Unavailable validation / risk:** retries of the broader vehicle automation
+  suite and standalone CarjackAudit were blocked before engine initialization
+  by macOS LaunchServices `Connection invalid`; no game-code assertion or test
+  failure was reported. The focused test and full runtime traffic audit passed,
+  and the updated carjack selection path compiled, but that transition was not
+  re-exercised in this run. No cook, package, iPhone, or sustained device
+  performance capture.
+- **Status:** validated and uncommitted on `main`. No map, Blueprint, material,
+  binary asset, branch, worktree, staging, commit, or remote operation was
+  performed. Two stale unattended Unreal automation processes were terminated;
+  no interactive game process was targeted.
+<!-- entry:hidden-in-car-drivers-validated -->
+
+### 2026-07-20 · main · codex (Hugging Face Character Developer — validated)
+- **Character contract:** new Blueprint-facing `FSprawlCharacterProfile`,
+  `USprawlCharacterDeveloper`, and `USprawlCharacterDefinition` generate and
+  validate stable names, districts, work/home roles, schedules, live activity,
+  destination, wardrobe, stature/gait, behavior chances, lightweight avatar,
+  MetaHuman Creator brief, reference prompt, and optional soft
+  MetaHuman/locomotion bindings. Generated crowd height remains inside the
+  existing capsule; named Data Assets may use the wider validated range.
+- **Living-city integration:** the crowd manager now develops each profile
+  before `BeginPlay`, and pedestrians consume its avatar/gait/stature/crossing/
+  phone-idle values. The Junction keeps the 26-person cap while Iron Forest,
+  Rail Yards, arteries, and late-night hours thin below it. Existing movement,
+  crossings, flee recovery, complete-art checks, and mannequin fallback remain.
+- **Hugging Face authoring:** new standard-library-only
+  `Tools/CharacterDeveloper/character_developer.py` calls the inference router
+  only when `HF_TOKEN` is present, defaults to the Apache-2.0 endpoint-compatible
+  `Qwen/Qwen3.5-4B`, records an Apache-2.0 `FLUX.1-schnell` reference prompt,
+  supports model override, validates strict JSON, and has deterministic offline
+  mode. No token/model/network code ships in Unreal. The local `hf` executable
+  was unavailable, so current public model metadata was verified through the
+  Hugging Face Hub API instead; no remote inference was attempted without a
+  user token.
+- **Build resilience:** the added translation unit changed unity grouping and
+  exposed a pre-existing duplicate `BayGapMinX/MaxX` pair in gates/skyline.
+  Gate constants now have unique names; values and gate layout are unchanged.
+- **Validation:** Python `unittest` 3/3 PASS; offline CLI sample PASS;
+  `git diff --check` PASS; final `ConnectedSprawlEditor Mac Development` build
+  PASS; `ConnectedSprawl.Characters.CharacterDeveloper` PASS; 30-second null-RHI
+  TrafficAudit PASS (`cars=14`, `total=51`, `signal_stops=13`,
+  `min_spacing=344.6`, `pedestrians=26`, `real_avatars=26`, all violation counts
+  zero). The first build failed on the new single-result iterator warning and
+  the existing unity-name collision; both were fixed before the clean rebuild.
+- **Risk / remaining validation:** no cook, package, iPhone device profile, or
+  on-device performance capture; district density was exercised at the default
+  Junction start, while all district/hour multipliers are deterministic-tested.
+  Cloud output still requires human review before creating a MetaHuman asset.
+- **Status:** validated and uncommitted on `main`. No map, Blueprint, material,
+  binary asset, branch, worktree, staging, commit, or remote operation was
+  performed.
+<!-- entry:hugging-face-character-developer-validated -->
 
 ### 2026-07-20 · main · claude (Git LFS configured — closes the standing warning)
 - **LFS live (user-authorized):** `git lfs install` wrote its four hooks into

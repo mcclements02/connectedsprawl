@@ -113,11 +113,27 @@ World
  ├─ USprawlMissionDirector → Calls, branch chaining, unresolved-mission resume
  ├─ AZonalStreamingManager → Loads/unloads zones based on player position & velocity
  ├─ USprawlCityGridSubsystem → Lanes, signals, intersections, lake, city bounds
+ ├─ USprawlCityMapSubsystem → Landmark registry, projection, nearest destination
+ ├─ USprawlCharacterDeveloper → District roles, schedules, gait, wardrobe, authoring briefs
+ ├─ USprawlHumanCharacterModule → Replicated customization plus six-action human state
+ ├─ USprawlWardrobeModule → Deterministic fitted layers, palette, shoes, socks, hats
+ ├─ USprawlFootwearModule → Human-scale shoe geometry, material layers, safe bone anchors
+ ├─ USprawlAthleticShoeModule → Validated swappable trainer presets and runtime cycling
+ ├─ FSprawlCrowdMetaHuman → Strict assembled-resident roster, styling, locomotion, LOD
+ ├─ USprawlMeleeModule     → Replicated punch/kick state, targeting, damage, reactions
  ├─ ASprawlRoadMarkings  → Paint plus physical perimeter boundaries
- └─ ASprawlCar           → Enterable player/parked cars and ordered traffic AI
+ ├─ ASprawlParkingGarage → Instanced deck plus obstruction-tested vehicle exits
+ ├─ ASprawlEnterableInteriors → Store, office, condo portals and instanced rooms
+ ├─ FSprawlInteriorPropLibrary → Real furniture catalog, layouts, mesh fitting, fallback
+ └─ ASprawlCar           → Enterable cars, ordered traffic AI, hidden logical occupants
+
+UI
+ ├─ USprawlNativeHUD       → Founder status, touch controls, contextual interaction
+ └─ USprawlCityMapWidget   → Paused-safe road, water, landmark, and player map
 
 Data Assets
- └─ UStrategicDecision  → Designer-authored decisions with N branches
+ ├─ UStrategicDecision       → Designer-authored decisions with N branches
+ └─ USprawlCharacterDefinition → Named NPC profile plus optional soft MetaHuman binding
 ```
 
 ### Why subsystems, not singletons
@@ -126,6 +142,84 @@ transitions, are testable, auto-instantiated, and exposed to Blueprints cleanly.
 
 ### Why `UPrimaryDataAsset` for decisions
 Designers can stamp out a new mission in the editor without touching C++. Every decision is a row of data: prompt, branches, deltas.
+
+### Character authoring contract
+
+Crowd extras are deterministic profiles cast from district, city hour, and
+seed. `FSprawlCrowdMetaHuman` resolves every ambient profile through a strict
+project-owned Optimized/Low roster: Zarri, Amina, and Andre. The population
+manager balances those identities, varies wardrobe and stature without
+reshaping an authored face, and never reintroduces the old mannequin/toy
+fallback. Missing assembled art leaves the visual hidden and fails the runtime
+audit instead of silently lowering the character standard. Named characters
+can promote the same profile into a `USprawlCharacterDefinition` with explicit
+soft MetaHuman and action-animation bindings. Hugging Face is an offline
+authoring assistant only; no model, token, or network dependency ships in the
+iPhone runtime.
+
+`USprawlHumanCharacterModule` turns each profile into compact, deterministic
+appearance metadata spanning age, presentation, body build, skin-tone
+direction, hair texture, wardrobe, and stature. Zarri is the shared
+joints-only rig and Stand/Walk/Run/Talk/Sit/Drive action baseline, not a face
+template: every resident remains a unique identity. The state is
+Blueprint-facing and replicated, including the authored appearance ID, while
+long Creator prompts remain local. The server owns population and simulation;
+clients render the replicated residents and independently promote only their
+nearest people. Mac is capped at eight full residents with three high-detail
+slots; iPhone is capped at three with one high-detail slot. LOD selection is
+relative to each assembly, so a two-LOD mobile export still keeps a distinct
+near and far presentation. First-use class work is staggered to one resident
+per population pass. Packaging names only the assembled resident roots and
+lets their hard references collect the shared body, groom, clothing, and
+material dependencies they actually use.
+
+`USprawlWardrobeModule` resolves the broad wardrobe direction into a complete,
+replication-safe outfit: top, bottom, optional outerwear, optional cap/beanie,
+shoe type, sock length, and coordinated colors. It recolors each assembly's
+fitted default garment and binds low-cost footwear, sock, hat, and jacket
+details to the MetaHuman skeleton. `USprawlFootwearModule` measures the live
+foot-to-ball chain, clamps it to human-scale dimensions, and builds a rounded
+upper, layered sole, collar/laces, and fitted sock for each side. Shoes bind to
+an independent calf or usable IK anchor before the underlying Body foot bones
+are masked. A two-transform post-animation follower takes position from that
+live anchor but facing from the body, keeping both shoes at animated ankles and
+roughly level through a run cycle even though hidden MetaHuman foot transforms
+freeze. `USprawlAthleticShoeModule` supplies four validated, Blueprint-swappable
+trainer presets and wraps the same footwear replacement path; Zarri defaults to
+the navy/teal Zarri Velocity pair while residents can cycle deterministic
+variants. Added presentation stays non-colliding, shadow-free, decal-free, and
+navigation-free; only the fitted shoe pair ticks for the iPhone crowd budget.
+
+`USprawlMeleeModule` is a separate gameplay contract rather than another
+locomotion state. It gives Zarri explicit Punch/Kick Blueprint calls plus one
+alternating player action, validates a short forward arc on the authority,
+emits Unreal point damage, and sends struck pedestrians into their existing
+flee behavior. The native HUD adds a dedicated mobile button, while desktop
+and gamepad input share the same call. Optional skeleton-compatible one-shots
+play above locomotion for a bounded recovery window; absent or incompatible
+art cannot remove targeting, reaction, or input functionality.
+
+### Playable destinations and map contract
+
+`ASprawlEnterableInteriors` owns one deterministic contract for Junction
+Market, Founder House Offices, and Canal View Condos. Each destination has a
+signed sidewalk entrance, an isolated enclosed interior, a themed low-cost
+furniture set, and paired entry/exit transforms. The city remains intact:
+facade dressing does not collide or clear authored buildings. The reusable
+`FSprawlInteriorPropLibrary` fits ten installed textured mesh types into 77
+deterministic placements across the rooms, retaining their authored materials
+and using one HISM per repeated type. Detailed modular counters, shelves,
+desks, monitors, bed, sofa, and kitchen provide distinctive silhouettes and a
+safe fallback if the optional pack is absent. E/F and the touch context action
+use the same cooldown-safe portal path before vehicle entry is considered.
+
+`USprawlCityMapSubsystem` registers the three playable destinations beside the
+parking deck and waterfront, projects them against city bounds, and resolves
+an interior player back to its exterior door. `USprawlCityMapWidget` renders
+that data as a native paused overlay with roads, water, named markers, Zarri's
+live position, and the nearest-destination distance. M, Escape, and the touch
+MAP/close controls are all valid while paused; no web service, model, or map
+asset is required at runtime.
 
 ### Persistence contract
 
@@ -190,10 +284,20 @@ Branches:
 - [x] Enter/exit Mobile Office action
 - [x] Enterable curb parking, crash recovery, and city vehicle boundaries
 - [x] Right-hand traffic with signal and intersection ordering
+- [x] Parking-deck traffic origin with covered low-speed lane merges
+- [x] Enterable store, office, and condo with shared portal/interior contract
+- [x] Textured furniture/item catalog with detailed store, office, and condo
+  fixtures plus deterministic missing-asset fallback
+- [x] Native city map with roads, water, five landmarks, live Zarri marker,
+  keyboard, Escape, and touch controls
 - [x] Gray-box Junction + one Artery + one Outskirt
 - [x] 5 authored Strategic Decisions
 - [x] UI: Cash/Runway HUD + Decision modal
 - [x] Versioned Save/Load of founder, faction, mission, and player state
+- [x] Zarri punch/kick module with pawn-level X/gamepad routing, mouse/touch
+  controller routes, cooldown-safe alternation, and visible action confirmation
+- [x] iOS launch presentation co-branding Angry Cordero Production Studio and
+  Unreal Engine with one crop-safe project launch image
 
 ### Phase 3 — Vertical slice
 - [ ] Procedural traffic MassEntity system

@@ -21,3 +21,22 @@ FSprawlVehicleVisualForwardResult FSprawlVehicleVisualForward::ResolveRelativeYa
 	Result.bValid = true;
 	return Result;
 }
+
+FRotator FSprawlVehicleVisualForward::ResolveAlignedRotation(
+	const FRotator& AuthoredRotation,
+	const FVector& FrontLeft, const FVector& FrontRight,
+	const FVector& RearLeft, const FVector& RearRight)
+{
+	const FSprawlVehicleVisualForwardResult Result = ResolveRelativeYaw(
+		FrontLeft, FrontRight, RearLeft, RearRight);
+	return Result.bValid
+		? FRotator(AuthoredRotation.Pitch, Result.RelativeYawDegrees,
+			AuthoredRotation.Roll)
+		: AuthoredRotation;
+}
+
+FRotator FSprawlVehicleVisualForward::ResolveBlenderYForwardRotation(
+	const FRotator& AuthoredRotation)
+{
+	return FRotator(AuthoredRotation.Pitch, -90.f, AuthoredRotation.Roll);
+}

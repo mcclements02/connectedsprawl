@@ -196,24 +196,15 @@ for a in list(eas.get_all_level_actors()):
         eas.destroy_actor(a)
 
 signals = 0
-CORNERS = [(1, 1), (-1, -1), (1, -1), (-1, 1)]
 for ix in range(N - 1):
     for iy in range(N - 1):
         vx, hy = road(ix), road(iy)
         if over_lake(vx, hy, 100):
             continue
-        # Put the pole on a sidewalk corner that isn't in the water.
-        spot = None
-        for sx, sy in CORNERS:
-            px, py = vx + sx * 335, hy + sy * 335
-            if not over_lake(px, py):
-                spot = (px, py)
-                break
-        if spot is None:
-            continue
+        # One actor builds the complete four-corner sidewalk signal model.
         sig = eas.spawn_actor_from_class(
             unreal.SprawlTrafficLight,
-            unreal.Vector(spot[0], spot[1], 14.0))
+            unreal.Vector(vx, hy, 14.0))
         sig.set_actor_label("City_Signal_{}_{}".format(ix, iy))
         sig.set_editor_property("intersection_x", ix)
         sig.set_editor_property("intersection_y", iy)

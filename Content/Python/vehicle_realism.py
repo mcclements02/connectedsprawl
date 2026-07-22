@@ -155,9 +155,11 @@ def configure_drivable_car(actor, idx, meshes, paint_materials):
     actor.set_external_vehicle_mesh(
         mesh,
         unreal.Vector(0.0, 0.0, rel_z),
+        # Blender vehicle exports use +Y as their nose; UE physics drives +X.
+        # The car module repeats this policy at runtime for saved instances.
         # NB: Python's unreal.Rotator positional args are (roll, pitch, yaw) —
         # NOT (pitch, yaw, roll) like C++. Use keyword to avoid surprises.
-        unreal.Rotator(roll=0.0, pitch=0.0, yaw=90.0),
+        unreal.Rotator(roll=0.0, pitch=0.0, yaw=-90.0),
         unreal.Vector(scale, scale, scale),
     )
 
@@ -215,7 +217,9 @@ def configure_animated_car(actor, idx, paint_materials):
         wheels,
         centers,
         unreal.Vector(0.0, 0.0, rel_z),
-        unreal.Rotator(roll=0.0, pitch=0.0, yaw=90.0),
+        # Named front/rear axles are authoritative in C++; this is the same
+        # correct default for Blender Y-forward imports in editor tooling.
+        unreal.Rotator(roll=0.0, pitch=0.0, yaw=-90.0),
         unreal.Vector(scale, scale, scale),
     )
     external = find_component_by_name(

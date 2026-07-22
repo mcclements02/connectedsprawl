@@ -16,15 +16,22 @@
 #include "Founder/FounderSubsystem.h"
 #include "Phone/PhoneSubsystem.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Components/InputComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimSingleNodeInstance.h"
 #include "Characters/SprawlAvatarLibrary.h"
 #include "Characters/SprawlCharacterRender.h"
+#include "Characters/SprawlHumanCharacterModule.h"
 #include "Characters/SprawlLocomotionComponent.h"
+#include "Characters/SprawlMeleeInput.h"
+#include "Characters/SprawlMeleeModule.h"
+#include "Characters/SprawlWardrobeModule.h"
+#include "Engine/Engine.h"
 #include "Phone/PhoneSubsystem.h"
 #include "World/SprawlCityGridSubsystem.h"
+#include "World/SprawlEnterableInteriors.h"
 #include "UObject/ConstructorHelpers.h"
 #include "HAL/PlatformMisc.h"
 #include "Misc/CommandLine.h"
@@ -74,6 +81,10 @@ AZarriCharacter::AZarriCharacter()
 	FollowCamera->SetFieldOfView(84.f);
 
 	Locomotion = CreateDefaultSubobject<USprawlLocomotionComponent>(TEXT("Locomotion"));
+	HumanCharacter = CreateDefaultSubobject<USprawlHumanCharacterModule>(
+		TEXT("HumanCharacter"));
+	Wardrobe = CreateDefaultSubobject<USprawlWardrobeModule>(TEXT("Wardrobe"));
+	Melee = CreateDefaultSubobject<USprawlMeleeModule>(TEXT("Melee"));
 
 	MetaHumanVisualComponent = CreateDefaultSubobject<UChildActorComponent>(TEXT("MetaHumanVisual"));
 	MetaHumanVisualComponent->SetupAttachment(RootComponent);
@@ -158,6 +169,15 @@ void AZarriCharacter::BeginPlay()
 	// Covers the fallback body and every piece of carried equipment; the
 	// assembled MetaHuman is a separate actor and is handled on activation.
 	FSprawlCharacterRender::DisableDecalProjection(this);
+	if (HumanCharacter)
+	{
+		HumanCharacter->ConfigureZarri();
+	}
+	if (Melee)
+	{
+		Melee->OnAttackStarted.AddDynamic(
+			this, &AZarriCharacter::HandleMeleeAttackStarted);
+	}
 
 	InitializeHeroAvatar();
 	InitializeEquipment();
@@ -197,6 +217,39 @@ void AZarriCharacter::Tick(float DeltaSeconds)
 	if (bLocomotionAuditEnabled)
 	{
 		RunLocomotionAudit();
+	}
+}
+
+void AZarriCharacter::PrepareWardrobeVisualAudit()
+{
+	// -SprawlAuditRun turns the same close wardrobe capture into a live gait
+	// check, proving shoe followers stay on the animated feet while moving.
+	bAuditRunForward = FParse::Param(
+		FCommandLine::Get(), TEXT("SprawlAuditRun"));
+	if (!bAuditRunForward)
+	{
+		if (UCharacterMovementComponent* Move = GetCharacterMovement())
+		{
+			Move->StopMovementImmediately();
+		}
+	}
+	if (HumanCharacter)
+	{
+		HumanCharacter->SetAction(
+			bAuditRunForward
+				? ESprawlHumanAction::Run : ESprawlHumanAction::Stand,
+			false);
+	}
+	if (SpringArm)
+	{
+		SpringArm->TargetArmLength = 335.f;
+		SpringArm->SocketOffset = FVector(0.f, 24.f, 18.f);
+		SpringArm->bEnableCameraLag = false;
+		SpringArm->bEnableCameraRotationLag = false;
+	}
+	if (FollowCamera)
+	{
+		FollowCamera->SetFieldOfView(70.f);
 	}
 }
 
@@ -354,11 +407,20 @@ void AZarriCharacter::UpdateBoundaryRescue(float DeltaSeconds)
 
 bool AZarriCharacter::TryInitializeMetaHumanVisual()
 {
+	if (Wardrobe)
+	{
+		Wardrobe->ClearWardrobe();
+	}
 	bUsingMetaHumanVisual = false;
 	MetaHumanBodyComponent = nullptr;
 	LoadedMetaHumanIdleAnim = nullptr;
 	LoadedMetaHumanWalkAnim = nullptr;
 	LoadedMetaHumanRunAnim = nullptr;
+	LoadedMetaHumanTalkAnim = nullptr;
+	LoadedMetaHumanSitAnim = nullptr;
+	LoadedMetaHumanDriveAnim = nullptr;
+	LoadedMetaHumanPunchAnim = nullptr;
+	LoadedMetaHumanKickAnim = nullptr;
 
 	if (!MetaHumanVisualComponent || MetaHumanVisualClass.IsNull()
 		|| MetaHumanIdleAnim.IsNull() || MetaHumanWalkAnim.IsNull()
@@ -371,6 +433,26 @@ bool AZarriCharacter::TryInitializeMetaHumanVisual()
 	LoadedMetaHumanIdleAnim = MetaHumanIdleAnim.LoadSynchronous();
 	LoadedMetaHumanWalkAnim = MetaHumanWalkAnim.LoadSynchronous();
 	LoadedMetaHumanRunAnim = MetaHumanRunAnim.LoadSynchronous();
+	if (!MetaHumanTalkAnim.IsNull())
+	{
+		LoadedMetaHumanTalkAnim = MetaHumanTalkAnim.LoadSynchronous();
+	}
+	if (!MetaHumanSitAnim.IsNull())
+	{
+		LoadedMetaHumanSitAnim = MetaHumanSitAnim.LoadSynchronous();
+	}
+	if (!MetaHumanDriveAnim.IsNull())
+	{
+		LoadedMetaHumanDriveAnim = MetaHumanDriveAnim.LoadSynchronous();
+	}
+	if (!MetaHumanPunchAnim.IsNull())
+	{
+		LoadedMetaHumanPunchAnim = MetaHumanPunchAnim.LoadSynchronous();
+	}
+	if (!MetaHumanKickAnim.IsNull())
+	{
+		LoadedMetaHumanKickAnim = MetaHumanKickAnim.LoadSynchronous();
+	}
 	if (!VisualClass || !LoadedMetaHumanIdleAnim || !LoadedMetaHumanWalkAnim
 		|| !LoadedMetaHumanRunAnim)
 	{
@@ -458,6 +540,16 @@ bool AZarriCharacter::TryInitializeMetaHumanVisual()
 	// The assembled body is authored down its own axis, so square it up with
 	// the capsule before it is ever seen — otherwise Zarri travels sideways.
 	Locomotion->AlignVisualToOwnerForward();
+	if (Wardrobe && HumanCharacter && HumanCharacter->IsConfigured())
+	{
+		if (!Wardrobe->ApplyToMetaHuman(
+			VisualActor, MetaHumanBodyComponent,
+			HumanCharacter->GetRuntimeState().Customization.Outfit))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Wardrobe] Zarri kept his fitted base garment; an accessory layer was unavailable"));
+		}
+	}
 	AttachEquipmentToVisual(MetaHumanBodyComponent, true);
 	SetCharacterVisualHidden(false);
 
@@ -545,6 +637,16 @@ void AZarriCharacter::InitializeHeroAvatar()
 	HeroJogAnim = LoadedJog;
 	HeroSprintAnim = FSprawlAvatarLibrary::LoadAvatarAnim(
 		ActiveHeroVariant, TEXT("Sprint"));
+	HeroTalkAnim = FSprawlAvatarLibrary::LoadAvatarAnim(
+		ActiveHeroVariant, TEXT("Talk"));
+	HeroSitAnim = FSprawlAvatarLibrary::LoadAvatarAnim(
+		ActiveHeroVariant, TEXT("Sit"));
+	// Optional future art: these suffixes are deliberately not part of the
+	// completeness gate, so an absent combat clip never disables Zarri's body.
+	HeroPunchAnim = FSprawlAvatarLibrary::LoadAvatarAnim(
+		ActiveHeroVariant, TEXT("Punch"));
+	HeroKickAnim = FSprawlAvatarLibrary::LoadAvatarAnim(
+		ActiveHeroVariant, TEXT("Kick"));
 	bHasHeroAvatar = true;
 	SetupFallbackLocomotion();
 }
@@ -566,9 +668,119 @@ void AZarriCharacter::SetupFallbackLocomotion()
 
 void AZarriCharacter::UpdateHeroAnimation()
 {
-	if (Locomotion)
+	if (!Locomotion)
 	{
-		Locomotion->UpdateLocomotion(GetVelocity().Size2D());
+		return;
+	}
+
+	const float GroundSpeed = GetVelocity().Size2D();
+	bool bTalking = false;
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (const UPhoneSubsystem* Phone = GI->GetSubsystem<UPhoneSubsystem>())
+		{
+			bTalking = Phone->IsOnCall();
+		}
+	}
+	const ESprawlHumanAction Action = HumanCharacter
+		? HumanCharacter->UpdateActionFromMovement(
+			GroundSpeed, bTalking, false, false, false)
+		: USprawlHumanCharacterModule::ResolveAction(
+			GroundSpeed, bTalking, false, false, false);
+
+	UAnimSequence* ActionAnimation = nullptr;
+	if (bUsingMetaHumanVisual)
+	{
+		switch (Action)
+		{
+		case ESprawlHumanAction::Talk: ActionAnimation = LoadedMetaHumanTalkAnim; break;
+		case ESprawlHumanAction::Sit: ActionAnimation = LoadedMetaHumanSitAnim; break;
+		case ESprawlHumanAction::Drive:
+			ActionAnimation = LoadedMetaHumanDriveAnim
+				? LoadedMetaHumanDriveAnim : LoadedMetaHumanSitAnim;
+			break;
+		default: break;
+		}
+	}
+	else
+	{
+		switch (Action)
+		{
+		case ESprawlHumanAction::Talk: ActionAnimation = HeroTalkAnim; break;
+		case ESprawlHumanAction::Sit:
+		case ESprawlHumanAction::Drive: ActionAnimation = HeroSitAnim; break;
+		default: break;
+		}
+	}
+
+	if (ActionAnimation)
+	{
+		Locomotion->SetActionAnimation(ActionAnimation);
+	}
+	else
+	{
+		Locomotion->ClearActionAnimation();
+	}
+	Locomotion->UpdateLocomotion(GroundSpeed);
+}
+
+bool AZarriCharacter::TryPunch()
+{
+	return Melee && Melee->TryPunch();
+}
+
+bool AZarriCharacter::TryKick()
+{
+	return Melee && Melee->TryKick();
+}
+
+bool AZarriCharacter::TryMeleeAttack()
+{
+	if (!Melee)
+	{
+		return false;
+	}
+
+	const ESprawlMeleeAttack Attack = Melee->GetNextAlternatingAttack();
+	const bool bStarted = Melee->TryAlternatingAttack();
+	if (bStarted)
+	{
+		const TCHAR* AttackName = Attack == ESprawlMeleeAttack::Punch
+			? TEXT("PUNCH") : TEXT("KICK");
+		UE_LOG(LogTemp, Display, TEXT("[MeleeInput] X/action started %s"),
+			AttackName);
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(
+				static_cast<uint64>(0x4D454C45), 0.45f, FColor::White,
+				AttackName);
+		}
+	}
+	return bStarted;
+}
+
+void AZarriCharacter::HandleMeleeAttackStarted(
+	ESprawlMeleeAttack Attack, float RecoverySeconds, bool bHitCharacter)
+{
+	(void)bHitCharacter;
+	if (!Locomotion)
+	{
+		return;
+	}
+	UAnimSequence* AttackAnimation = nullptr;
+	if (bUsingMetaHumanVisual)
+	{
+		AttackAnimation = Attack == ESprawlMeleeAttack::Punch
+			? LoadedMetaHumanPunchAnim : LoadedMetaHumanKickAnim;
+	}
+	else
+	{
+		AttackAnimation = Attack == ESprawlMeleeAttack::Punch
+			? HeroPunchAnim : HeroKickAnim;
+	}
+	if (AttackAnimation)
+	{
+		Locomotion->PlayOneShotAnimation(AttackAnimation, RecoverySeconds);
 	}
 }
 
@@ -602,6 +814,74 @@ void AZarriCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 	// Legacy key binding — reliable interact even if Enhanced Input misbehaves.
 	PlayerInputComponent->BindKey(EKeys::E, IE_Pressed, this, &AZarriCharacter::OnInteractKey);
 	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AZarriCharacter::OnInteractKey);
+
+	// X belongs on the possessed pawn's input component. Controller bindings
+	// are lower priority and can be shadowed by this Enhanced Input stack.
+	FSprawlMeleeInput::BindOnFoot(PlayerInputComponent, this);
+
+	if (FParse::Param(FCommandLine::Get(), TEXT("SprawlMeleeInputAudit")))
+	{
+		RunMeleeInputAudit();
+	}
+}
+
+void AZarriCharacter::OnMeleeKey()
+{
+	TryMeleeAttack();
+}
+
+void AZarriCharacter::RunMeleeInputAudit()
+{
+	int32 KeyboardXBindings = 0;
+	int32 GamepadXBindings = 0;
+	if (InputComponent)
+	{
+		for (const FInputKeyBinding& Binding : InputComponent->KeyBindings)
+		{
+			if (Binding.KeyEvent != IE_Pressed)
+			{
+				continue;
+			}
+			KeyboardXBindings += Binding.Chord.Key == EKeys::X ? 1 : 0;
+			GamepadXBindings += Binding.Chord.Key
+				== EKeys::Gamepad_FaceButton_Left ? 1 : 0;
+		}
+	}
+
+	const int32 RevisionBefore = Melee ? Melee->GetRuntimeState().Revision : -1;
+	OnMeleeKey();
+	const FSprawlMeleeRuntimeState State = Melee
+		? Melee->GetRuntimeState() : FSprawlMeleeRuntimeState();
+	const bool bPassed = InputComponent && KeyboardXBindings == 1
+		&& GamepadXBindings == 1 && Melee
+		&& State.Revision == RevisionBefore + 1
+		&& State.LastAttack == ESprawlMeleeAttack::Punch
+		&& State.bAttackActive
+		&& Melee->GetNextAlternatingAttack() == ESprawlMeleeAttack::Kick;
+
+	const TCHAR* AttackName = State.LastAttack == ESprawlMeleeAttack::Punch
+		? TEXT("Punch") : TEXT("Kick");
+	const TCHAR* NextName = Melee
+		&& Melee->GetNextAlternatingAttack() == ESprawlMeleeAttack::Kick
+		? TEXT("Kick") : TEXT("Punch");
+	if (bPassed)
+	{
+		UE_LOG(LogTemp, Display,
+			TEXT("[MeleeInputAudit] PASS keyboard_x=%d gamepad_x=%d "
+				"revision=%d attack=%s next=%s"),
+			KeyboardXBindings, GamepadXBindings, State.Revision,
+			AttackName, NextName);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[MeleeInputAudit] FAIL keyboard_x=%d gamepad_x=%d "
+				"revision=%d attack=%s next=%s"),
+			KeyboardXBindings, GamepadXBindings, State.Revision,
+			AttackName, NextName);
+	}
+	FPlatformMisc::RequestExitWithStatus(
+		true, bPassed ? 0 : 1, TEXT("SprawlMeleeInputAudit"));
 }
 
 void AZarriCharacter::HandleMove(const FInputActionValue& Value)
@@ -654,30 +934,47 @@ void AZarriCharacter::HandleStopSprint(const FInputActionValue&)
 
 void AZarriCharacter::HandleInteract(const FInputActionValue&)
 {
-	if (UGameInstance* GI = GetGameInstance())
-	{
-		if (UPhoneSubsystem* Phone = GI->GetSubsystem<UPhoneSubsystem>();
-			Phone && Phone->TryAnswerRingingCall())
-		{
-			return;
-		}
-	}
 	UE_LOG(LogTemp, Warning, TEXT("[Zarri] Interact pressed"));
-	EnterNearbyVehicle();
+	TryContextInteraction();
 }
 
 void AZarriCharacter::OnInteractKey()
+{
+	UE_LOG(LogTemp, Warning, TEXT("[Zarri] OnInteractKey (BindKey)"));
+	TryContextInteraction();
+}
+
+bool AZarriCharacter::TryContextInteraction()
 {
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UPhoneSubsystem* Phone = GI->GetSubsystem<UPhoneSubsystem>();
 			Phone && Phone->TryAnswerRingingCall())
 		{
-			return;
+			return true;
 		}
 	}
-	UE_LOG(LogTemp, Warning, TEXT("[Zarri] OnInteractKey (BindKey)"));
-	EnterNearbyVehicle();
+	if (ASprawlEnterableInteriors* Interiors =
+		ASprawlEnterableInteriors::FindForWorld(GetWorld());
+		Interiors && Interiors->TryInteract(this))
+	{
+		return true;
+	}
+	ASprawlCar* Vehicle = FindNearbyVehicle();
+	UE_LOG(LogTemp, Warning, TEXT("[Zarri] Context vehicle found=%s"),
+		Vehicle ? *Vehicle->GetName() : TEXT("NULL"));
+	return EnterVehicle(Vehicle);
+}
+
+bool AZarriCharacter::GetBuildingInteractionPrompt(FText& OutPrompt) const
+{
+	if (const ASprawlEnterableInteriors* Interiors =
+		ASprawlEnterableInteriors::FindForWorld(GetWorld()))
+	{
+		return Interiors->GetInteractionPrompt(this, OutPrompt);
+	}
+	OutPrompt = FText::GetEmpty();
+	return false;
 }
 
 void AZarriCharacter::EnterNearbyVehicle()
@@ -720,6 +1017,12 @@ bool AZarriCharacter::EnterVehicle(ASprawlCar* Vehicle)
 		}
 		return false;
 	}
+	if (HumanCharacter)
+	{
+		// Logical state still says Drive, while the existing vehicle policy keeps
+		// every seated driver visual hidden behind the cabin glass.
+		HumanCharacter->SetAction(ESprawlHumanAction::Drive, true);
+	}
 	// Hide Zarri but keep him in the world so we can teleport him to a door on exit.
 	SetCharacterVisualHidden(true);
 	SetActorHiddenInGame(true);
@@ -753,6 +1056,11 @@ void AZarriCharacter::OnExitedVehicle(ASprawlCar* FromVehicle)
 	SetCharacterVisualHidden(false);
 	SetActorEnableCollision(true);
 	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	if (HumanCharacter)
+	{
+		HumanCharacter->ClearHeldAction();
+		HumanCharacter->SetAction(ESprawlHumanAction::Stand, false);
+	}
 
 	if (APlayerController* PC = Cast<APlayerController>(FromVehicle->GetController()))
 	{

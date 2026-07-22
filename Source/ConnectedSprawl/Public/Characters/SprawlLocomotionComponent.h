@@ -98,6 +98,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Locomotion")
 	void UpdateLocomotion(float GroundSpeed);
 
+	/** Temporarily override speed gaits with a looping talk/sit/drive clip. */
+	UFUNCTION(BlueprintCallable, Category="Locomotion")
+	void SetActionAnimation(UAnimSequence* Animation, float PlayRate = 1.f);
+
+	/** Return to automatic stand/walk/run gait selection. */
+	UFUNCTION(BlueprintCallable, Category="Locomotion")
+	void ClearActionAnimation();
+
+	/**
+	 * Play an optional non-looping action without losing the current gait or
+	 * held-pose contract. UpdateLocomotion resumes automatically after Duration.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Locomotion")
+	bool PlayOneShotAnimation(
+		UAnimSequence* Animation, float Duration, float PlayRate = 1.f);
+
+	UFUNCTION(BlueprintPure, Category="Locomotion")
+	bool IsPlayingOneShot() const { return OneShotClip != nullptr; }
+
 	/** Rotate the yaw target so the body faces the owner's forward. */
 	UFUNCTION(BlueprintCallable, Category="Locomotion")
 	bool AlignVisualToOwnerForward();
@@ -128,7 +147,11 @@ protected:
 	UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> VisualMesh;
 	UPROPERTY(Transient) TObjectPtr<USceneComponent> YawTarget;
 	UPROPERTY(Transient) TObjectPtr<UAnimSequence> CurrentClip;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> ActionClip;
+	UPROPERTY(Transient) TObjectPtr<UAnimSequence> OneShotClip;
 	UPROPERTY(EditAnywhere, Category="Locomotion") TArray<FSprawlGait> Gaits;
+	float ActionPlayRate = 1.f;
+	float OneShotEndTime = -BIG_NUMBER;
 
 	/** Where the mesh asset faces in its own space; folded into GetVisualForward. */
 	float MeshForwardYaw = 0.f;

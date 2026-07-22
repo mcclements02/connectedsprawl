@@ -90,6 +90,26 @@ bool FSprawlKerbPlacement::IsInCarriageway(const FVector2D& Position)
 		|| FMath::Abs(Position.Y - RoadY) < Half;
 }
 
+bool FSprawlKerbPlacement::IsOnSidewalk(const FVector2D& Position)
+{
+	const float RoadX = Grid::RoadCenter(Grid::NearestRoadIndex(Position.X));
+	const float RoadY = Grid::RoadCenter(Grid::NearestRoadIndex(Position.Y));
+	const float DeltaX = FMath::Abs(Position.X - RoadX);
+	const float DeltaY = FMath::Abs(Position.Y - RoadY);
+	const float RoadHalf = Grid::RoadWidth * 0.5f;
+	const auto IsSidewalkOffset = [](float Distance)
+	{
+		return Distance >= SidewalkInnerOffset
+			&& Distance <= SidewalkOuterOffset;
+	};
+
+	// A sidewalk follows one road beyond its kerb, but must also be clear of
+	// any crossing road. This rejects parking bays and asphalt aprons that are
+	// road-free only because they sit outside the live travel lane.
+	return (IsSidewalkOffset(DeltaX) && DeltaY >= RoadHalf)
+		|| (IsSidewalkOffset(DeltaY) && DeltaX >= RoadHalf);
+}
+
 bool FSprawlKerbPlacement::IsAtStrandedBlockCentre(const FVector2D& Position)
 {
 	for (int32 Bx = 0; Bx < Grid::NumBlocks; ++Bx)
@@ -134,7 +154,7 @@ int32 ASprawlStreetDressing::RepairFoldoutSigns()
 		const FVector Loc = It->GetActorLocation();
 		const FVector2D P(Loc.X, Loc.Y);
 		const bool bWrong = IsTilted(**It) || IsFloating(**It)
-			|| FSprawlKerbPlacement::IsInCarriageway(P);
+			|| !FSprawlKerbPlacement::IsOnSidewalk(P);
 		if (!bWrong)
 		{
 			continue;
@@ -226,26 +246,51 @@ int32 ASprawlStreetDressing::RepairWallSignsInCarriageway()
 	return Fixed;
 }
 
-int32 ASprawlStreetDressing::SnapSignalPoles()
+int32 ASprawlStreetDressing::EnsureIntersectionSignals(int32& OutSpawned)
 {
-	int32 Fixed = 0;
+	OutSpawned = 0;
+	int32 Snapped = 0;
+	TSet<FIntPoint> ExistingIntersections;
 	for (TActorIterator<ASprawlTrafficLight> It(GetWorld()); It; ++It)
 	{
-		const FVector Loc = It->GetActorLocation();
-		const FVector2D P(Loc.X, Loc.Y);
-		const FVector2D Corner = FSprawlKerbPlacement::JunctionCornerFor(
-			P, FSprawlKerbPlacement::SignalCornerOffset);
-		const FVector Target(
-			Corner.X, Corner.Y, FSprawlKerbPlacement::SidewalkTopZ);
-		if (FVector::Dist2D(Loc, Target) < 100.f
-			&& FMath::Abs(Loc.Z - Target.Z) < 30.f)
+		const FVector Previous = It->GetActorLocation();
+		It->SnapToIntersection(FSprawlKerbPlacement::SidewalkTopZ);
+		if (!Previous.Equals(It->GetActorLocation(), 1.f))
 		{
-			continue;
+			++Snapped;
 		}
-		It->SetActorLocation(Target);
-		++Fixed;
+		ExistingIntersections.Add(FIntPoint(It->IntersectionX, It->IntersectionY));
 	}
-	return Fixed;
+
+	for (int32 IntersectionX = 0; IntersectionX < Grid::NumRoads; ++IntersectionX)
+	{
+		for (int32 IntersectionY = 0; IntersectionY < Grid::NumRoads; ++IntersectionY)
+		{
+			const FVector2D Center = Grid::IntersectionCenter(IntersectionX, IntersectionY);
+			if (Grid::IsOverLake(Center.X, Center.Y, 100.f)
+				|| ExistingIntersections.Contains(FIntPoint(IntersectionX, IntersectionY)))
+			{
+				continue;
+			}
+
+			FActorSpawnParameters Params;
+			Params.Name = *FString::Printf(TEXT("SprawlIntersectionSignal_%d_%d"),
+				IntersectionX, IntersectionY);
+			Params.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ASprawlTrafficLight* Signal = GetWorld()->SpawnActor<ASprawlTrafficLight>(
+				FVector(Center.X, Center.Y, FSprawlKerbPlacement::SidewalkTopZ),
+				FRotator::ZeroRotator, Params);
+			if (!Signal)
+			{
+				continue;
+			}
+			Signal->IntersectionX = IntersectionX;
+			Signal->IntersectionY = IntersectionY;
+			++OutSpawned;
+		}
+	}
+	return Snapped;
 }
 
 void ASprawlStreetDressing::BeginPlay()
@@ -254,10 +299,11 @@ void ASprawlStreetDressing::BeginPlay()
 	const int32 Foldouts = RepairFoldoutSigns();
 	const int32 Stranded = RepairStrandedJunctionProps();
 	const int32 WallSigns = RepairWallSignsInCarriageway();
-	const int32 Signals = SnapSignalPoles();
+	int32 SpawnedSignals = 0;
+	const int32 Signals = EnsureIntersectionSignals(SpawnedSignals);
 	UE_LOG(LogTemp, Display,
-		TEXT("[StreetDressing] foldout_signs=%d stranded_junction_props=%d wall_signs_off_road=%d signal_poles_snapped=%d"),
-		Foldouts, Stranded, WallSigns, Signals);
+		TEXT("[StreetDressing] foldout_signs_sidewalk=%d stranded_junction_props=%d wall_signs_off_road=%d signal_models_snapped=%d signal_models_spawned=%d"),
+		Foldouts, Stranded, WallSigns, Signals, SpawnedSignals);
 }
 
 ASprawlStreetDressing* ASprawlStreetDressing::EnsureForWorld(UWorld* World)

@@ -27,8 +27,8 @@ constexpr float StubHeight = 240.f;
 
 // The lake meets the south boundary across this X range and the east boundary
 // below this Y; streets ending in water get no gate.
-constexpr float BayGapMinX = 600.f;
-constexpr float BayGapMaxX = 11800.f;
+constexpr float CityGateBayGapMinX = 600.f;
+constexpr float CityGateBayGapMaxX = 11800.f;
 constexpr float LakeEastMaxY = -4300.f;
 
 const FLinearColor ConcreteTint(0.24f, 0.235f, 0.22f, 1.f);
@@ -78,7 +78,7 @@ FSprawlCityGateLayout FSprawlCityGateLayout::Build()
 		// North boundary: every street gets a gate.
 		AddGate(Along, 1.f, true);
 		// South boundary: skip streets ending in the bay.
-		if (Along < BayGapMinX || Along > BayGapMaxX)
+		if (Along < CityGateBayGapMinX || Along > CityGateBayGapMaxX)
 		{
 			AddGate(Along, -1.f, true);
 		}

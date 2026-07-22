@@ -28,10 +28,16 @@ bool FSprawlKerbPlacementTest::RunTest(const FString& Parameters)
 		InRoad, FSprawlKerbPlacement::SignKerbOffset);
 	TestFalse(TEXT("The kerb point leaves the carriageway"),
 		FSprawlKerbPlacement::IsInCarriageway(Kerb));
+	TestTrue(TEXT("The kerb point is inside the dedicated sidewalk band"),
+		FSprawlKerbPlacement::IsOnSidewalk(Kerb));
 	TestTrue(TEXT("The kerb point keeps the actor's side of the road"),
 		Kerb.X > RoadX);
 	TestTrue(TEXT("The kerb offset is exact"), FMath::IsNearlyEqual(
 		Kerb.X, RoadX + FSprawlKerbPlacement::SignKerbOffset));
+	const FVector2D ParkingBay(RoadX + Grid::ParkingOffset,
+		RoadY + Grid::BlockSize * 0.5f);
+	TestFalse(TEXT("A parking bay is never accepted as sidewalk dressing ground"),
+		FSprawlKerbPlacement::IsOnSidewalk(ParkingBay));
 
 	// A stranded prop near a junction resolves to its own quadrant corner.
 	const FVector2D NearJunction(RoadX - 300.f, RoadY + 260.f);

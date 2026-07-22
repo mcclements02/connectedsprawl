@@ -32,8 +32,8 @@ public:
 	UPROPERTY(EditAnywhere, Category="Crowd")
 	TSubclassOf<ASprawlPedestrian> PedestrianClass;
 
-	/** Target live pedestrian count near the player. */
-	UPROPERTY(EditAnywhere, Category="Crowd") int32 TargetCount = 26;
+	/** Desired live count before the platform's full-MetaHuman safety cap. */
+	UPROPERTY(EditAnywhere, Category="Crowd") int32 TargetCount = 8;
 
 	/** Despawn beyond this distance from the player (cm). */
 	UPROPERTY(EditAnywhere, Category="Crowd") float RecycleRadius = 16000.f;
@@ -52,8 +52,13 @@ public:
 
 protected:
 	float TimeSinceEval = 0.f;
+	int32 NextCharacterSeed = 1;
 	UPROPERTY() TArray<TObjectPtr<ASprawlPedestrian>> ActivePeds;
 
-	void Evaluate();
+	/** Authority-only population ownership. */
+	void EvaluatePopulation();
+
+	/** Rendering-client LOD selection over the replicated pedestrian set. */
+	void UpdateLocalDetail();
 	bool FindSidewalkSpawnPoint(const FVector& PlayerLoc, FVector& OutPoint) const;
 };

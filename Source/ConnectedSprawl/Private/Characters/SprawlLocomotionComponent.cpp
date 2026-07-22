@@ -2,6 +2,7 @@
 
 #include "Characters/SprawlLocomotionComponent.h"
 
+#include "Animation/AnimSingleNodeInstance.h"
 #include "Animation/AnimSequence.h"
 #include "Characters/SprawlAvatarLibrary.h"
 #include "Characters/SprawlCharacterRender.h"
@@ -29,6 +30,10 @@ void USprawlLocomotionComponent::SetVisual(
 	YawTarget = InYawTarget ? InYawTarget : InVisualMesh;
 	FSprawlCharacterRender::DisableDecalProjection(VisualMesh);
 	CurrentClip = nullptr;
+	ActionClip = nullptr;
+	OneShotClip = nullptr;
+	ActionPlayRate = 1.f;
+	OneShotEndTime = -BIG_NUMBER;
 	AppliedYawCorrection = 0.f;
 	MeshForwardYaw = 0.f;
 	bMeshForwardYawValid = VisualMesh
@@ -48,6 +53,10 @@ void USprawlLocomotionComponent::ClearVisual()
 	VisualMesh = nullptr;
 	YawTarget = nullptr;
 	CurrentClip = nullptr;
+	ActionClip = nullptr;
+	OneShotClip = nullptr;
+	ActionPlayRate = 1.f;
+	OneShotEndTime = -BIG_NUMBER;
 	AppliedYawCorrection = 0.f;
 	MeshForwardYaw = 0.f;
 	bMeshForwardYawValid = false;
@@ -91,7 +100,28 @@ void USprawlLocomotionComponent::SetStandardGaits(UAnimSequence* Idle,
 
 void USprawlLocomotionComponent::UpdateLocomotion(float GroundSpeed)
 {
-	if (!VisualMesh || Gaits.IsEmpty())
+	if (!VisualMesh)
+	{
+		return;
+	}
+	if (OneShotClip)
+	{
+		const UWorld* World = GetWorld();
+		if (World && World->GetTimeSeconds() < OneShotEndTime)
+		{
+			return;
+		}
+		OneShotClip = nullptr;
+		CurrentClip = nullptr;
+		OneShotEndTime = -BIG_NUMBER;
+	}
+	if (ActionClip)
+	{
+		FSprawlAvatarLibrary::PlayLoop(
+			VisualMesh, ActionClip, CurrentClip, ActionPlayRate);
+		return;
+	}
+	if (Gaits.IsEmpty())
 	{
 		return;
 	}
@@ -109,6 +139,52 @@ void USprawlLocomotionComponent::UpdateLocomotion(float GroundSpeed)
 		FSprawlAvatarLibrary::PlayLoop(VisualMesh, Gait.Clip, CurrentClip, PlayRate);
 		return;
 	}
+}
+
+void USprawlLocomotionComponent::SetActionAnimation(
+	UAnimSequence* Animation, float PlayRate)
+{
+	if (!Animation)
+	{
+		ClearActionAnimation();
+		return;
+	}
+	if (ActionClip != Animation)
+	{
+		CurrentClip = nullptr;
+	}
+	ActionClip = Animation;
+	ActionPlayRate = FMath::Clamp(PlayRate, 0.1f, 4.f);
+}
+
+void USprawlLocomotionComponent::ClearActionAnimation()
+{
+	if (ActionClip)
+	{
+		ActionClip = nullptr;
+		CurrentClip = nullptr;
+	}
+	ActionPlayRate = 1.f;
+}
+
+bool USprawlLocomotionComponent::PlayOneShotAnimation(
+	UAnimSequence* Animation, float Duration, float PlayRate)
+{
+	if (!VisualMesh || !Animation || !GetWorld())
+	{
+		return false;
+	}
+	const float SafeDuration = FMath::Clamp(Duration, 0.05f, 5.f);
+	const float SafePlayRate = FMath::Clamp(PlayRate, 0.1f, 4.f);
+	VisualMesh->PlayAnimation(Animation, /*bLooping=*/false);
+	if (UAnimSingleNodeInstance* Node = VisualMesh->GetSingleNodeInstance())
+	{
+		Node->SetPlayRate(SafePlayRate);
+	}
+	CurrentClip = Animation;
+	OneShotClip = Animation;
+	OneShotEndTime = GetWorld()->GetTimeSeconds() + SafeDuration;
+	return true;
 }
 
 bool USprawlLocomotionComponent::AlignVisualToOwnerForward()

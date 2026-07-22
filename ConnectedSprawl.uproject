@@ -27,7 +27,8 @@
 		{ "Name": "ModelingToolsEditorMode", "Enabled": true },
 		{ "Name": "MetaHumanCharacter", "Enabled": true },
 		{ "Name": "GameplayAbilities", "Enabled": true },
-		{ "Name": "Niagara", "Enabled": true }
+		{ "Name": "Niagara", "Enabled": true },
+		{ "Name": "ProceduralMeshComponent", "Enabled": true }
 	],
 	"TargetPlatforms": [ "IOS", "Mac" ]
 }

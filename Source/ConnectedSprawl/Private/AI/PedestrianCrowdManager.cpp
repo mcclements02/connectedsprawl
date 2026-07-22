@@ -2,10 +2,13 @@
 
 #include "AI/PedestrianCrowdManager.h"
 #include "AI/SprawlPedestrian.h"
+#include "Characters/SprawlCharacterDeveloper.h"
+#include "Characters/SprawlCrowdMetaHuman.h"
 #include "World/SprawlCityGridSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 
 using Grid = USprawlCityGridSubsystem;
 
@@ -22,25 +25,38 @@ void APedestrianCrowdManager::Tick(float DeltaSeconds)
 	TimeSinceEval += DeltaSeconds;
 	if (TimeSinceEval < EvaluateInterval) return;
 	TimeSinceEval = 0.f;
-	Evaluate();
+	// This manager is a non-replicated level actor, so HasAuthority() is also
+	// true for its client-local copy. Net mode is the reliable population-owner
+	// check; clients only select presentation detail for replicated pedestrians.
+	if (GetNetMode() != NM_Client)
+	{
+		EvaluatePopulation();
+	}
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		UpdateLocalDetail();
+	}
 }
 
 void APedestrianCrowdManager::AdoptExternalPedestrian(
 	ASprawlPedestrian* Pedestrian)
 {
-	if (!IsValid(Pedestrian) || ActivePeds.Contains(Pedestrian))
+	if (GetNetMode() == NM_Client || !IsValid(Pedestrian)
+		|| ActivePeds.Contains(Pedestrian))
 	{
 		return;
 	}
 
 	// Keep the iPhone population cap stable. The ejected driver is beside the
 	// player, so recycle the farthest ordinary pedestrian when the ring is full.
-	if (TargetCount <= 0)
+	const int32 EffectiveTarget = FMath::Min(
+		TargetCount, FSprawlCrowdMetaHuman::PopulationCap(PLATFORM_IOS != 0));
+	if (EffectiveTarget <= 0)
 	{
 		Pedestrian->SetLifeSpan(30.f);
 		return;
 	}
-	if (ActivePeds.Num() >= TargetCount)
+	if (ActivePeds.Num() >= EffectiveTarget)
 	{
 		const APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 		const FVector Focus = PC && PC->GetPawn()
@@ -121,7 +137,7 @@ bool APedestrianCrowdManager::FindSidewalkSpawnPoint(const FVector& PlayerLoc, F
 	return false;
 }
 
-void APedestrianCrowdManager::Evaluate()
+void APedestrianCrowdManager::EvaluatePopulation()
 {
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	if (!PC || !PC->GetPawn()) return;
@@ -130,6 +146,16 @@ void APedestrianCrowdManager::Evaluate()
 	if (!World || !PedestrianClass) return;
 
 	const FVector PlayerLoc = PC->GetPawn()->GetActorLocation();
+	const float CityHour = USprawlCharacterDeveloper::ResolveCityHour(World);
+	const ESprawlCharacterDistrict District =
+		USprawlCharacterDeveloper::DistrictForLocation(PlayerLoc);
+	const int32 EffectiveTarget = FMath::Min(
+		TargetCount, FSprawlCrowdMetaHuman::PopulationCap(PLATFORM_IOS != 0));
+	const int32 DesiredCount = EffectiveTarget > 0
+		? FMath::Clamp(FMath::RoundToInt(EffectiveTarget
+			* USprawlCharacterDeveloper::PopulationMultiplier(District, CityHour)),
+			1, EffectiveTarget)
+		: 0;
 
 	// Recycle pedestrians the player has left behind.
 	for (int32 i = ActivePeds.Num() - 1; i >= 0; --i)
@@ -147,9 +173,43 @@ void APedestrianCrowdManager::Evaluate()
 		}
 	}
 
-	// Top up the crowd, a few per pass to spread the cost.
-	int32 Budget = 4;
-	while (ActivePeds.Num() < TargetCount && Budget-- > 0)
+	// Ease density down when the player enters a quiet district or late hour.
+	// Removing at most two per pass avoids a visible crowd pop.
+	int32 RetireBudget = 2;
+	while (ActivePeds.Num() > DesiredCount && RetireBudget-- > 0)
+	{
+		int32 FarthestIndex = INDEX_NONE;
+		float FarthestDistanceSq = -1.f;
+		for (int32 Index = 0; Index < ActivePeds.Num(); ++Index)
+		{
+			if (!IsValid(ActivePeds[Index]))
+			{
+				FarthestIndex = Index;
+				break;
+			}
+			const float DistanceSq = FVector::DistSquared2D(
+				ActivePeds[Index]->GetActorLocation(), PlayerLoc);
+			if (DistanceSq > FarthestDistanceSq)
+			{
+				FarthestDistanceSq = DistanceSq;
+				FarthestIndex = Index;
+			}
+		}
+		if (!ActivePeds.IsValidIndex(FarthestIndex))
+		{
+			break;
+		}
+		if (IsValid(ActivePeds[FarthestIndex]))
+		{
+			ActivePeds[FarthestIndex]->Destroy();
+		}
+		ActivePeds.RemoveAtSwap(FarthestIndex);
+	}
+
+	// Load at most one uncached assembled resident per pass. This deliberately
+	// spreads first-use MetaHuman class/material work across frames on iPhone.
+	int32 Budget = 1;
+	while (ActivePeds.Num() < DesiredCount && Budget-- > 0)
 	{
 		FVector SpawnPoint;
 		if (!FindSidewalkSpawnPoint(PlayerLoc, SpawnPoint))
@@ -157,16 +217,82 @@ void APedestrianCrowdManager::Evaluate()
 			break;
 		}
 
-		FActorSpawnParameters Params;
-		Params.SpawnCollisionHandlingOverride =
-			ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
-		ASprawlPedestrian* Ped = World->SpawnActor<ASprawlPedestrian>(
-			PedestrianClass, SpawnPoint,
-			FRotator(0.f, FMath::FRandRange(0.f, 360.f), 0.f), Params);
+		const FTransform SpawnTransform(
+			FRotator(0.f, FMath::FRandRange(0.f, 360.f), 0.f), SpawnPoint);
+		ASprawlPedestrian* Ped = World->SpawnActorDeferred<ASprawlPedestrian>(
+			PedestrianClass, SpawnTransform, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding);
 		if (!Ped)
 		{
 			continue;
 		}
-		ActivePeds.Add(Ped);
+
+		const int32 PopulationIndex = NextCharacterSeed++;
+		const int32 Seed = static_cast<int32>(HashCombineFast(
+			HashCombineFast(GetTypeHash(FMath::RoundToInt(SpawnPoint.X)),
+				GetTypeHash(FMath::RoundToInt(SpawnPoint.Y))),
+			GetTypeHash(PopulationIndex)));
+		Ped->SetDevelopedProfile(USprawlCharacterDeveloper::DevelopCharacter(
+			Seed, SpawnPoint, CityHour));
+		if (USprawlHumanCharacterModule* Human = Ped->GetHumanCharacterModule())
+		{
+			FSprawlHumanCustomization Customization =
+				Human->GetRuntimeState().Customization;
+			Customization.AppearanceId =
+				FSprawlCrowdMetaHuman::AppearanceIdForPopulationIndex(
+					PopulationIndex - 1);
+			if (const FSprawlCrowdMetaHumanEntry* Entry =
+				FSprawlCrowdMetaHuman::FindEntry(Customization.AppearanceId))
+			{
+				Customization.Presentation = Entry->Presentation;
+			}
+			FString CustomizationError;
+			if (!Human->SetCustomization(Customization, CustomizationError))
+			{
+				UE_LOG(LogTemp, Error,
+					TEXT("[CrowdMetaHuman] balanced appearance rejected: %s"),
+					*CustomizationError);
+			}
+		}
+		AActor* FinishedActor = UGameplayStatics::FinishSpawningActor(Ped, SpawnTransform);
+		if (ASprawlPedestrian* FinishedPed = Cast<ASprawlPedestrian>(FinishedActor))
+		{
+			ActivePeds.Add(FinishedPed);
+		}
+	}
+
+	// Presentation detail is selected independently on every rendering client.
+}
+
+void APedestrianCrowdManager::UpdateLocalDetail()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!PC || !PC->GetPawn())
+	{
+		return;
+	}
+
+	const FVector PlayerLoc = PC->GetPawn()->GetActorLocation();
+	TArray<ASprawlPedestrian*> LocalPedestrians;
+	TArray<float> DistanceSquared;
+	for (TActorIterator<ASprawlPedestrian> It(GetWorld()); It; ++It)
+	{
+		ASprawlPedestrian* Pedestrian = *It;
+		if (!IsValid(Pedestrian))
+		{
+			continue;
+		}
+		LocalPedestrians.Add(Pedestrian);
+		DistanceSquared.Add(FVector::DistSquared2D(
+			Pedestrian->GetActorLocation(), PlayerLoc));
+	}
+	const TArray<int32> HighDetailIndices =
+		FSprawlCrowdMetaHuman::SelectHighDetailIndices(
+			DistanceSquared,
+			FSprawlCrowdMetaHuman::HighDetailBudget(PLATFORM_IOS != 0));
+	for (int32 Index = 0; Index < LocalPedestrians.Num(); ++Index)
+	{
+		LocalPedestrians[Index]->SetMetaHumanHighDetail(
+			HighDetailIndices.Contains(Index));
 	}
 }

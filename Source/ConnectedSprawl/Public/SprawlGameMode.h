@@ -31,6 +31,7 @@ private:
 	void OnDayTick();
 	void ApplyLoadedPlayerState();
 	void RunProgressionAudit();
+	void RunInteriorMapAudit();
 	void BeginVisualAudit();
 	void CaptureVisualAudit();
 	void HandleVisualScreenshot(

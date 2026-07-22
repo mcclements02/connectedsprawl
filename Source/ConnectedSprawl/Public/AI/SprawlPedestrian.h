@@ -2,12 +2,17 @@
 
 #pragma once
 
+#include "Characters/SprawlHumanCharacterModule.h"
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "SprawlPedestrian.generated.h"
 
 class UAnimSequence;
 class AActor;
+class UChildActorComponent;
+class USkeletalMeshComponent;
+class USprawlLocomotionComponent;
+class USprawlWardrobeModule;
 
 /**
  * ASprawlPedestrian
@@ -42,11 +47,36 @@ public:
 	UPROPERTY(EditAnywhere, Category="Pedestrian") float CrossChance = 0.30f;
 	/** Standing height (cm) the avatar mesh is scaled to (small per-ped variance added). */
 	UPROPERTY(EditAnywhere, Category="Pedestrian") float DesiredHeight = 165.f;
-	/** True after a complete imported human mesh + locomotion set is active. */
-	bool HasRealAvatar() const { return bHasAvatar; }
+	/** True only when an assembled MetaHuman and compatible locomotion are active. */
+	bool HasRealAvatar() const { return bUsingMetaHumanVisual; }
+	bool IsUsingMetaHumanVisual() const { return bUsingMetaHumanVisual; }
+	FName GetAppearanceId() const { return ActiveAppearanceId; }
+	FName GetRequestedAppearanceId() const { return RequestedAppearanceId; }
+	void SetMetaHumanHighDetail(bool bHighDetail);
 
-	/** Must be called before BeginPlay (deferred spawn) to preserve an ejected driver's look. */
+	/** Select a stable roster identity for a deferred-spawned logical driver. */
 	void SetForcedVariant(const FString& VariantName) { ForcedVariant = VariantName; }
+
+	/** Must be called before BeginPlay so gait and appearance use the authored identity. */
+	void SetDevelopedProfile(const FSprawlCharacterProfile& InProfile);
+
+	UFUNCTION(BlueprintPure, Category="Pedestrian|Character")
+	FSprawlCharacterProfile GetCharacterProfile() const { return CharacterProfile; }
+
+	/** Shared replicated customization/action state used by every human tier. */
+	UFUNCTION(BlueprintPure, Category="Pedestrian|Character")
+	USprawlHumanCharacterModule* GetHumanCharacterModule() const
+	{
+		return HumanCharacter;
+	}
+
+	/** Script a stand/talk/sit/drive pose; held stationary poses pause navigation. */
+	UFUNCTION(BlueprintCallable, Category="Pedestrian|Character")
+	bool SetHumanAction(ESprawlHumanAction Action, bool bHoldAction = true);
+
+	/** Release a scripted pose and rejoin ordinary sidewalk activity. */
+	UFUNCTION(BlueprintCallable, Category="Pedestrian|Character")
+	void ResumeCityActivity();
 
 	/** Immediately leave normal navigation and flee from a danger source. */
 	void StartFleeFrom(const AActor* DangerActor, float DurationSeconds = 4.f);
@@ -78,20 +108,45 @@ private:
 	int32 CrossingIntersectionX = 0;
 	int32 CrossingIntersectionY = 0;
 
-	// --- Imported human avatar (mesh + looping clips, single-node mode) ---
+	// --- Strict assembled-MetaHuman visual tier ---
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Pedestrian|Character",
+		meta=(AllowPrivateAccess="true"))
+	TObjectPtr<USprawlHumanCharacterModule> HumanCharacter;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Pedestrian|Character",
+		meta=(AllowPrivateAccess="true"))
+	TObjectPtr<USprawlWardrobeModule> Wardrobe;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Pedestrian|Character",
+		meta=(AllowPrivateAccess="true"))
+	TObjectPtr<USprawlLocomotionComponent> Locomotion;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Pedestrian|Character",
+		meta=(AllowPrivateAccess="true"))
+	TObjectPtr<UChildActorComponent> MetaHumanVisualComponent;
+	UPROPERTY(Transient)
+	TObjectPtr<USkeletalMeshComponent> MetaHumanBodyMesh;
 	UPROPERTY() TObjectPtr<UAnimSequence> IdleAnim;
 	UPROPERTY() TObjectPtr<UAnimSequence> WalkAnim;
 	UPROPERTY() TObjectPtr<UAnimSequence> JogAnim;
-	UPROPERTY() TObjectPtr<UAnimSequence> CurrentAnim;
 	UPROPERTY() FString ForcedVariant;
 	UPROPERTY() FString ActiveVariant;
-	bool bHasAvatar = false;
+	UPROPERTY() FName RequestedAppearanceId;
+	UPROPERTY() FName ActiveAppearanceId;
+	UPROPERTY(Transient) FSprawlHumanCustomization ActiveVisualCustomization;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Pedestrian|Character",
+		meta=(AllowPrivateAccess="true"))
+	FSprawlCharacterProfile CharacterProfile;
+	bool bHasDevelopedProfile = false;
+	bool bHasActiveVisualCustomization = false;
+	bool bUsingMetaHumanVisual = false;
+	bool bIdleTalkPose = false;
 
-	/** Pick a random avatar variant and apply its mesh + animation set. */
+	/** Resolve replicated roster identity and atomically activate a real human. */
 	void InitializeAppearance();
 
-	/** Swap Idle/Walk/Jog by current speed and scale the walk play rate. */
+	/** Drive common MetaHuman stand/walk/run clips from semantic action state. */
 	void UpdateAnimation();
+
+	UFUNCTION()
+	void HandleHumanRuntimeStateChanged(FSprawlHumanRuntimeState RuntimeState);
 
 	/** Corner sign offsets for index 0..3. */
 	static FIntPoint CornerSigns(int32 Index);

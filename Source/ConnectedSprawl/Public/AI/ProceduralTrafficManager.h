@@ -1,6 +1,6 @@
 // The Connected Sprawl - Procedural traffic.
-// Spawns NPC-vehicle "clumps" around Zarri so the city feels populated without
-// simulating 15 miles of AI. Outside the active ring, vehicles are despawned.
+// Maintains a small NPC-vehicle population without simulating 15 miles of AI.
+// Replacement cars now leave a real parking deck instead of appearing in lanes.
 
 #pragma once
 
@@ -18,9 +18,9 @@ class ASprawlCar;
  * Lightweight traffic density controller.
  *
  * Strategy:
- *   - Keep N active AI vehicles within a 400m "interest ring" around the player.
- *   - When the player drives out of a vehicle's SLEEP_RADIUS, despawn it.
- *   - Periodically spawn new vehicles on off-screen spline paths within SPAWN_RADIUS.
+ *   - Keep N active AI vehicles while culling cars well outside the player ring.
+ *   - Replenish at most one car per pass from an obstruction-tested garage exit.
+ *   - Hand each car to normal directed-lane AI only after its driveway merge.
  *
  * This is a placeholder ahead of a full MassEntity implementation. With Mass we
  * can scale to thousands of silhouette vehicles on the Arteries at near-zero
@@ -44,11 +44,10 @@ public:
 	/** Target count of active AI vehicles within the interest ring. */
 	UPROPERTY(EditAnywhere, Category="Traffic") int32 TargetActiveCount = 14;
 
-	/** Interest ring radius (cm). Vehicles inside this are kept; outside are despawned.
-	 *  Sized for the current prototype grid (~180m across), not the full 15-mile map. */
+	/** Legacy interest-ring tune retained for saved Blueprint compatibility. */
 	UPROPERTY(EditAnywhere, Category="Traffic") float InterestRadius = 7000.f;
 
-	/** Spawn annulus outer bound (cm). New vehicles spawn in [InterestRadius, SpawnRadius]. */
+	/** Distance at which managed traffic may be culled from the player. */
 	UPROPERTY(EditAnywhere, Category="Traffic") float SpawnRadius = 13000.f;
 
 	/** Throttle in seconds between spawn/cull passes. */
@@ -79,19 +78,25 @@ protected:
 	int32 TrafficAuditMaxIntersectionOccupancy = 0;
 	int32 TrafficAuditMaxPedestrians = 0;
 	int32 TrafficAuditMaxRealAvatars = 0;
+	int32 TrafficAuditMaxDistinctMetaHumans = 0;
+	int32 TrafficAuditMaxNonMetaHumansAfterWarmup = 0;
 	int32 TrafficAuditPeakCars = 0;
 	int32 TrafficAuditPeakTotalCars = 0;
 	int32 TrafficAuditMaxEnterableCars = 0;
 	int32 TrafficAuditMaxBoundaryViolations = 0;
 	int32 TrafficAuditMaxUprightViolations = 0;
-	int32 TrafficAuditMaxVisibleDrivers = 0;
-	int32 TrafficAuditMaxOutsideDrivers = 0;
-	int32 TrafficAuditMaxMissingDriversAfterWarmup = 0;
+	int32 TrafficAuditMaxHiddenDrivers = 0;
+	int32 TrafficAuditMaxVisibleDriverViolations = 0;
+	int32 TrafficAuditMaxMissingHiddenDriversAfterWarmup = 0;
 	int32 TrafficAuditUnauthorizedEntries = 0;
 	int32 TrafficAuditMaxCompletedTurns = 0;
 	int32 TrafficAuditMaxCompletedUTurns = 0;
 	int32 TrafficRouteRecycles = 0;
 	int32 TrafficSpawnRouteRejects = 0;
+	int32 TrafficGarageSpawnAttempts = 0;
+	int32 TrafficGarageSpawnSuccesses = 0;
+	int32 TrafficGarageBlockedExits = 0;
+	int32 NextGarageExitIndex = 0;
 	TMap<TWeakObjectPtr<APawn>, FVector> TrafficAuditStarts;
 	TMap<TWeakObjectPtr<APawn>, float> TrafficAuditLaneViolationDurations;
 	TMap<TWeakObjectPtr<APawn>, float> TrafficAuditWrongWayDurations;

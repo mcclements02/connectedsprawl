@@ -10,6 +10,7 @@
 #include "UI/DecisionModalWidget.h"
 #include "UI/SprawlDecisionModal.h"
 #include "UI/SprawlEndGameModal.h"
+#include "UI/SprawlCityMapWidget.h"
 #include "UI/SprawlNativeHUD.h"
 
 #include "Kismet/KismetSystemLibrary.h"
@@ -92,6 +93,12 @@ void ASprawlPlayerController::TouchThrottleReleased()
 bool ASprawlPlayerController::IsDrivingVehicle() const
 {
 	return Cast<ASprawlCar>(GetPawn()) != nullptr;
+}
+
+bool ASprawlPlayerController::IsCityMapOpen() const
+{
+	return CityMapWidget
+		&& CityMapWidget->GetVisibility() != ESlateVisibility::Collapsed;
 }
 
 void ASprawlPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -207,6 +214,12 @@ void ASprawlPlayerController::SetupInputComponent()
 		InputComponent->BindKey(EKeys::Zero, IE_Pressed, this, &ASprawlPlayerController::OnOnePressed);
 		InputComponent->BindKey(EKeys::E, IE_Pressed, this, &ASprawlPlayerController::OnInteractPressed);
 		InputComponent->BindKey(EKeys::F, IE_Pressed, this, &ASprawlPlayerController::OnInteractPressed);
+		FInputKeyBinding& MapBinding = InputComponent->BindKey(
+			EKeys::M, IE_Pressed, this, &ASprawlPlayerController::OnMapPressed);
+		MapBinding.bExecuteWhenPaused = true;
+		// Keyboard/gamepad melee lives on the possessed Zarri input component,
+		// above this controller in Unreal's input stack. This controller keeps
+		// only the touch route and mouse-capture-aware left-click route.
 		InputComponent->BindKey(EKeys::F5, IE_Pressed, this, &ASprawlPlayerController::OnSavePressed);
 		InputComponent->BindKey(EKeys::F9, IE_Pressed, this, &ASprawlPlayerController::OnLoadPressed);
 	}
@@ -233,12 +246,67 @@ void ASprawlPlayerController::OnInteractPressed()
 	}
 	else if (AZarriCharacter* Zarri = Cast<AZarriCharacter>(P))
 	{
-		Zarri->EnterNearbyVehicle();
+		Zarri->TryContextInteraction();
+	}
+}
+
+void ASprawlPlayerController::OnMapPressed()
+{
+	SetCityMapOpen(!IsCityMapOpen());
+}
+
+void ASprawlPlayerController::SetCityMapOpen(bool bOpen)
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+	if (bOpen && ((DecisionWidget && DecisionWidget->IsInViewport())
+		|| (EndGameWidget && EndGameWidget->IsInViewport())))
+	{
+		return;
+	}
+	if (bOpen && !CityMapWidget)
+	{
+		CityMapWidget = CreateWidget<USprawlCityMapWidget>(
+			this, USprawlCityMapWidget::StaticClass());
+		if (CityMapWidget)
+		{
+			CityMapWidget->BuildUI();
+			CityMapWidget->AddToViewport(80);
+		}
+	}
+	if (!CityMapWidget)
+	{
+		return;
+	}
+	CityMapWidget->SetVisibility(
+		bOpen ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	SetPause(bOpen);
+	if (!bOpen)
+	{
+		SetInputMode(FInputModeGameOnly());
+		bShowMouseCursor = false;
+	}
+	UE_LOG(LogTemp, Display, TEXT("[CityMap] %s"),
+		bOpen ? TEXT("opened") : TEXT("closed"));
+}
+
+void ASprawlPlayerController::OnMeleePressed()
+{
+	if (AZarriCharacter* Zarri = Cast<AZarriCharacter>(GetPawn()))
+	{
+		Zarri->TryMeleeAttack();
 	}
 }
 
 void ASprawlPlayerController::OnEscapePressed()
 {
+	if (IsCityMapOpen())
+	{
+		SetCityMapOpen(false);
+		return;
+	}
 	// If a decision popup is currently active on screen, don't force quit on the first Esc press
 	if ((DecisionWidget && DecisionWidget->IsInViewport()) ||
 		(EndGameWidget && EndGameWidget->IsInViewport()))
@@ -289,14 +357,19 @@ void ASprawlPlayerController::SetMouseCaptured(bool bCaptured)
 
 void ASprawlPlayerController::OnRecaptureClick()
 {
-	// Only when the cursor is currently free, and never underneath a modal.
-	if (!bShowMouseCursor
-		|| (DecisionWidget && DecisionWidget->IsInViewport())
-		|| (EndGameWidget && EndGameWidget->IsInViewport()))
+	// Never attack or recapture underneath a modal.
+	if ((DecisionWidget && DecisionWidget->IsInViewport())
+		|| (EndGameWidget && EndGameWidget->IsInViewport())
+		|| IsCityMapOpen())
 	{
 		return;
 	}
-	SetMouseCaptured(true);
+	if (bShowMouseCursor)
+	{
+		SetMouseCaptured(true);
+		return; // the click that returns to the game is never also an attack
+	}
+	OnMeleePressed();
 }
 
 void ASprawlPlayerController::OnSavePressed()
@@ -340,6 +413,7 @@ void ASprawlPlayerController::OnOnePressed()
 void ASprawlPlayerController::HandleDecisionOffered(UStrategicDecision* Decision)
 {
 	if (!Decision) return;
+	SetCityMapOpen(false);
 	if (!DecisionModalClass)
 	{
 		DecisionModalClass = USprawlDecisionModal::StaticClass();
@@ -363,6 +437,7 @@ void ASprawlPlayerController::HandleDecisionOffered(UStrategicDecision* Decision
 
 void ASprawlPlayerController::HandleRunEnded(const FSprawlEndGameInfo& Info)
 {
+	SetCityMapOpen(false);
 	PendingEndGameInfo = Info;
 	bHasPendingEndGame = true;
 	if (UWorld* World = GetWorld())

@@ -62,9 +62,11 @@ Your car is your mobile office. You have a daily burn rate. You can go bankrupt.
 |---|---|---|
 | Founder | `Source/ConnectedSprawl/Public/Founder/` | Cash, Burn Rate, Runway |
 | Factions | `Source/ConnectedSprawl/Public/Factions/` | Corporate/Street rep, Heat, Moral Debt |
-| Vehicles | `Source/ConnectedSprawl/Public/Vehicles/` | Zarri's Mobile Office car + lane-following traffic AI |
-| World | `Source/ConnectedSprawl/Public/World/` | City grid, traffic signals, day/night, road markings, ground cover |
+| Characters | `Source/ConnectedSprawl/Public/Characters/` | Character Developer profiles, replicated human actions, melee, MetaHuman wardrobe/footwear, avatar rendering |
+| Vehicles | `Source/ConnectedSprawl/Public/Vehicles/` | Mobile Office, traffic AI, and hidden logical driver policy |
+| World | `Source/ConnectedSprawl/Public/World/` | City grid, enterable destinations, city map, parking deck, traffic signals, day/night, road markings, ground cover |
 | AI | `Source/ConnectedSprawl/Public/AI/` | Sidewalk pedestrians, crowd + traffic density managers |
+| UI | `Source/ConnectedSprawl/Public/UI/` | Native HUD, touch controls, decisions, and city-map presentation |
 | Streaming | `Source/ConnectedSprawl/Public/Streaming/` | Zonal Density level streaming |
 | Missions | `Source/ConnectedSprawl/Public/Missions/` | Strategic Decision data assets |
 | Persistence | `Source/ConnectedSprawl/Public/Save/` | Versioned founder, faction, mission, map, and player-state saves |
@@ -80,21 +82,77 @@ The streets are simulated, not decorated:
 - **Traffic AI (`ASprawlCar`)** — NPC cars keep to right-hand lanes, brake
   for cars and pedestrians ahead, stop at red lights behind the painted stop
   line, and pick legal turns at intersections (never into the lake or off
-  the map). `AProceduralTrafficManager` recycles traffic in a ring around
-  the player.
+  the map). `AProceduralTrafficManager` retires distant managed cars but restores
+  its target population only through the parking deck. Drivers remain logical
+  occupants for entry and carjacking but are hidden while seated behind the
+  cars' dark cabin glass; the mounted skeletal mesh is unloaded and unticked,
+  preventing roof clipping and saving one avatar render cost per traffic car.
+  Ejected drivers render normally as exterior pedestrians.
+- **Parking-deck traffic source (`ASprawlParkingGarage`)** — a four-level,
+  instanced central garage replaces one authored downtown lot with concrete
+  decks, ramps, marked bays, parked-car silhouettes, lighting, barriers, and
+  two covered driveways. Replenishment cars are created behind its facade only
+  when an entire exit path is clear, roll out at garage speed, and switch to
+  directed-lane AI after an exact legal merge. A blocked garage waits; there is
+  no fallback that materializes a vehicle in an active street. Site preparation
+  preserves street and sidewalk surfaces and moves a conflicting authored car
+  into an upper-deck bay rather than deleting it.
+- **Enterable destinations (`ASprawlEnterableInteriors`)** — Junction Market,
+  Founder House Offices, and Canal View Condos add distinct signed entrances
+  on legal sidewalk frontage and three enclosed runtime interiors. The shared
+  layout contract supplies each doorway, interior pocket, furniture set, map
+  marker, and safe return point without deleting authored city buildings.
+  Press **E** or **F** at a door to enter or leave; the touch HUD exposes the
+  same context action. `FSprawlInteriorPropLibrary` replaces placeholder boxes
+  with 77 normalized placements across ten textured furniture/item meshes:
+  tables, chairs, benches, stock cans and bottles, planters, foliage, bins, and
+  poster stands. Detailed modular counters, shelves, desks, monitors, bed,
+  sofa, and kitchen remain as the deterministic fallback, while one HISM per
+  resolved mesh keeps repeated props inside the iPhone-first draw budget.
+- **City map (`USprawlCityMapSubsystem` + `USprawlCityMapWidget`)** — press
+  **M** or tap **MAP** to pause into a native map showing the road grid, lake,
+  five named destinations, Zarri's live position, and distance to the nearest
+  destination. Interior positions resolve to their exterior doorway so the
+  marker remains useful while Zarri is inside. **M**, **Escape**, or the map's
+  close button returns to play.
 - **Parking, crashes, and access** — all 36 curbside cars are real, enterable
   `ASprawlCar` pawns placed by full-footprint building/prop clearance checks.
   Cars normally remain upright and inside the city, but a severe impact gets a
   short physical rollover window before self-righting. Press **E** or **F**
   near a stopped car to enter it, drive with **WASD**, and press **E** or **F**
-  again to exit at the first unobstructed door/end position.
-- **Traffic signals (`ASprawlTrafficLight`)** — signal poles at every dry
-  intersection; the lamp heads display the exact same phase function the
-  cars obey, so the visuals and the AI can never disagree.
+  again to exit at the first unobstructed door/end position. **W/Up** always
+  accelerates toward the visible nose: imported split-body cars use their named
+  front axle and legacy Blender Y-forward meshes are normalized to physics +X.
+- **On-foot melee (`USprawlMeleeModule`)** — Zarri can punch and kick through
+  one alternating action: **left mouse** or **X** on desktop, the left face
+  button on a gamepad, and the new **PUNCH / KICK** touch button. A short
+  forward cone selects one visible character, sends the standard Unreal damage
+  event, and makes pedestrians recoil and flee. Cadence and reach are bounded;
+  attacks are disabled while Zarri is hidden in a car. The companion
+  `FSprawlMeleeInput` module binds X/gamepad X directly on the possessed pawn
+  so Enhanced Input cannot shadow the action; successful attacks briefly show
+  PUNCH or KICK even when an optional character-specific one-shot is absent.
+- **Traffic signals (`ASprawlTrafficLight`)** — each dry intersection owns a
+  four-corner, three-lens signal model. Missing map signals self-spawn at
+  runtime, while the red/amber/green heads display the exact same phase
+  function the cars obey, so visuals and AI can never disagree.
+- **Street dressing (`ASprawlStreetDressing`)** — freestanding foldout signs
+  are confined to the explicit sidewalk band beyond the kerb; parking bays,
+  asphalt aprons, travel lanes, and junctions are rejected as sign ground.
 - **Pedestrians (`ASprawlPedestrian`)** — walk the sidewalk ring of each
   block, cross at corners (lined up with the painted crosswalks) when no
-  traffic is coming, and bolt when a speeding car gets close.
-  `APedestrianCrowdManager` keeps the sidewalks populated near the player.
+  traffic is coming, and bolt when a speeding car gets close. The deterministic
+  **Character Developer** gives each person a district, role, schedule,
+  activity, wardrobe, stature, gait, and stable identity before spawning. The
+  reusable **Human Character module** derives a distinct Zarri-compatible
+  appearance contract and exposes replicated Stand/Walk/Run/Talk/Sit/Drive
+  state to Blueprint. A strict **Crowd MetaHuman module** maps that compact
+  state onto the project-owned Zarri, Amina, and Andre Optimized/Low residents;
+  no mannequin or toy avatar can enter the ambient roster. The authority owns
+  spawning and replicated identity, while each rendering client budgets LOD.
+  `APedestrianCrowdManager` keeps The Junction busy while naturally thinning
+  Iron Forest, Rail Yards, and late-night streets, capped at eight residents on
+  Mac and three on iPhone.
 - **Day/night (`ASprawlEnvironmentController`)** — an 18-minute full day:
   the sun arcs and warms toward the horizon, a blue moon takes over at
   night, fog shifts mood at dawn/dusk, and streetlights tagged in the level
@@ -122,29 +180,68 @@ unresolved call instead of paying the same reward twice.
 
 ## 🎨 Art & Credits
 
-The streets are walked by real humans now, not mannequins:
+The ambient streets are walked by assembled MetaHumans, not mannequins:
 
-- **22 human characters** (faces, hair, clothes — a suit guy, an old man,
-  women in streetwear, a mafia don, kids in hoodies…) from the CC0
+- **Three project-owned crowd identities** ship today: Zarri, Amina, and
+  Andre. Each has a distinct authored face; Amina and Andre add separate body,
+  clothing, and groom assemblies under `Content/MetaHumans/Residents/`.
+  Deterministic height and wardrobe palettes create repeatable copies without
+  distorting faces. The former **22 lightweight avatars** from the CC0
   **[100 Avatars](https://github.com/madjin/100avatars)** packs by
-  **Polygonal Mind**. Zarri has a dedicated young Black male derivative of
-  *Cappy*, with medium-deep skin, dark hair, and tech-streetwear colors.
-- **Locomotion animations** (idle, walk, formal walk, jog, sprint, seated,
-  phone-talk) from
-  the CC0 **Universal Animation Library** by **Quaternius**, retargeted onto
-  every avatar's Mixamo rig by `Tools/retarget_avatars.py` (headless Blender:
-  world-space rotation transfer with per-bone rest alignment) and baked into
-  the FBX files at `Content/Import/Pedestrians/`.
+  **Polygonal Mind** remain credited legacy/reference content, but are not an
+  ambient crowd fallback.
+- **Reusable wardrobe development** comes from `USprawlWardrobeModule`. Every
+  generated person receives a deterministic top, bottom, optional jacket,
+  optional cap or beanie, footwear, socks, and coordinated palette. It tints
+  the fitted MetaHuman base garment while `USprawlFootwearModule` develops
+  rounded uppers, fitted soles, collars, laces, and socks from each live
+  heel-to-ball distance. `USprawlAthleticShoeModule` adds four validated,
+  Blueprint-swappable athletic presets—Zarri Velocity, Metro Runner, Court
+  High-Top, and Night Sprint—with coordinated upper, sole, sock, and accent
+  styling. Shoes take position from an independently animated calf/IK anchor
+  while retaining body-relative forward facing; the underlying Body foot bones
+  can therefore be masked without detaching the pair or turning a running shoe
+  vertically. The two-shoe follower is the only ticking presentation element;
+  all wardrobe pieces remain collision-, navigation-, decal-, and shadow-free.
+  The complete outfit is replicated, so all clients render the same look;
+  Zarri wears the fixed navy/teal Zarri Velocity pair.
+- **MetaHuman stand, walk, and run animations** come from Epic's installed
+  MetaHuman Character locomotion preset and are LOD-synchronized across body,
+  face, hair, and grooms. The older CC0 **Universal Animation Library** by
+  **Quaternius** remains with the legacy avatar source pipeline at
+  `Content/Import/Pedestrians/` and `Tools/retarget_avatars.py`.
 - **Street dressing** (benches, dumpsters, fire hydrants, bushes, boxes,
   litter, a park water tower) from the CC0
   **[KayKit City Builder Bits](https://github.com/KayKit-Game-Assets/KayKit-City-Builder-Bits-1.0)**
   pack by **Kay Lousberg**, scattered deterministically along the sidewalks.
 
-Pedestrians pick a random avatar at spawn, scale to a believable height with
-per-person variance, and drive Idle/Walk/Jog clips by actual ground speed
-(play-rate matched so feet don't skate). A quarter of them idle chatting on
-the phone. Suits walk formally. Everything falls back to the mannequin if the
-art import hasn't run yet.
+Pedestrians receive a balanced Zarri/Amina/Andre identity cycle, scale uniformly
+to a believable height, and drive Stand/Walk/Run clips by actual ground speed.
+The shared action module retains Talk/Sit/Drive for scripted and named-character
+bindings. Missing crowd art fails closed by hiding that visual and logging the
+problem; it never restores the mannequin that this roster replaces. The runtime
+traffic audit enforces at least three distinct MetaHuman identities and zero
+non-MetaHuman pedestrians after warm-up.
+
+Named and mission characters can still use `USprawlCharacterDefinition` Data Assets to
+bind the same profile to an optional assembled MetaHuman class plus stand,
+walk, run, talk, sit, and drive clips. Generated appearances use Zarri's
+joints-only animation contract as a technical baseline while explicitly
+remaining unique people. Zarri's melee presentation also accepts optional
+skeleton-compatible punch and kick one-shots; missing clips never disable hit
+gameplay or replace a working locomotion set. [`Tools/CharacterDeveloper`](Tools/CharacterDeveloper/README.md) can
+draft those profiles and MetaHuman Creator briefs with Hugging Face, but the
+cloud authoring path and credentials never enter the runtime build.
+
+To regenerate the two resident assemblies, run the authoring script in the full
+UE 5.8 Editor (not `UnrealEditor-Cmd`; TextureGraph baking needs the editor
+runtime):
+
+```bash
+UnrealEditor ConnectedSprawl.uproject \
+  -ExecutePythonScript="Content/Python/create_city_metahuman_residents.py" \
+  -ScriptErrorsAreFatal -unattended -RenderOffscreen -nosplash -NoSound
+```
 
 To (re)build the world after compiling the C++ module:
 
@@ -156,6 +253,15 @@ UnrealEditor ConnectedSprawl.uproject \
 ```
 
 (or run the full pipeline via `Content/Python/rebuild_open_world_city.py`).
+
+### iOS startup branding
+
+The standard Unreal iOS launch storyboard loads the project-owned, opaque
+2048×2048 image at `Build/IOS/Resources/Graphics/LaunchScreenIOS.png`. It
+presents **Angry Cordero Production Studio** together with the **Unreal Engine**
+lockup, centered inside the square safe area for both iPhone and iPad
+orientations. Keep that file opaque and square when revising the artwork; the
+rest of `Build/` remains generated output and is ignored.
 
 ---
 

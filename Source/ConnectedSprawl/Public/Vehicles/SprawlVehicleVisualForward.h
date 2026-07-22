@@ -18,4 +18,17 @@ public:
 	static FSprawlVehicleVisualForwardResult ResolveRelativeYaw(
 		const FVector& FrontLeft, const FVector& FrontRight,
 		const FVector& RearLeft, const FVector& RearRight);
+
+	/**
+	 * Replace only the visual yaw with the named-axle result, retaining any
+	 * deliberate pitch or roll supplied by the asset author. Returns the
+	 * authored rotation unchanged when the axle data is not usable.
+	 */
+	static FRotator ResolveAlignedRotation(
+		const FRotator& AuthoredRotation,
+		const FVector& FrontLeft, const FVector& FrontRight,
+		const FVector& RearLeft, const FVector& RearRight);
+
+	/** Blender Y-forward imports need -90 degrees to point their nose at UE +X. */
+	static FRotator ResolveBlenderYForwardRotation(const FRotator& AuthoredRotation);
 };

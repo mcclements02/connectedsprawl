@@ -739,7 +739,8 @@ for ix in range(N - 1):
             continue
         signal = eas.spawn_actor_from_class(
             unreal.SprawlTrafficLight,
-            unreal.Vector(center_x - 335.0, center_y - 335.0, 14.0))
+            # The actor owns four sidewalk-corner poles around this centre.
+            unreal.Vector(center_x, center_y, 14.0))
         signal.set_actor_label("City_Signal_{}_{}".format(ix, iy))
         signal.set_editor_property("intersection_x", ix)
         signal.set_editor_property("intersection_y", iy)

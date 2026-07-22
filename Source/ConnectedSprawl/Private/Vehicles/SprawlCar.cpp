@@ -5,11 +5,9 @@
 #include "AI/SprawlPedestrian.h"
 #include "AI/SprawlTrafficLaneDiscipline.h"
 #include "AI/SprawlTrafficRoute.h"
-#include "Characters/SprawlAvatarLibrary.h"
-#include "Characters/SprawlCharacterRender.h"
 #include "Characters/SprawlCrowdAppearance.h"
+#include "Vehicles/SprawlDriverVisibility.h"
 #include "Vehicles/SprawlVehicleDriveLogic.h"
-#include "Vehicles/SprawlOccupantHeadroom.h"
 #include "Vehicles/SprawlVehicleOccupantPlacement.h"
 #include "Vehicles/SprawlVehicleStance.h"
 #include "Vehicles/SprawlVehicleVisualForward.h"
@@ -186,6 +184,7 @@ ASprawlCar::ASprawlCar()
 	DriverMesh->SetCullDistance(5000.f);
 	DriverMesh->SetVisibility(false, true);
 	DriverMesh->SetHiddenInGame(true);
+	DriverMesh->SetComponentTickEnabled(false);
 
 	BodyMesh = MakePanel(TEXT("BodyMesh"), Cube, FVector(0.f, 0.f, -8.f),
 	                     FVector(4.8f, 1.96f, 0.70f), BodyMaterial);
@@ -296,7 +295,15 @@ void ASprawlCar::BeginPlay()
 {
 	Super::BeginPlay();
 	TryApplyRuntimeVehicleParts();
+	// Old level instances were authored with a +90 degree Blender conversion,
+	// which points a Y-forward vehicle nose at physics -X. Repair their saved
+	// transforms before the first frame; newly installed part kits are aligned
+	// directly in SetExternalVehicleParts below.
+	NormalizeExternalVisualForward();
 	SeatVisualOnContactPlane();
+	// Serialized map instances and hot reload can retain old component state.
+	// Enforce the no-mounted-driver contract before the first rendered frame.
+	ApplyDriverVisibilityPolicy();
 
 	// Physics setup deferred out of the constructor (GEngine isn't ready there).
 	if (Hull)
@@ -352,6 +359,11 @@ void ASprawlCar::SetExternalVehicleMesh(UStaticMesh* Mesh, FVector RelativeLocat
 		return;
 	}
 	ClearExternalBodyDetails();
+	if (Mesh->GetPathName().StartsWith(TEXT("/Game/Vehicles/Imported/")))
+	{
+		RelativeRotation =
+			FSprawlVehicleVisualForward::ResolveBlenderYForwardRotation(RelativeRotation);
+	}
 
 	FullBodyMesh->SetStaticMesh(Mesh);
 	FullBodyMesh->EmptyOverrideMaterials();
@@ -397,6 +409,13 @@ void ASprawlCar::SetExternalVehicleParts(const TArray<UStaticMesh*>& ExternalBod
 			return;
 		}
 	}
+
+	// The named wheel order is part of this API contract. It is therefore more
+	// reliable than the exporter axis (or an old hard-coded +90 degree offset)
+	// for declaring which end of an imported car is its nose.
+	RelativeRotation = FSprawlVehicleVisualForward::ResolveAlignedRotation(
+		RelativeRotation, ExternalWheelCenters[0], ExternalWheelCenters[1],
+		ExternalWheelCenters[2], ExternalWheelCenters[3]);
 
 	ClearExternalBodyDetails();
 	FullBodyMesh->SetStaticMesh(ExternalBodyMeshes[0]);
@@ -591,7 +610,8 @@ bool ASprawlCar::CanBeEntered() const
 bool ASprawlCar::CanBeCarjacked() const
 {
 	if (!bHasAIDriver || !bAutoDrive || Driver
-		|| Cast<APlayerController>(GetController()) || HasActiveIntersectionReservation())
+		|| Cast<APlayerController>(GetController()) || HasActiveIntersectionReservation()
+		|| bGarageEgressActive)
 	{
 		return false;
 	}
@@ -617,9 +637,10 @@ bool ASprawlCar::AssignDriverInternal(AZarriCharacter* InDriver, bool bResumeAIO
 
 	bResumeAutoDriveAfterExit = bResumeAIOnExit;
 	bAutoDrive = false;
+	CancelGarageEgress(false);
 	ReleaseIntersectionReservation();
 	Driver = InDriver;
-	ShowSeatedDriver(InDriver->GetActiveHeroVariant());
+	ApplyDriverVisibilityPolicy();
 	if (Hull)
 	{
 		Hull->WakeAllRigidBodies();
@@ -832,6 +853,14 @@ bool ASprawlCar::HasVisibleDriver() const
 		&& DriverMesh->GetSkeletalMeshAsset() != nullptr;
 }
 
+bool ASprawlCar::HasHiddenSeatedDriver() const
+{
+	const bool bHasLogicalDriver = Driver != nullptr || bHasAIDriver;
+	const FSprawlDriverVisibilityDecision Decision =
+		FSprawlDriverVisibility::Resolve(bHasLogicalDriver);
+	return Decision.bKeepLogicalOccupancy && !HasVisibleDriver();
+}
+
 bool ASprawlCar::HasContainedDriverVisual() const
 {
 	if (!HasVisibleDriver())
@@ -854,98 +883,31 @@ void ASprawlCar::InitializeAIDriverVisual()
 	}
 	bDriverVisualInitializationAttempted = true;
 
-	// Drivers and passengers are cast from the same realistic pool as the crowd.
+	// Preserve a deterministic identity for carjacking without loading a mounted
+	// avatar. The ejected exterior pedestrian resolves the art only when needed.
+	bHasAIDriver = true;
 	const TArray<FString>& Variants = FSprawlCrowdAppearance::HumanVariants();
 	if (Variants.IsEmpty())
 	{
+		AIDriverVariant = TEXT("Cappy");
+		ApplyDriverVisibilityPolicy();
 		return;
 	}
 	const int32 StartIndex = static_cast<int32>(GetTypeHash(GetFName()) % Variants.Num());
-	bHasAIDriver = true; // logical occupancy survives a partial/missing art import
-	for (int32 Offset = 0; Offset < Variants.Num(); ++Offset)
-	{
-		const FString& Candidate = Variants[(StartIndex + Offset) % Variants.Num()];
-		if (ApplySeatedDriverVariant(Candidate))
-		{
-			AIDriverVariant = Candidate;
-			return;
-		}
-	}
 	AIDriverVariant = Variants[StartIndex];
-	HideDriverVisual();
+	ApplyDriverVisibilityPolicy();
 }
 
-void ASprawlCar::ShowSeatedDriver(const FString& VariantName)
+void ASprawlCar::ApplyDriverVisibilityPolicy()
 {
-	if (ApplySeatedDriverVariant(VariantName))
-	{
-		return;
-	}
-	if (VariantName != TEXT("Cappy")
-		&& ApplySeatedDriverVariant(TEXT("Cappy")))
-	{
-		return;
-	}
-	HideDriverVisual();
-}
-
-bool ASprawlCar::ApplySeatedDriverVariant(const FString& VariantName)
-{
-	USkeletalMesh* Mesh = FSprawlAvatarLibrary::LoadAvatarMesh(VariantName);
-	UAnimSequence* Sit = FSprawlAvatarLibrary::LoadAvatarAnim(VariantName, TEXT("Sit"));
-	UAnimSequence* Idle = FSprawlAvatarLibrary::LoadAvatarAnim(VariantName, TEXT("Idle"));
-	UAnimSequence* Walk = FSprawlAvatarLibrary::LoadAvatarAnim(VariantName,
-		FSprawlAvatarLibrary::UsesFormalWalk(VariantName) ? TEXT("WalkFormal") : TEXT("Walk"));
-	UAnimSequence* Jog = FSprawlAvatarLibrary::LoadAvatarAnim(VariantName, TEXT("Jog"));
-	if (!Mesh || !Sit || !Idle || !Walk || !Jog || !DriverMesh
-		|| !FSprawlAvatarLibrary::ApplyAvatar(
-			DriverMesh, Mesh, DriverVisualHeight, 0.f))
-	{
-		return false;
-	}
-	// Refuse an invalid visual instead of showing a person beside/on top of a
-	// car. Wheels are excluded from the measurement and the pelvis is clamped
-	// into a conservative cabin volume.
-	const FSprawlVehicleOccupantSeat Seat =
-		FSprawlVehicleOccupantPlacement::ComputeForVehicle(this, DriverMesh);
-	if (!Seat.bValid)
-	{
-		HideDriverVisual();
-		return false;
-	}
-	// The pelvis clamp alone lets heads poke through low rooflines; fit the
-	// head under the cabin ceiling by sinking the seat and, if needed, a
-	// bounded shrink — or refuse the visual when even that cannot contain it.
-	const FSprawlOccupantHeadroomFit Headroom =
-		FSprawlOccupantHeadroom::Fit(Seat, DriverVisualHeight);
-	if (!Headroom.bValid)
-	{
-		HideDriverVisual();
-		return false;
-	}
-	FVector SeatLocation = Seat.Location;
-	SeatLocation.Z = Headroom.SeatZ;
-	if (Headroom.Scale < 1.f)
-	{
-		DriverMesh->SetRelativeScale3D(
-			DriverMesh->GetRelativeScale3D() * Headroom.Scale);
-	}
-	DriverMesh->SetRelativeLocationAndRotation(SeatLocation, DriverSeatRotation);
+	FSprawlDriverVisibility::ApplyToMountedMesh(
+		DriverMesh, Driver != nullptr || bHasAIDriver);
 	DriverCurrentAnim = nullptr;
-	FSprawlAvatarLibrary::PlayLoop(DriverMesh, Sit, DriverCurrentAnim);
-	DriverMesh->SetVisibility(true, true);
-	DriverMesh->SetHiddenInGame(false);
-	return true;
 }
 
 void ASprawlCar::HideDriverVisual()
 {
-	if (DriverMesh)
-	{
-		DriverMesh->Stop();
-		DriverMesh->SetVisibility(false, true);
-		DriverMesh->SetHiddenInGame(true);
-	}
+	FSprawlDriverVisibility::ApplyToMountedMesh(DriverMesh, false);
 	DriverCurrentAnim = nullptr;
 }
 
@@ -1080,6 +1042,11 @@ void ASprawlCar::Tick(float DeltaSeconds)
 	if (bAutoDrive && !bPlayerDriving)
 	{
 		InitializeAIDriverVisual();
+	}
+	if (bGarageEgressActive && bAutoDrive && !bPlayerDriving)
+	{
+		RunGarageEgress(DeltaSeconds);
+		return;
 	}
 	if (!bPlayerDriving && !bAutoDrive)
 	{
@@ -1227,6 +1194,72 @@ void ASprawlCar::TryApplyRuntimeVehicleParts()
 	const FRotator RelativeRotation(0.f, VisualForward.RelativeYawDegrees, 0.f);
 	SetExternalVehicleParts(Bodies, Wheels, Centers,
 		RelativeLocation, RelativeRotation, RelativeScale);
+}
+
+void ASprawlCar::NormalizeExternalVisualForward()
+{
+	if (!FullBodyMesh || !FullBodyMesh->GetStaticMesh())
+	{
+		return;
+	}
+
+	if (bUsingExternalWheelParts && WheelPivots.Num() == 4)
+	{
+		const FSprawlVehicleVisualForwardResult VisualForward =
+			FSprawlVehicleVisualForward::ResolveRelativeYaw(
+				WheelPivots[0]->GetRelativeLocation(),
+				WheelPivots[1]->GetRelativeLocation(),
+				WheelPivots[2]->GetRelativeLocation(),
+				WheelPivots[3]->GetRelativeLocation());
+		if (VisualForward.bValid)
+		{
+			ApplyExternalVisualYawCorrection(VisualForward.RelativeYawDegrees);
+		}
+		return;
+	}
+
+	// The original one-piece imports do not carry named wheel transforms. Their
+	// source convention is documented and uniform: Blender +Y is the nose.
+	if (FullBodyMesh->GetStaticMesh()->GetPathName().StartsWith(
+		TEXT("/Game/Vehicles/Imported/")))
+	{
+		const float DesiredYaw = -90.f;
+		const float CurrentYaw = FullBodyMesh->GetRelativeRotation().Yaw;
+		ApplyExternalVisualYawCorrection(
+			FMath::UnwindDegrees(DesiredYaw - CurrentYaw));
+	}
+}
+
+void ASprawlCar::ApplyExternalVisualYawCorrection(float CorrectionYawDegrees)
+{
+	if (FMath::IsNearlyZero(CorrectionYawDegrees, 0.01f))
+	{
+		return;
+	}
+
+	const FQuat Correction(FVector::UpVector,
+		FMath::DegreesToRadians(CorrectionYawDegrees));
+	auto RotateVisual = [&Correction](USceneComponent* Component)
+	{
+		if (!Component)
+		{
+			return;
+		}
+		Component->SetRelativeLocation(
+			Correction.RotateVector(Component->GetRelativeLocation()));
+		Component->SetRelativeRotation(
+			(Correction * Component->GetRelativeRotation().Quaternion()).Rotator());
+	};
+
+	RotateVisual(FullBodyMesh);
+	for (UStaticMeshComponent* Detail : ExternalBodyDetailMeshes)
+	{
+		RotateVisual(Detail);
+	}
+	for (USceneComponent* WheelPivot : WheelPivots)
+	{
+		RotateVisual(WheelPivot);
+	}
 }
 
 void ASprawlCar::SeatVisualOnContactPlane()
@@ -1509,6 +1542,155 @@ void ASprawlCar::ReleaseIntersectionReservation()
 	AIReservedIntersectionX = -1;
 	AIReservedIntersectionY = -1;
 	bAIClearingIntersection = false;
+}
+
+bool ASprawlCar::BeginGarageEgress(FName ExitId,
+	const TArray<FVector>& WorldPath, ESprawlHeading MergeHeading,
+	int32 MergeRoadIndex)
+{
+	if (ExitId.IsNone() || WorldPath.Num() < 4 || !Hull
+		|| MergeRoadIndex < 0 || MergeRoadIndex >= Grid::NumRoads
+		|| !FSprawlTrafficRoute::IsSpawnRouteViable(
+			WorldPath.Last(), MergeHeading, MergeRoadIndex))
+	{
+		return false;
+	}
+	for (const FVector& Point : WorldPath)
+	{
+		if (!Grid::IsInsideCityBounds(Point.X, Point.Y)
+			|| Grid::IsOverLake(Point.X, Point.Y, 50.f))
+		{
+			return false;
+		}
+	}
+
+	ReleaseIntersectionReservation();
+	AIGarageExitId = ExitId;
+	AIGarageEgressPath = WorldPath;
+	AIGarageEgressPoint = 0;
+	AIGarageMergeHeading = MergeHeading;
+	AIGarageMergeRoadIndex = MergeRoadIndex;
+	bGarageEgressActive = true;
+	bAutoDrive = true;
+	bAIStateSeeded = false;
+	bNeedsTrafficRecycle = false;
+	AIDecidedCrossing = -1;
+	AIPendingManeuver = ESprawlTrafficManeuver::Straight;
+	AILastIntersection = FVector2D(1.e9f, 1.e9f);
+	AISmoothedSpeed = 0.f;
+	ThrottleInput = 0.f;
+	SteerInput = 0.f;
+	bDriverVisualInitializationAttempted = false;
+	Hull->SetPhysicsLinearVelocity(FVector::ZeroVector);
+	Hull->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+	Hull->WakeAllRigidBodies();
+	return true;
+}
+
+void ASprawlCar::CancelGarageEgress(bool bRequestTrafficRecycle)
+{
+	bGarageEgressActive = false;
+	AIGarageExitId = NAME_None;
+	AIGarageEgressPath.Reset();
+	AIGarageEgressPoint = INDEX_NONE;
+	AIGarageMergeRoadIndex = INDEX_NONE;
+	if (bRequestTrafficRecycle)
+	{
+		bNeedsTrafficRecycle = true;
+	}
+}
+
+void ASprawlCar::RunGarageEgress(float DeltaSeconds)
+{
+	if (!Hull || !AIGarageEgressPath.IsValidIndex(AIGarageEgressPoint)
+		|| AIGarageMergeRoadIndex < 0
+		|| AIGarageMergeRoadIndex >= Grid::NumRoads)
+	{
+		CancelGarageEgress(true);
+		return;
+	}
+
+	constexpr float PointReachDistance = 85.f;
+	constexpr float EgressCruiseSpeed = 315.f;
+	constexpr float EgressTurnSpeed = 205.f;
+	constexpr float EgressAcceleration = 420.f;
+	constexpr float MaximumYawRate = 72.f;
+
+	FVector Location = GetActorLocation();
+	FVector ToTarget = AIGarageEgressPath[AIGarageEgressPoint] - Location;
+	ToTarget.Z = 0.f;
+	while (ToTarget.SizeSquared2D() <= FMath::Square(PointReachDistance))
+	{
+		++AIGarageEgressPoint;
+		if (!AIGarageEgressPath.IsValidIndex(AIGarageEgressPoint))
+		{
+			const FVector MergeLocation = AIGarageEgressPath.Last();
+			const FRotator MergeRotation(
+				0.f, Grid::HeadingYaw(AIGarageMergeHeading), 0.f);
+			FHitResult SweepHit;
+			if (!SetActorLocationAndRotation(MergeLocation, MergeRotation,
+				true, &SweepHit, ETeleportType::TeleportPhysics)
+				|| SweepHit.bBlockingHit)
+			{
+				--AIGarageEgressPoint;
+				AISmoothedSpeed = 0.f;
+				Hull->SetPhysicsLinearVelocity(FVector::ZeroVector);
+				Hull->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+				return;
+			}
+
+			AIHeading = AIGarageMergeHeading;
+			AIRoadIndex = AIGarageMergeRoadIndex;
+			bAIStateSeeded = true;
+			bNeedsTrafficRecycle = false;
+			AIDecidedCrossing = -1;
+			AIPendingManeuver = ESprawlTrafficManeuver::Straight;
+			AISmoothedSpeed = EgressCruiseSpeed;
+			ThrottleInput = AICruiseSpeed > 1.f
+				? EgressCruiseSpeed / AICruiseSpeed : 0.f;
+			SteerInput = 0.f;
+			const FName CompletedExit = AIGarageExitId;
+			CancelGarageEgress(false);
+			const FVector CurrentVelocity = Hull->GetPhysicsLinearVelocity();
+			Hull->SetPhysicsLinearVelocity(
+				Grid::HeadingVector(AIHeading) * EgressCruiseSpeed
+					+ FVector(0.f, 0.f, CurrentVelocity.Z));
+			Hull->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+			UE_LOG(LogTemp, Display,
+				TEXT("[TrafficGarage] %s merged from %s onto road=%d heading=%d"),
+				*GetName(), *CompletedExit.ToString(), AIRoadIndex,
+				static_cast<int32>(AIHeading));
+			return;
+		}
+		ToTarget = AIGarageEgressPath[AIGarageEgressPoint] - Location;
+		ToTarget.Z = 0.f;
+	}
+
+	const float DesiredYaw = ToTarget.Rotation().Yaw;
+	const float CurrentYaw = GetActorRotation().Yaw;
+	const float HeadingError = FMath::FindDeltaAngleDegrees(CurrentYaw, DesiredYaw);
+	const float NewYaw = FMath::FixedTurn(
+		CurrentYaw, DesiredYaw, MaximumYawRate * DeltaSeconds);
+	const FVector CurrentVelocity = Hull->GetPhysicsLinearVelocity();
+	SetActorRotation(FRotator(0.f, NewYaw, 0.f), ETeleportType::TeleportPhysics);
+
+	float TargetSpeed = FMath::Abs(HeadingError) > 24.f
+		? EgressTurnSpeed : EgressCruiseSpeed;
+	const float ObstacleDistance = SenseObstacleAhead(420.f);
+	if (ObstacleDistance >= 0.f)
+	{
+		TargetSpeed = FMath::Min(
+			TargetSpeed, FMath::Max(0.f, (ObstacleDistance - 150.f) * 1.8f));
+	}
+	AISmoothedSpeed = FMath::FInterpConstantTo(
+		AISmoothedSpeed, TargetSpeed, DeltaSeconds, EgressAcceleration);
+	ThrottleInput = AICruiseSpeed > 1.f
+		? AISmoothedSpeed / AICruiseSpeed : 0.f;
+	SteerInput = FMath::Clamp(HeadingError / 45.f, -1.f, 1.f);
+	Hull->SetPhysicsLinearVelocity(
+		GetActorForwardVector() * AISmoothedSpeed
+			+ FVector(0.f, 0.f, CurrentVelocity.Z));
+	Hull->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
 }
 
 void ASprawlCar::RunAutoDrive(float DeltaSeconds)

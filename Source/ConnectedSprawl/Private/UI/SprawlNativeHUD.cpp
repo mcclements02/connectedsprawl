@@ -109,6 +109,23 @@ void USprawlNativeHUD::BuildUI()
 		Slot->SetSize(FVector2D(520.f, 52.f));
 	}
 
+	MapButton = WidgetTree->ConstructWidget<UButton>(
+		UButton::StaticClass(), TEXT("MapButton"));
+	MapButton->SetBackgroundColor(FLinearColor(0.04f, 0.10f, 0.18f, 0.82f));
+	MapLabel = MakeNativeHUDText(WidgetTree, TEXT("MapButtonLabel"), 18,
+		FLinearColor(0.82f, 0.91f, 1.f), ETextJustify::Center);
+	MapLabel->SetText(NSLOCTEXT("Sprawl", "MapButton", "MAP  [M]"));
+	MapButton->AddChild(MapLabel);
+	MapButton->OnPressed.AddDynamic(this, &USprawlNativeHUD::HandleMapButtonPressed);
+	if (UCanvasPanelSlot* Slot = Root->AddChildToCanvas(MapButton))
+	{
+		Slot->SetAnchors(FAnchors(1.f, 0.f));
+		Slot->SetAlignment(FVector2D(1.f, 0.f));
+		Slot->SetPosition(FVector2D(-24.f, 24.f));
+		Slot->SetSize(FVector2D(152.f, 54.f));
+		Slot->SetZOrder(20);
+	}
+
 	BuildTouchControls(Root);
 }
 
@@ -181,6 +198,12 @@ void USprawlNativeHUD::BuildTouchControls(UCanvasPanel* Root)
 	InteractButton->OnPressed.AddDynamic(
 		this, &USprawlNativeHUD::HandleInteractButtonPressed);
 
+	MeleeButton = MakeTouchButton(TEXT("TouchMelee"),
+		NSLOCTEXT("Sprawl", "TouchMelee", "PUNCH\nKICK"), MeleeLabel,
+		FVector2D(-222.f, -170.f), FVector2D(150.f, 116.f));
+	MeleeButton->OnPressed.AddDynamic(
+		this, &USprawlNativeHUD::HandleMeleeButtonPressed);
+
 	RefreshTouchButtonLabels(true);
 }
 
@@ -191,7 +214,8 @@ ASprawlPlayerController* USprawlNativeHUD::GetSprawlPC() const
 
 void USprawlNativeHUD::RefreshTouchButtonLabels(bool bForce)
 {
-	if (!bTouchControlsBuilt || !PrimaryLabel || !SecondaryLabel || !InteractLabel)
+	if (!bTouchControlsBuilt || !PrimaryLabel || !SecondaryLabel || !InteractLabel
+		|| !MeleeButton)
 	{
 		return;
 	}
@@ -213,6 +237,8 @@ void USprawlNativeHUD::RefreshTouchButtonLabels(bool bForce)
 	InteractLabel->SetText(bInCar
 		? NSLOCTEXT("Sprawl", "TouchExit", "EXIT")
 		: NSLOCTEXT("Sprawl", "TouchEnter", "ENTER"));
+	MeleeButton->SetVisibility(
+		bInCar ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 }
 
 void USprawlNativeHUD::HandlePrimaryPressed()
@@ -295,6 +321,23 @@ void USprawlNativeHUD::HandleInteractButtonPressed()
 	{
 		PC->TouchInteractPressed();
 		RefreshTouchButtonLabels(true);
+	}
+}
+
+void USprawlNativeHUD::HandleMeleeButtonPressed()
+{
+	if (ASprawlPlayerController* PC = GetSprawlPC();
+		PC && !PC->IsDrivingVehicle())
+	{
+		PC->TouchMeleePressed();
+	}
+}
+
+void USprawlNativeHUD::HandleMapButtonPressed()
+{
+	if (ASprawlPlayerController* PC = GetSprawlPC())
+	{
+		PC->TouchMapPressed();
 	}
 }
 
@@ -439,12 +482,28 @@ void USprawlNativeHUD::RefreshInteractHint()
 	if (Cast<ASprawlCar>(Pawn))
 	{
 		Hint = FText::FromString(
-			TEXT("W accelerate  ·  S brake / reverse  ·  E exit"));
+			TEXT("W accelerate  ·  S brake / reverse  ·  E exit  ·  M map"));
 	}
-	else if (const AZarriCharacter* Zarri = Cast<AZarriCharacter>(Pawn);
-		Zarri && Zarri->HasNearbyEnterableVehicle())
+	else if (const AZarriCharacter* Zarri = Cast<AZarriCharacter>(Pawn))
 	{
-		Hint = FText::FromString(TEXT("E — enter car and drive"));
+		FText BuildingPrompt;
+		if (Zarri->GetBuildingInteractionPrompt(BuildingPrompt))
+		{
+			Hint = FText::Format(
+				NSLOCTEXT("Sprawl", "BuildingHUDHint",
+					"E — {0}  ·  LMB / X — punch / kick  ·  M map"),
+				BuildingPrompt);
+		}
+		else if (Zarri->HasNearbyEnterableVehicle())
+		{
+			Hint = FText::FromString(
+				TEXT("E — enter car  ·  LMB / X — punch / kick  ·  M map"));
+		}
+		else
+		{
+			Hint = FText::FromString(
+				TEXT("LMB / X — punch / kick  ·  M — city map"));
+		}
 	}
 	if (Hint.IsEmpty())
 	{

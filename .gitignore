@@ -1,6 +1,13 @@
 # --- Unreal Engine generated ---------------------------------------------
 Binaries/
-Build/
+Build/*
+!Build/IOS/
+Build/IOS/*
+!Build/IOS/Resources/
+Build/IOS/Resources/*
+!Build/IOS/Resources/Graphics/
+Build/IOS/Resources/Graphics/*
+!Build/IOS/Resources/Graphics/LaunchScreenIOS.png
 DerivedDataCache/
 Intermediate/
 Saved/

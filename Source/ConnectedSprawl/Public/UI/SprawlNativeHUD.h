@@ -42,12 +42,14 @@ private:
 	UFUNCTION() void HandlePhoneRinging(const FPhoneCall& Call);
 	UFUNCTION() void HandlePhoneAnswered(const FPhoneCall& Call);
 
-	// Contextual touch buttons: JUMP/SPRINT/ENTER on foot, GAS/BRAKE/EXIT in car.
+	// Contextual touch buttons: JUMP/SPRINT/MELEE/ENTER on foot, GAS/BRAKE/EXIT in car.
 	UFUNCTION() void HandlePrimaryPressed();
 	UFUNCTION() void HandlePrimaryReleased();
 	UFUNCTION() void HandleSecondaryPressed();
 	UFUNCTION() void HandleSecondaryReleased();
 	UFUNCTION() void HandleInteractButtonPressed();
+	UFUNCTION() void HandleMeleeButtonPressed();
+	UFUNCTION() void HandleMapButtonPressed();
 
 	void RefreshObjective();
 	void BuildTouchControls(UCanvasPanel* Root);
@@ -63,9 +65,13 @@ private:
 	UPROPERTY() TObjectPtr<UButton> PrimaryButton;
 	UPROPERTY() TObjectPtr<UButton> SecondaryButton;
 	UPROPERTY() TObjectPtr<UButton> InteractButton;
+	UPROPERTY() TObjectPtr<UButton> MeleeButton;
+	UPROPERTY() TObjectPtr<UButton> MapButton;
 	UPROPERTY() TObjectPtr<UTextBlock> PrimaryLabel;
 	UPROPERTY() TObjectPtr<UTextBlock> SecondaryLabel;
 	UPROPERTY() TObjectPtr<UTextBlock> InteractLabel;
+	UPROPERTY() TObjectPtr<UTextBlock> MeleeLabel;
+	UPROPERTY() TObjectPtr<UTextBlock> MapLabel;
 
 	void RefreshInteractHint();
 

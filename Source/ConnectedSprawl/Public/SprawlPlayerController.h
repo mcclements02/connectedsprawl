@@ -8,6 +8,7 @@
 #include "SprawlPlayerController.generated.h"
 
 class UUserWidget;
+class USprawlCityMapWidget;
 
 /**
  * ASprawlPlayerController
@@ -34,10 +35,16 @@ public:
 	/** +1 gas, -1 brake/reverse; released clears it. */
 	void TouchThrottlePressed(float Direction);
 	void TouchThrottleReleased();
-	/** Enter a nearby car on foot, or step out when driving. */
+	/** Enter a nearby building/car on foot, or step out when driving. */
 	void TouchInteractPressed() { OnInteractPressed(); }
+	/** Alternate Zarri's punch and kick; ignored while a vehicle is possessed. */
+	void TouchMeleePressed() { OnMeleePressed(); }
+	/** Toggle the same city map used by desktop M. */
+	void TouchMapPressed() { OnMapPressed(); }
 	/** True while the possessed pawn is a car (drives HUD button labels). */
 	bool IsDrivingVehicle() const;
+	bool IsCityMapOpen() const;
+	void SetCityMapOpen(bool bOpen);
 
 	/** Degrees per DPI-normalized drag unit. Legacy input scales apply on top. */
 	UPROPERTY(EditAnywhere, Category="Input|Touch") float TouchLookYawScale = 0.14f;
@@ -64,6 +71,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="UI")
 	TObjectPtr<UUserWidget> EndGameWidget;
 
+	UPROPERTY(BlueprintReadOnly, Category="UI")
+	TObjectPtr<USprawlCityMapWidget> CityMapWidget;
+
 protected:
 	virtual void SetupInputComponent() override;
 	void EnsureUIInitialized();
@@ -71,6 +81,7 @@ protected:
 	void OnOnePressed();
 	void OnSavePressed();
 	void OnLoadPressed();
+	void OnMapPressed();
 
 	/** Esc frees the OS cursor from the window; clicking the game recaptures. */
 	void SetMouseCaptured(bool bCaptured);
@@ -78,8 +89,10 @@ protected:
 
 	bool bUIInitialized = false;
 
-	/** E key — enter a nearby car on foot, or step out when driving. */
+	/** E/F — enter a nearby building/car on foot, or step out when driving. */
 	void OnInteractPressed();
+	/** Mouse / X / gamepad face button — alternating punch and kick on foot. */
+	void OnMeleePressed();
 
 	UFUNCTION()
 	void HandleDecisionOffered(class UStrategicDecision* Decision);
