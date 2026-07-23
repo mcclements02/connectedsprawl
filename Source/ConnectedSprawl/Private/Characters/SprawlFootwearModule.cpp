@@ -136,16 +136,23 @@ FSprawlFootwearMesh BuildRoundedUpper(
 	constexpr int32 RingStride = CrossSegments + 1;
 	const float StationFractions[StationCount] = {
 		0.f, 0.10f, 0.26f, 0.46f, 0.65f, 0.81f, 0.93f, 1.f};
+	// The widest point sits at the ball (~0.65 of the last), with a waisted
+	// midfoot between it and the heel, so the shoe reads as a foot rather than
+	// as a slab that is uniformly wide from heel to toe.
 	const float WidthFractions[StationCount] = {
-		0.72f, 0.88f, 0.96f, 1.f, 0.99f, 0.94f, 0.82f, 0.68f};
+		0.70f, 0.82f, 0.79f, 0.84f, 1.f, 0.96f, 0.81f, 0.58f};
 	const float HeightFractions[StationCount] = {
-		0.82f, 1.f, 0.95f, 0.82f, 0.67f, 0.53f, 0.40f, 0.31f};
+		0.86f, 1.f, 0.92f, 0.78f, 0.62f, 0.46f, 0.34f, 0.24f};
 	const bool bTall = Footwear == ESprawlWardrobeFootwear::HighTopSneakers
 		|| Footwear == ESprawlWardrobeFootwear::WorkBoots;
 	const bool bAthletic =
 		Footwear == ESprawlWardrobeFootwear::AthleticTrainers;
 	const float HalfWidth = Dimensions.ShoeWidthCm * 0.5f;
 	const float BaseZ = Dimensions.SoleThicknessCm * 0.72f;
+	// A semicircular section reads as a tube. Pushing the sides out and the
+	// crown down gives the flat-topped, near-vertical-walled shape of a shoe.
+	constexpr float SideFullness = 0.76f;
+	constexpr float CrownFlatness = 0.66f;
 
 	FSprawlFootwearMesh Result;
 	Result.Vertices.Reserve(StationCount * RingStride + 2);
@@ -168,8 +175,12 @@ FSprawlFootwearMesh BuildRoundedUpper(
 		{
 			const float Alpha = static_cast<float>(Cross) / CrossSegments;
 			const float Angle = PI - PI * Alpha;
-			const float Y = FMath::Cos(Angle) * Width;
-			const float Z = BaseZ + FMath::Sin(Angle) * (Height - BaseZ);
+			const float Cosine = FMath::Cos(Angle);
+			const float Sine = FMath::Max(FMath::Sin(Angle), 0.f);
+			const float Y = FMath::Sign(Cosine)
+				* FMath::Pow(FMath::Abs(Cosine), SideFullness) * Width;
+			const float Z = BaseZ
+				+ FMath::Pow(Sine, CrownFlatness) * (Height - BaseZ);
 			Result.Vertices.Add(FVector(X, Y, Z));
 			Result.UV0.Add(FVector2D(
 				StationFractions[Station], Alpha));
@@ -199,13 +210,19 @@ FSprawlFootwearMesh BuildRoundedSole(
 	constexpr int32 CrossSegments = 12;
 	const float StationFractions[StationCount] = {
 		0.f, 0.06f, 0.18f, 0.36f, 0.56f, 0.74f, 0.88f, 0.96f, 1.f};
+	// Waisted at the midfoot and widest under the ball, matching the upper.
 	const float WidthFractions[StationCount] = {
-		0.68f, 0.82f, 0.94f, 1.f, 0.99f, 0.96f, 0.88f, 0.74f, 0.62f};
+		0.66f, 0.80f, 0.87f, 0.83f, 0.96f, 1.f, 0.93f, 0.78f, 0.60f};
 	const float DressNarrowing =
 		Footwear == ESprawlWardrobeFootwear::DressShoes ? 0.92f : 1.f;
 	const float HalfWidth = Dimensions.ShoeWidthCm * 0.53f * DressNarrowing;
 	const float HalfHeight = Dimensions.SoleThicknessCm * 0.5f;
 	const int32 RingStride = CrossSegments;
+	// A flat underside reads as a brick. Lifting the tread through the midfoot
+	// carves the arch, so the shoe meets the ground at heel and forefoot only.
+	const float ArchDepth = Footwear == ESprawlWardrobeFootwear::WorkBoots
+		? Dimensions.SoleThicknessCm * 0.22f
+		: Dimensions.SoleThicknessCm * 0.40f;
 
 	FSprawlFootwearMesh Result;
 	Result.Vertices.Reserve(StationCount * RingStride + 2);
@@ -215,15 +232,21 @@ FSprawlFootwearMesh BuildRoundedSole(
 		const float X = StationFractions[Station] * Dimensions.ShoeLengthCm;
 		const float Width = HalfWidth * WidthFractions[Station];
 		const float ToeLift = FMath::Max(0.f,
-			StationFractions[Station] - 0.82f) * Dimensions.SoleThicknessCm * 1.8f;
+			StationFractions[Station] - 0.78f) * Dimensions.SoleThicknessCm * 2.f;
+		const float ArchLift = ArchDepth * FMath::Clamp(
+			1.f - FMath::Abs(StationFractions[Station] - 0.40f) / 0.26f,
+			0.f, 1.f);
 		for (int32 Cross = 0; Cross < CrossSegments; ++Cross)
 		{
 			const float Alpha = static_cast<float>(Cross) / CrossSegments;
 			const float Angle = -2.f * PI * Alpha;
+			const float Sine = FMath::Sin(Angle);
+			// Only the tread half lifts; the top stays flush under the upper.
+			const float Arch = ArchLift * FMath::Max(-Sine, 0.f);
 			Result.Vertices.Add(FVector(
 				X,
 				FMath::Cos(Angle) * Width,
-				HalfHeight + FMath::Sin(Angle) * HalfHeight + ToeLift));
+				HalfHeight + Sine * HalfHeight + ToeLift + Arch));
 			Result.UV0.Add(FVector2D(StationFractions[Station], Alpha));
 		}
 	}
@@ -581,6 +604,21 @@ FTransform USprawlFootwearModule::ResolveAnimatedShoeTransform(
 	return Result;
 }
 
+FTransform USprawlFootwearModule::ResolveFittedShoeTransform(
+	const FTransform& AnchorWorldTransform,
+	const FTransform& ShoeAnchorRelativeTransform,
+	const FTransform& BodyWorldTransform,
+	const FTransform& ShoeBodyRelativeFacing,
+	bool bAnchorDrivesRotation)
+{
+	return bAnchorDrivesRotation
+		? ResolveBoneFollowTransform(
+			AnchorWorldTransform, ShoeAnchorRelativeTransform)
+		: ResolveAnimatedShoeTransform(
+			AnchorWorldTransform, ShoeAnchorRelativeTransform,
+			BodyWorldTransform, ShoeBodyRelativeFacing);
+}
+
 UProceduralMeshComponent* USprawlFootwearModule::CreatePresentationComponent(
 	AActor* VisualActor,
 	USkeletalMeshComponent* BodyMesh,
@@ -635,6 +673,7 @@ bool USprawlFootwearModule::ApplyToMetaHuman(
 	ShoeAnchorBones.SetNum(2);
 	ShoeAnchorOffsets.SetNum(2);
 	ShoeBodyFacingOffsets.SetNum(2);
+	ShoeAnchorDrivesRotation.Init(false, 2);
 
 	const FName FootBones[] = {
 		FindBone(BodyMesh, {TEXT("foot_l"), TEXT("LeftFoot")}),
@@ -754,12 +793,22 @@ bool USprawlFootwearModule::ApplyToMetaHuman(
 			- Forward * (HeelBack + HeelToBall)
 			- Up * BallCenterZ;
 		const FQuat ShoeRotation = FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat();
+		// The foot bone carries the true ankle position and roll, so the shoe
+		// rides it directly and simply encloses the bare foot. Earlier builds
+		// hid the foot bone to delete the bare foot, which froze this socket and
+		// forced a calf anchor -- that is what walked the shoe up the shin.
 		const bool bUsableIkAnchor = !IkFootBones[Side].IsNone()
 			&& FVector::DistSquared(
 				BodyMesh->GetSocketLocation(IkFootBones[Side]), Foot)
 				< FMath::Square(8.f);
-		const FName ShoeAnchor = bUsableIkAnchor
-			? IkFootBones[Side] : CalfBones[Side];
+		FName ShoeAnchor = FootBones[Side];
+		bool bAnchorDrivesRotation = true;
+		if (ShoeAnchor.IsNone())
+		{
+			ShoeAnchor = bUsableIkAnchor
+				? IkFootBones[Side] : CalfBones[Side];
+			bAnchorDrivesRotation = bUsableIkAnchor;
+		}
 		if (ShoeAnchor.IsNone())
 		{
 			continue;
@@ -796,6 +845,7 @@ bool USprawlFootwearModule::ApplyToMetaHuman(
 			ShoeBodyFacingOffsets[Side] = ShoeWorld.GetRelativeTransform(BodyWorld);
 			ShoeBodyFacingOffsets[Side].SetLocation(FVector::ZeroVector);
 			ShoeBodyFacingOffsets[Side].SetScale3D(FVector::OneVector);
+			ShoeAnchorDrivesRotation[Side] = bAnchorDrivesRotation;
 			++FittedShoeCount;
 		}
 
@@ -839,14 +889,8 @@ bool USprawlFootwearModule::ApplyToMetaHuman(
 	FootwearBodyMesh = BodyMesh;
 	FootwearVisualActor = VisualActor;
 	CurrentFootwear = Footwear;
-	for (const FName FootBone : FootBones)
-	{
-		if (!FootBone.IsNone())
-		{
-			BodyMesh->HideBoneByName(FootBone, PBO_None);
-			HiddenFootBones.Add(FootBone);
-		}
-	}
+	// The foot bones stay live: hiding them freezes the socket the shoes ride.
+	// The fitted pair is cut from the measured foot, so it covers what is left.
 	AddTickPrerequisiteComponent(BodyMesh);
 	SetComponentTickEnabled(true);
 	UpdateShoeFollowers();
@@ -914,9 +958,11 @@ void USprawlFootwearModule::UpdateShoeFollowers()
 		}
 		const FTransform AnchorWorld = FootwearBodyMesh->GetSocketTransform(
 			ShoeAnchorBones[Side], RTS_World);
-		const FTransform FollowWorld = ResolveAnimatedShoeTransform(
+		const FTransform FollowWorld = ResolveFittedShoeTransform(
 			AnchorWorld, ShoeAnchorOffsets[Side],
-			BodyWorld, ShoeBodyFacingOffsets[Side]);
+			BodyWorld, ShoeBodyFacingOffsets[Side],
+			ShoeAnchorDrivesRotation.IsValidIndex(Side)
+				&& ShoeAnchorDrivesRotation[Side]);
 		FittedShoes[Side]->SetWorldTransform(
 			FollowWorld, false, nullptr, ETeleportType::TeleportPhysics);
 	}
@@ -941,6 +987,7 @@ void USprawlFootwearModule::ClearFootwear()
 	ShoeAnchorBones.Reset();
 	ShoeAnchorOffsets.Reset();
 	ShoeBodyFacingOffsets.Reset();
+	ShoeAnchorDrivesRotation.Reset();
 	FittedShoeCount = 0;
 	if (IsValid(FootwearBodyMesh))
 	{

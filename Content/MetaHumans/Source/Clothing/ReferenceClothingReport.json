@@ -1,0 +1,57 @@
+{
+  "reference": "light-gray fitted crewneck shirt and dark straight-leg jeans",
+  "blend": "/Users/matthewx/code/ConnectedSprawl/Content/MetaHumans/Source/Clothing/ConnectedSprawl_ReferenceClothing.blend",
+  "preview": "/Users/matthewx/code/ConnectedSprawl/Content/MetaHumans/Source/Clothing/ReferenceClothingPreview.png",
+  "exports": [
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferenceShirt_Torso.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferenceShirt_Collar.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferenceShirt_Hem.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferenceShirt_UpperSleeve_L.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferenceShirt_LowerSleeve_L.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferenceShirt_Cuff_L.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferenceShirt_UpperSleeve_R.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferenceShirt_LowerSleeve_R.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferenceShirt_Cuff_R.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferencePants_Waist.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferencePants_Waistband.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferencePants_UpperLeg_L.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferencePants_LowerLeg_L.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferencePants_Cuff_L.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferencePants_UpperLeg_R.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferencePants_LowerLeg_R.fbx",
+    "/Users/matthewx/code/ConnectedSprawl/Content/Import/Characters/ReferenceClothing/SM_ReferencePants_Cuff_R.fbx"
+  ],
+  "garmentObjects": [
+    "SM_ReferenceShirt_Torso",
+    "SM_ReferenceShirt_Collar",
+    "SM_ReferenceShirt_Hem",
+    "SM_ReferenceShirt_UpperSleeve_L",
+    "SM_ReferenceShirt_LowerSleeve_L",
+    "SM_ReferenceShirt_Cuff_L",
+    "SM_ReferenceShirt_UpperSleeve_R",
+    "SM_ReferenceShirt_LowerSleeve_R",
+    "SM_ReferenceShirt_Cuff_R",
+    "SM_ReferencePants_Waist",
+    "SM_ReferencePants_Waistband",
+    "SM_ReferencePants_UpperLeg_L",
+    "SM_ReferencePants_LowerLeg_L",
+    "SM_ReferencePants_Cuff_L",
+    "SM_ReferencePants_UpperLeg_R",
+    "SM_ReferencePants_LowerLeg_R",
+    "SM_ReferencePants_Cuff_R"
+  ],
+  "garmentVertices": 25128,
+  "mapping": {
+    "shirt": [
+      "spine_03",
+      "upperarm_l/r",
+      "lowerarm_l/r"
+    ],
+    "pants": [
+      "pelvis",
+      "thigh_l/r",
+      "calf_l/r"
+    ]
+  },
+  "exportSpace": "followers centered on origin with local +Z along limb"
+}

@@ -198,7 +198,11 @@ The ambient streets are walked by assembled MetaHumans, not mannequins:
   heel-to-ball distance. `USprawlAthleticShoeModule` adds four validated,
   Blueprint-swappable athletic presets—Zarri Velocity, Metro Runner, Court
   High-Top, and Night Sprint—with coordinated upper, sole, sock, and accent
-  styling. Shoes take position from an independently animated calf/IK anchor
+  styling. `USprawlBiomedicalShoeModule` adds the project-owned Cordero
+  Biomedical Bio-Circuit high-top profile: an editable Blender/FBX pair with a
+  nanofiber upper, deep-red supports, circuit window, heel air unit, and podded
+  outsole, plus a validated one-call high-top fallback for any bound character.
+  Shoes take position from an independently animated calf/IK anchor
   while retaining body-relative forward facing; the underlying Body foot bones
   can therefore be masked without detaching the pair or turning a running shoe
   vertically. Zarri's Nanobanana preset takes a dedicated authored path through
@@ -210,6 +214,32 @@ The ambient streets are walked by assembled MetaHumans, not mannequins:
   the only ticking presentation elements; every generated component remains
   collision-, navigation-, decal-, and shadow-free. The complete outfit is
   replicated, so all clients render the same look.
+- **Zarri's current fitted reference outfit** is generated in Blender by
+  `Tools/build_reference_clothing.py`, imported by
+  `Content/Python/import_reference_clothing.py`, and mapped at runtime by
+  `USprawlReferenceClothingModule`. Its 17 project-owned sections form the
+  reference image's fitted gray long-sleeve crewneck and dark straight pants;
+  12 normalized local-`+Z` limb shells refit to Zarri after animation while
+  rounded elbow/knee transitions cover the joins. The module replaces the
+  bulkier hoodie, bomber, and cargo presentation only after every required
+  asset resolves, retaining the validated shoes and beanie and preserving the
+  old outfit as a safe fallback. The editable source, viewport preview, and
+  build report live under `Content/MetaHumans/Source/Clothing/`. A single image
+  is enough to establish this silhouette; front, back, side, and fabric closeup
+  references are still needed for production-accurate seams and materials.
+  Poliigon is an optional Blender material source, not a runtime dependency;
+  the project source remains reproducible with its procedural fabric material.
+- **Unreal 5.8 Panel Cloth authoring** is available without CLO. The
+  `ConnectedSprawlEditor` module and
+  `Content/Python/build_zarri_panel_cloth.py` import the Blender simulation
+  shell, build an editable Dataflow asset, and bake a graph-free runtime hoodie
+  under `Content/Import/Characters/Streetwear/PanelCloth/`. Run Zarri with
+  `-SprawlPanelClothPreview` to inspect the Chaos solver, MetaHuman collision,
+  and current skin-weight transfer. That transfer still folds the sleeve
+  panels, so normal launches deliberately retain the validated rigid outfit
+  until its weights are hand-fitted in the Panel Cloth Editor. Shoes remain a
+  Blender-first rigid/skinned topology workflow; ZBrush is optional for
+  high-poly leather, wrinkle, and tread detail baked into game-ready maps.
 - **MetaHuman stand, walk, and run animations** come from Epic's installed
   MetaHuman Character locomotion preset and are LOD-synchronized across body,
   face, hair, and grooms. The older CC0 **Universal Animation Library** by

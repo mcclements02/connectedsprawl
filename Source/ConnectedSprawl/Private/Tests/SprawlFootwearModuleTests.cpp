@@ -135,6 +135,32 @@ bool FSprawlFootwearModuleTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("The shoe rotates with the character's facing"),
 		GroundedTurned.GetRotation().Equals(
 			GroundedFirst.GetRotation(), KINDA_SMALL_NUMBER));
+
+	// An IK-foot anchor carries genuine ankle roll, so the shoe must inherit the
+	// anchor's rotation instead of being held level by the body's facing.
+	FTransform RolledFootAnchor = AnimatedCalfAnchor;
+	RolledFootAnchor.SetRotation(FRotator(-28.f, 0.f, 12.f).Quaternion());
+	const FTransform AnchorDriven =
+		USprawlFootwearModule::ResolveFittedShoeTransform(
+			RolledFootAnchor, ShoeOffset, BodyWorld, ShoeBodyFacing, true);
+	const FTransform BodyDriven =
+		USprawlFootwearModule::ResolveFittedShoeTransform(
+			RolledFootAnchor, ShoeOffset, BodyWorld, ShoeBodyFacing, false);
+	TestFalse(TEXT("An IK anchor rolls the shoe with the foot"),
+		AnchorDriven.GetRotation().Equals(
+			BodyDriven.GetRotation(), KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("An anchor-driven shoe matches a rigid bone follow"),
+		AnchorDriven.Equals(
+			USprawlFootwearModule::ResolveBoneFollowTransform(
+				RolledFootAnchor, ShoeOffset), KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("A calf anchor still falls back to body-relative facing"),
+		BodyDriven.Equals(
+			USprawlFootwearModule::ResolveAnimatedShoeTransform(
+				RolledFootAnchor, ShoeOffset, BodyWorld, ShoeBodyFacing),
+			KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("Both orientation sources place the shoe identically"),
+		AnchorDriven.GetLocation().Equals(
+			BodyDriven.GetLocation(), KINDA_SMALL_NUMBER));
 	return true;
 }
 

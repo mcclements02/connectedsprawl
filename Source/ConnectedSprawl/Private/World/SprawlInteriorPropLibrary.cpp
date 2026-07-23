@@ -8,7 +8,7 @@
 
 namespace
 {
-constexpr float ShapeMeshSize = 100.f;
+constexpr float InteriorPropShapeMeshSize = 100.f;
 
 void AddProp(TArray<FSprawlInteriorPropPlacement>& Out,
 	ESprawlInteriorPropType Type, const FVector& RoomCenter,
@@ -19,7 +19,7 @@ void AddProp(TArray<FSprawlInteriorPropPlacement>& Out,
 	Placement.Type = Type;
 	Placement.Target = FTransform(
 		FRotator(0.f, Yaw, 0.f), RoomCenter + OffsetFromFloor,
-		DesiredSize / ShapeMeshSize);
+		DesiredSize / InteriorPropShapeMeshSize);
 }
 
 void AddStoreProps(TArray<FSprawlInteriorPropPlacement>& Out,
@@ -297,7 +297,7 @@ FTransform FSprawlInteriorPropLibrary::FitMeshToTarget(
 	{
 		return Target;
 	}
-	const FVector Scale = Target.GetScale3D() * ShapeMeshSize / MeshSize;
+	const FVector Scale = Target.GetScale3D() * InteriorPropShapeMeshSize / MeshSize;
 	FVector Location = Target.GetLocation();
 	Location.Z -= (Bounds.Origin.Z - Bounds.BoxExtent.Z) * Scale.Z;
 	return FTransform(Target.GetRotation(), Location, Scale);

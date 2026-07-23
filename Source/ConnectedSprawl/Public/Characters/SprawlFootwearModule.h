@@ -105,6 +105,20 @@ public:
 		const FTransform& BodyWorldTransform,
 		const FTransform& ShoeBodyRelativeFacing);
 
+	/**
+	 * Pick the orientation source for a fitted shoe. An IK-foot anchor already
+	 * carries real ankle roll and toe-off, so the shoe inherits it and stays on
+	 * the foot through a stride; a calf anchor points up the leg and would
+	 * stand the shoe vertical, so that case keeps body-relative facing.
+	 */
+	UFUNCTION(BlueprintPure, Category="Connected Sprawl|Footwear")
+	static FTransform ResolveFittedShoeTransform(
+		const FTransform& AnchorWorldTransform,
+		const FTransform& ShoeAnchorRelativeTransform,
+		const FTransform& BodyWorldTransform,
+		const FTransform& ShoeBodyRelativeFacing,
+		bool bAnchorDrivesRotation);
+
 	/** Replace the current pair with fitted shoes and independently bound socks. */
 	UFUNCTION(BlueprintCallable, Category="Connected Sprawl|Footwear")
 	bool ApplyToMetaHuman(
@@ -165,6 +179,7 @@ private:
 	TArray<FName> ShoeAnchorBones;
 	TArray<FTransform> ShoeAnchorOffsets;
 	TArray<FTransform> ShoeBodyFacingOffsets;
+	TArray<bool> ShoeAnchorDrivesRotation;
 
 	int32 FittedShoeCount = 0;
 	ESprawlWardrobeFootwear CurrentFootwear =

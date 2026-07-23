@@ -118,6 +118,7 @@ World
  ├─ USprawlHumanCharacterModule → Replicated customization plus six-action human state
  ├─ USprawlWardrobeModule → Deterministic fitted layers, palette, shoes, socks, hats
  ├─ USprawlStreetwearModule → Zarri's imported Nanobanana kit, live bounds/limb fitting
+ ├─ USprawlReferenceClothingModule → Blender-authored gray shirt/dark pants, post-pose limb refit
  ├─ USprawlFootwearModule → Human-scale shoe geometry, material layers, safe bone anchors
  ├─ USprawlAthleticShoeModule → Validated swappable trainer presets and runtime cycling
  ├─ FSprawlCrowdMetaHuman → Strict assembled-resident roster, styling, locomotion, LOD
@@ -188,14 +189,40 @@ roughly level through a run cycle even though hidden MetaHuman foot transforms
 freeze. `USprawlAthleticShoeModule` supplies four validated, Blueprint-swappable
 trainer presets and wraps the same footwear replacement path; Zarri defaults to
 the navy/teal Zarri Velocity pair while residents can cycle deterministic
-variants. Zarri's Nanobanana outfit uses `USprawlStreetwearModule` instead of
-that procedural presentation path: all 45 project-owned imported hoodie,
-bomber, cargo, beanie, and Zarri Velocity mesh assets are validated before his
-default garments are hidden. Torso and head pieces follow their nearest
-skeleton anchor; paired post-animation limb segments refit the rigid sleeves
-and cargo legs across elbows and knees. This extra ticking work is hero-only.
-Added presentation stays non-colliding, shadow-free, decal-free, and
-navigation-free for the iPhone crowd budget.
+variants. `USprawlBiomedicalShoeModule` defines the Cordero Biomedical
+Bio-Circuit high-top as a reusable project footwear profile, retaining its
+nanofiber upper, red structural cage, circuit window, heel air unit, and ten
+traction pods per shoe while using the animated fitted-high-top path until its
+authored Blender pair is rigged and imported. Zarri's Nanobanana outfit uses
+`USprawlStreetwearModule` instead of that procedural presentation path: all 45
+project-owned imported hoodie, bomber, cargo, beanie, and Zarri Velocity mesh
+assets are validated before his default garments are hidden. Torso and head
+pieces follow their nearest skeleton anchor; paired post-animation limb
+segments refit the rigid sleeves and cargo legs across elbows and knees. This
+extra ticking work is hero-only. Added presentation stays non-colliding,
+shadow-free, decal-free, and navigation-free for the iPhone crowd budget.
+
+Standard gameplay then gives Zarri a cleaner reference-image presentation
+through `USprawlReferenceClothingModule`: a 17-piece Blender-authored fitted
+gray crewneck and dark straight-pants kit replaces the bulky hoodie, bomber,
+and cargo layers while retaining the validated beanie and shoes. Torso, collar,
+hem, waist, and waistband use body anchors; 12 normalized limb sections and
+rounded elbow/knee transition shells refit after animation. The swap is atomic,
+so any missing required asset leaves the prior outfit visible. This remains a
+rigid mobile-conscious approximation rather than continuous skinned fabric;
+additional orthographic references and a later skin/cloth pass are the path to
+production seams, wrinkles, and bend deformation.
+
+Zarri also has an Unreal 5.8-native Panel Cloth authoring path. The editor-only
+module converts the Blender hoodie simulation shell into an editable Dataflow
+cloth asset, transfers MetaHuman body weights, paints shoulder-to-hem movement,
+adds the body physics asset as collision, and bakes a graph-free runtime copy.
+The runtime bridge is opt-in with `-SprawlPanelClothPreview` while the generated
+sleeve weights are being hand-fitted; standard gameplay keeps the validated
+rigid streetwear instead of exposing the current folded preview. Footwear does
+not use Chaos Cloth: clean Blender subdivision topology remains the game mesh
+foundation, with optional ZBrush high-poly detail baked into the rigid/skinned
+shoe assets.
 
 `USprawlMeleeModule` is a separate gameplay contract rather than another
 locomotion state. It gives Zarri explicit Punch/Kick Blueprint calls plus one

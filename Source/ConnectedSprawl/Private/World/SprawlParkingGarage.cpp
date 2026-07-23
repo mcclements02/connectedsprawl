@@ -32,7 +32,7 @@ const FLinearColor VehicleTint(0.12f, 0.19f, 0.27f, 1.f);
 const FLinearColor ParkingBlue(0.025f, 0.19f, 0.48f, 1.f);
 const FLinearColor LampTint(1.f, 0.68f, 0.24f, 1.f);
 
-void AddBox(TArray<FTransform>& Target, const FVector& Center,
+void AddGarageBox(TArray<FTransform>& Target, const FVector& Center,
 	const FVector& Size, const FRotator& Rotation = FRotator::ZeroRotator)
 {
 	Target.Emplace(Rotation, Center, Size / 100.f);
@@ -159,7 +159,7 @@ FSprawlParkingGarageLayout FSprawlParkingGarageLayout::Build()
 	for (int32 Level = 0; Level < ExpectedDeckCount; ++Level)
 	{
 		const float Z = GarageFloorZ + Level * LevelHeight;
-		AddBox(Layout.Decks, Base + FVector(0.f, 0.f, Z),
+		AddGarageBox(Layout.Decks, Base + FVector(0.f, 0.f, Z),
 			FVector(1800.f, 1800.f, Level == 0 ? 12.f : SlabThickness));
 
 		// Continuous upper-deck parapets. Ground-level walls are split around
@@ -167,13 +167,13 @@ FSprawlParkingGarageLayout FSprawlParkingGarageLayout::Build()
 		if (Level > 0)
 		{
 			const float RailZ = Z + 65.f;
-			AddBox(Layout.Rails, Base + FVector(0.f, 870.f, RailZ),
+			AddGarageBox(Layout.Rails, Base + FVector(0.f, 870.f, RailZ),
 				FVector(1720.f, 45.f, 110.f));
-			AddBox(Layout.Rails, Base + FVector(0.f, -870.f, RailZ),
+			AddGarageBox(Layout.Rails, Base + FVector(0.f, -870.f, RailZ),
 				FVector(1720.f, 45.f, 110.f));
-			AddBox(Layout.Rails, Base + FVector(870.f, 0.f, RailZ),
+			AddGarageBox(Layout.Rails, Base + FVector(870.f, 0.f, RailZ),
 				FVector(45.f, 1720.f, 110.f));
-			AddBox(Layout.Rails, Base + FVector(-870.f, 0.f, RailZ),
+			AddGarageBox(Layout.Rails, Base + FVector(-870.f, 0.f, RailZ),
 				FVector(45.f, 1720.f, 110.f));
 		}
 
@@ -181,9 +181,9 @@ FSprawlParkingGarageLayout FSprawlParkingGarageLayout::Build()
 		// storey read as occupied without adding ticking vehicle actors.
 		for (const float X : { -520.f, -120.f, 280.f })
 		{
-			AddBox(Layout.Markings, Base + FVector(X, 610.f, Z + 15.f),
+			AddGarageBox(Layout.Markings, Base + FVector(X, 610.f, Z + 15.f),
 				FVector(9.f, 420.f, 3.f));
-			AddBox(Layout.Markings, Base + FVector(-X, -610.f, Z + 15.f),
+			AddGarageBox(Layout.Markings, Base + FVector(-X, -610.f, Z + 15.f),
 				FVector(9.f, 420.f, 3.f));
 		}
 		if (Level > 0)
@@ -192,10 +192,10 @@ FSprawlParkingGarageLayout FSprawlParkingGarageLayout::Build()
 			{
 				const float X = -500.f + Bay * 400.f;
 				const float Side = ((Level + Bay) & 1) ? 1.f : -1.f;
-				AddBox(Layout.ParkedVehicles,
+				AddGarageBox(Layout.ParkedVehicles,
 					Base + FVector(X, Side * 610.f, Z + 58.f),
 					FVector(330.f, 150.f, 70.f));
-				AddBox(Layout.ParkedVehicles,
+				AddGarageBox(Layout.ParkedVehicles,
 					Base + FVector(X - 25.f, Side * 610.f, Z + 112.f),
 					FVector(160.f, 132.f, 45.f));
 			}
@@ -209,27 +209,27 @@ FSprawlParkingGarageLayout FSprawlParkingGarageLayout::Build()
 		FVector2D(-820.f, 0.f), FVector2D(820.f, 0.f),
 		FVector2D(0.f, -820.f), FVector2D(0.f, 820.f) })
 	{
-		AddBox(Layout.Structure, Base + FVector(P.X, P.Y, GarageHeight * 0.5f),
+		AddGarageBox(Layout.Structure, Base + FVector(P.X, P.Y, GarageHeight * 0.5f),
 			FVector(75.f, 75.f, GarageHeight));
 	}
 
 	// North portal is offset east; south portal is offset west. Low walls and
 	// overhead beams hide the birth points while leaving six-metre openings.
-	AddBox(Layout.Structure, Base + FVector(-450.f, 870.f, PortalWallHeight * 0.5f),
+	AddGarageBox(Layout.Structure, Base + FVector(-450.f, 870.f, PortalWallHeight * 0.5f),
 		FVector(700.f, 65.f, PortalWallHeight));
-	AddBox(Layout.Structure, Base + FVector(650.f, 870.f, PortalWallHeight * 0.5f),
+	AddGarageBox(Layout.Structure, Base + FVector(650.f, 870.f, PortalWallHeight * 0.5f),
 		FVector(300.f, 65.f, PortalWallHeight));
-	AddBox(Layout.Structure, Base + FVector(-650.f, -870.f, PortalWallHeight * 0.5f),
+	AddGarageBox(Layout.Structure, Base + FVector(-650.f, -870.f, PortalWallHeight * 0.5f),
 		FVector(300.f, 65.f, PortalWallHeight));
-	AddBox(Layout.Structure, Base + FVector(450.f, -870.f, PortalWallHeight * 0.5f),
+	AddGarageBox(Layout.Structure, Base + FVector(450.f, -870.f, PortalWallHeight * 0.5f),
 		FVector(700.f, 65.f, PortalWallHeight));
-	AddBox(Layout.Structure, Base + FVector(0.f, 870.f, 315.f),
+	AddGarageBox(Layout.Structure, Base + FVector(0.f, 870.f, 315.f),
 		FVector(1720.f, 75.f, 110.f));
-	AddBox(Layout.Structure, Base + FVector(0.f, -870.f, 315.f),
+	AddGarageBox(Layout.Structure, Base + FVector(0.f, -870.f, 315.f),
 		FVector(1720.f, 75.f, 110.f));
-	AddBox(Layout.Structure, Base + FVector(870.f, 0.f, 130.f),
+	AddGarageBox(Layout.Structure, Base + FVector(870.f, 0.f, 130.f),
 		FVector(65.f, 1720.f, 260.f));
-	AddBox(Layout.Structure, Base + FVector(-870.f, 0.f, 130.f),
+	AddGarageBox(Layout.Structure, Base + FVector(-870.f, 0.f, 130.f),
 		FVector(65.f, 1720.f, 260.f));
 
 	// Alternating internal ramps visually connect all four decks. They stay on
@@ -241,7 +241,7 @@ FSprawlParkingGarageLayout FSprawlParkingGarageLayout::Build()
 	{
 		const float MidZ = GarageFloorZ + Level * LevelHeight + LevelHeight * 0.5f;
 		const float Roll = (Level & 1) ? RampRoll : -RampRoll;
-		AddBox(Layout.Ramps, Base + FVector(650.f, 0.f, MidZ),
+		AddGarageBox(Layout.Ramps, Base + FVector(650.f, 0.f, MidZ),
 			FVector(270.f, RampLength, 20.f), FRotator(0.f, 0.f, Roll));
 	}
 
@@ -251,9 +251,9 @@ FSprawlParkingGarageLayout FSprawlParkingGarageLayout::Build()
 		const float BaseZ = GarageFloorZ + (Level - 1) * LevelHeight + 265.f;
 		for (const float Y : { -620.f, -310.f, 0.f, 310.f, 620.f })
 		{
-			AddBox(Layout.Rails, Base + FVector(882.f, Y, BaseZ),
+			AddGarageBox(Layout.Rails, Base + FVector(882.f, Y, BaseZ),
 				FVector(30.f, 45.f, 210.f));
-			AddBox(Layout.Rails, Base + FVector(-882.f, Y, BaseZ),
+			AddGarageBox(Layout.Rails, Base + FVector(-882.f, Y, BaseZ),
 				FVector(30.f, 45.f, 210.f));
 		}
 	}
@@ -262,20 +262,20 @@ FSprawlParkingGarageLayout FSprawlParkingGarageLayout::Build()
 		const float Z = GarageFloorZ + Level * LevelHeight + 315.f;
 		for (const float Y : { -420.f, 0.f, 420.f })
 		{
-			AddBox(Layout.Lights, Base + FVector(0.f, Y, Z),
+			AddGarageBox(Layout.Lights, Base + FVector(0.f, Y, Z),
 				FVector(260.f, 22.f, 12.f));
 		}
 	}
-	AddBox(Layout.Signs, Base + FVector(-560.f, 906.f, 900.f),
+	AddGarageBox(Layout.Signs, Base + FVector(-560.f, 906.f, 900.f),
 		FVector(300.f, 24.f, 360.f));
 	// Block-built white P on the sign face (marking material).
-	AddBox(Layout.Markings, Base + FVector(-625.f, 921.f, 900.f),
+	AddGarageBox(Layout.Markings, Base + FVector(-625.f, 921.f, 900.f),
 		FVector(38.f, 18.f, 220.f));
-	AddBox(Layout.Markings, Base + FVector(-555.f, 921.f, 995.f),
+	AddGarageBox(Layout.Markings, Base + FVector(-555.f, 921.f, 995.f),
 		FVector(140.f, 18.f, 34.f));
-	AddBox(Layout.Markings, Base + FVector(-500.f, 921.f, 945.f),
+	AddGarageBox(Layout.Markings, Base + FVector(-500.f, 921.f, 945.f),
 		FVector(34.f, 18.f, 110.f));
-	AddBox(Layout.Markings, Base + FVector(-555.f, 921.f, 895.f),
+	AddGarageBox(Layout.Markings, Base + FVector(-555.f, 921.f, 895.f),
 		FVector(140.f, 18.f, 34.f));
 
 	const int32 HorizontalRoad = Grid::NearestRoadIndex(C.Y + Grid::Step * 0.5f);

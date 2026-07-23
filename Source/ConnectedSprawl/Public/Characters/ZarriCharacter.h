@@ -17,6 +17,8 @@ class UInputMappingContext;
 class USkeletalMeshComponent;
 class USprawlHumanCharacterModule;
 class USprawlLocomotionComponent;
+class USprawlPanelClothModule;
+class USprawlReferenceClothingModule;
 class USprawlStreetwearModule;
 class USprawlWardrobeModule;
 class ASprawlCar;
@@ -91,6 +93,17 @@ public:
 	UFUNCTION(BlueprintPure, Category="Zarri|Streetwear")
 	USprawlStreetwearModule* GetStreetwearModule() const { return Streetwear; }
 
+	/** Blender-authored gray shirt and dark pants mapped to the live body. */
+	UFUNCTION(BlueprintPure, Category="Zarri|Reference Clothing")
+	USprawlReferenceClothingModule* GetReferenceClothingModule() const
+	{
+		return ReferenceClothing;
+	}
+
+	/** Live Chaos/Dataflow hoodie generated in Unreal's Panel Cloth Editor. */
+	UFUNCTION(BlueprintPure, Category="Zarri|Panel Cloth")
+	USprawlPanelClothModule* GetPanelClothModule() const { return PanelCloth; }
+
 	/** Asset-independent punch/kick gameplay and replicated attack state. */
 	UFUNCTION(BlueprintPure, Category="Zarri|Melee")
 	USprawlMeleeModule* GetMeleeModule() const { return Melee; }
@@ -145,6 +158,14 @@ protected:
 	/** Fits project-owned static streetwear pieces to the live MetaHuman. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USprawlStreetwearModule> Streetwear;
+
+	/** Maps the Blender reference shirt and pants onto MetaHuman bone chains. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<USprawlReferenceClothingModule> ReferenceClothing;
+
+	/** Binds the authored Chaos Panel Cloth hoodie to the MetaHuman body. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<USprawlPanelClothModule> PanelCloth;
 
 	/** Real clothing physics simulation and fabric solver profile module. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")

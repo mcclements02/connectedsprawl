@@ -17,6 +17,11 @@
 				"GameplayTags",
 				"AIModule"
 			]
+		},
+		{
+			"Name": "ConnectedSprawlEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	],
 	"Plugins": [
@@ -28,7 +33,10 @@
 		{ "Name": "MetaHumanCharacter", "Enabled": true },
 		{ "Name": "GameplayAbilities", "Enabled": true },
 		{ "Name": "Niagara", "Enabled": true },
-		{ "Name": "ProceduralMeshComponent", "Enabled": true }
+		{ "Name": "ProceduralMeshComponent", "Enabled": true },
+		{ "Name": "ChaosClothAsset", "Enabled": true },
+		{ "Name": "ChaosClothAssetDataflowNodes", "Enabled": true },
+		{ "Name": "ChaosClothAssetEditorCore", "Enabled": true }
 	],
 	"TargetPlatforms": [ "IOS", "Mac" ]
 }

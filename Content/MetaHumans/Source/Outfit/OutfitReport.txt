@@ -1,0 +1,12 @@
+palette: {"top_color": [0.34, 0.42, 0.54], "pants_color": [0.15, 0.21, 0.34], "shoe_color": [0.88, 0.89, 0.91], "shoe_sole": [0.1, 0.11, 0.13], "shoe_accent": [0.1, 0.6, 0.58], "hat_color": [0.26, 0.42, 0.66]}
+base: scaled to 1.775m, verts=10582
+hoodie: hood-down, kangaroo pocket, ribbed hem+cuffs
+pants: joggers with waistband + cuffed ankles
+sneakers: lofted last (18 sections) + outsole + stripe + laces
+bucket hat: crown + brim on the skull
+rendered front
+rendered back
+rendered threequarter
+exported Content/Import/Characters/Outfit/SM_ZarriOutfit.fbx (2272.2 KB)
+saved outfit source -> Content/MetaHumans/Source/Outfit/ConnectedSprawl_Outfit.blend
+DONE renders=3 garments=18

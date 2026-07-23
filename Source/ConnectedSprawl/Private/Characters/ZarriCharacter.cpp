@@ -28,6 +28,8 @@
 #include "Characters/SprawlLocomotionComponent.h"
 #include "Characters/SprawlMeleeInput.h"
 #include "Characters/SprawlMeleeModule.h"
+#include "Characters/SprawlPanelClothModule.h"
+#include "Characters/SprawlReferenceClothingModule.h"
 #include "Characters/SprawlStreetwearModule.h"
 #include "Characters/SprawlWardrobeModule.h"
 #include "Engine/Engine.h"
@@ -87,6 +89,9 @@ AZarriCharacter::AZarriCharacter()
 		TEXT("HumanCharacter"));
 	Wardrobe = CreateDefaultSubobject<USprawlWardrobeModule>(TEXT("Wardrobe"));
 	Streetwear = CreateDefaultSubobject<USprawlStreetwearModule>(TEXT("Streetwear"));
+	ReferenceClothing = CreateDefaultSubobject<USprawlReferenceClothingModule>(
+		TEXT("ReferenceClothing"));
+	PanelCloth = CreateDefaultSubobject<USprawlPanelClothModule>(TEXT("PanelCloth"));
 	ClothPhysics = CreateDefaultSubobject<USprawlClothPhysicsModule>(TEXT("ClothPhysics"));
 	Melee = CreateDefaultSubobject<USprawlMeleeModule>(TEXT("Melee"));
 
@@ -125,11 +130,20 @@ AZarriCharacter::AZarriCharacter()
 			FVector(0.f, 0.f, -92.f),
 			FRotator(0.f, -90.f, 0.f));   // FRotator(Pitch, Yaw, Roll)
 
-		static ConstructorHelpers::FObjectFinder<USkeletalMesh> ZarriMesh(
-			TEXT("/Game/Mannequin/Character/Mesh/SK_Mannequin.SK_Mannequin"));
-		if (ZarriMesh.Succeeded())
+		static ConstructorHelpers::FObjectFinder<USkeletalMesh> HeroMesh(
+			TEXT("/Game/Pedestrians/Zarri/SK_Zarri.SK_Zarri"));
+		if (HeroMesh.Succeeded())
 		{
-			MeshComp->SetSkeletalMeshAsset(ZarriMesh.Object);
+			MeshComp->SetSkeletalMeshAsset(HeroMesh.Object);
+		}
+		else
+		{
+			static ConstructorHelpers::FObjectFinder<USkeletalMesh> MannequinMesh(
+				TEXT("/Game/Mannequin/Character/Mesh/SK_Mannequin.SK_Mannequin"));
+			if (MannequinMesh.Succeeded())
+			{
+				MeshComp->SetSkeletalMeshAsset(MannequinMesh.Object);
+			}
 		}
 
 		static ConstructorHelpers::FClassFinder<UAnimInstance> ZarriAnim(
@@ -411,6 +425,14 @@ void AZarriCharacter::UpdateBoundaryRescue(float DeltaSeconds)
 
 bool AZarriCharacter::TryInitializeMetaHumanVisual()
 {
+	if (ReferenceClothing)
+	{
+		ReferenceClothing->ClearClothing();
+	}
+	if (PanelCloth)
+	{
+		PanelCloth->ClearPanelCloth();
+	}
 	if (Wardrobe)
 	{
 		Wardrobe->ClearWardrobe();
@@ -553,6 +575,39 @@ bool AZarriCharacter::TryInitializeMetaHumanVisual()
 		const bool bAuthoredStreetwearApplied = bUseAuthoredStreetwear
 			&& Streetwear->ApplyToMetaHuman(
 				VisualActor, MetaHumanBodyComponent, HeroOutfit);
+		const bool bReferenceClothingApplied = bAuthoredStreetwearApplied
+			&& ReferenceClothing
+			&& ReferenceClothing->ApplyToMetaHuman(
+				VisualActor, MetaHumanBodyComponent);
+		if (bReferenceClothingApplied)
+		{
+			// Keep the proven authored shoes/beanie, but replace the bulky rigid
+			// torso, sleeves, and cargo shells with the fitted reference outfit.
+			Streetwear->SetLayerVisibility(
+				ESprawlStreetwearLayer::Hoodie, false);
+			Streetwear->SetLayerVisibility(
+				ESprawlStreetwearLayer::Bomber, false);
+			Streetwear->SetLayerVisibility(
+				ESprawlStreetwearLayer::Cargo, false);
+		}
+		const bool bPanelClothApplied = bAuthoredStreetwearApplied
+			&& PanelCloth
+			&& PanelCloth->ApplyToMetaHuman(
+				VisualActor, MetaHumanBodyComponent);
+		if (bPanelClothApplied)
+		{
+			// Chaos owns the visible hoodie. Hide every rigid torso/sleeve shell
+			// so none of the original segmented placeholders can occlude it.
+			Streetwear->SetLayerVisibility(
+				ESprawlStreetwearLayer::Hoodie, false);
+			Streetwear->SetLayerVisibility(
+				ESprawlStreetwearLayer::Bomber, false);
+			if (bReferenceClothingApplied)
+			{
+				ReferenceClothing->SetLayerVisibility(
+					ESprawlReferenceClothingLayer::Shirt, false);
+			}
+		}
 		if (!bAuthoredStreetwearApplied
 			&& !Wardrobe->ApplyToMetaHuman(
 				VisualActor, MetaHumanBodyComponent, HeroOutfit))

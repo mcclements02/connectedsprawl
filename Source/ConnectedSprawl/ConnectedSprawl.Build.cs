@@ -22,7 +22,8 @@ public class ConnectedSprawl : ModuleRules
 			"AIModule",
 			"NavigationSystem",
 			"Niagara",
-			"ProceduralMeshComponent"
+			"ProceduralMeshComponent",
+			"ChaosClothAssetEngine"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {

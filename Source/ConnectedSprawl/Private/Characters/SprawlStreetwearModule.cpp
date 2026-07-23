@@ -746,6 +746,7 @@ UStaticMeshComponent* USprawlStreetwearModule::SpawnPiece(
 		BodyMesh, FAttachmentTransformRules::KeepWorldTransform, AnchorBone);
 	StreetwearApplyPalette(Component, Piece.Layer, Outfit);
 	SpawnedPieces.Add(Component);
+	SpawnedPieceLayers.Add(Piece.Layer);
 	return Component;
 }
 
@@ -882,6 +883,7 @@ void USprawlStreetwearModule::ClearStreetwear()
 		}
 	}
 	SpawnedPieces.Reset();
+	SpawnedPieceLayers.Reset();
 	for (const TWeakObjectPtr<UMeshComponent>& WeakComponent : HiddenBaseGarments)
 	{
 		if (UMeshComponent* Component = WeakComponent.Get())
@@ -906,4 +908,20 @@ void USprawlStreetwearModule::ClearStreetwear()
 	LiveFitBodyScale = 1.f;
 	SetComponentTickEnabled(false);
 	MissingRequiredPieceCount = 0;
+}
+
+void USprawlStreetwearModule::SetLayerVisibility(
+	ESprawlStreetwearLayer Layer, bool bVisible)
+{
+	const int32 PieceCount = FMath::Min(
+		SpawnedPieces.Num(), SpawnedPieceLayers.Num());
+	for (int32 Index = 0; Index < PieceCount; ++Index)
+	{
+		if (SpawnedPieceLayers[Index] == Layer
+			&& IsValid(SpawnedPieces[Index]))
+		{
+			SpawnedPieces[Index]->SetVisibility(bVisible, true);
+			SpawnedPieces[Index]->SetHiddenInGame(!bVisible, true);
+		}
+	}
 }

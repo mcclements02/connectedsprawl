@@ -55,6 +55,54 @@ enum class ESprawlWardrobeHeadwear : uint8
 	Beanie
 };
 
+/**
+ * Real-world jacket dimensions developed from the live shoulder and torso bone
+ * spans, so outerwear is cut for the body wearing it rather than guessed.
+ */
+USTRUCT(BlueprintType)
+struct CONNECTEDSPRAWL_API FSprawlJacketProfile
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Wardrobe")
+	float ChestHalfWidthCm = 19.f;
+
+	/**
+	 * Half-width across the deltoids, which is materially wider than the
+	 * shoulder joints the measurement starts from. A jacket cut to the joint
+	 * span disappears inside the body it is supposed to cover.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Wardrobe")
+	float ShoulderHalfWidthCm = 23.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Wardrobe")
+	float ChestHalfDepthCm = 12.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Wardrobe")
+	float HemHalfWidthCm = 17.f;
+
+	/** Hem-to-shoulder height of the shell. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Wardrobe")
+	float ShellHeightCm = 52.f;
+
+	/** How far the hem falls below the chest attachment bone. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Wardrobe")
+	float HemDropCm = 30.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Wardrobe")
+	float CollarHeightCm = 5.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Wardrobe")
+	float SleeveUpperRadiusCm = 6.6f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Wardrobe")
+	float SleeveCuffRadiusCm = 5.f;
+
+	/** Fraction of the forearm the sleeve covers; 1 reaches the wrist. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Wardrobe")
+	float SleeveReach = 1.f;
+};
+
 /** Complete, replication-safe outfit direction resolved from a broad style. */
 USTRUCT(BlueprintType)
 struct CONNECTEDSPRAWL_API FSprawlWardrobeOutfit
@@ -145,6 +193,21 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Connected Sprawl|Wardrobe")
 	static FString DescribeOutfit(const FSprawlWardrobeOutfit& Outfit);
+
+	/** Cut a jacket for a measured body; spans come from live skeleton bones. */
+	UFUNCTION(BlueprintPure, Category="Connected Sprawl|Wardrobe")
+	static FSprawlJacketProfile DevelopJacketProfile(
+		ESprawlWardrobeOuterwear Outerwear,
+		float ShoulderHalfWidthCm,
+		float TorsoHeightCm);
+
+	UFUNCTION(BlueprintCallable, Category="Connected Sprawl|Wardrobe")
+	static bool ValidateJacketProfile(
+		const FSprawlJacketProfile& Profile, FString& OutError);
+
+	/** True when an accessory will actually draw in the normal shading path. */
+	UFUNCTION(BlueprintPure, Category="Connected Sprawl|Wardrobe")
+	static bool IsAccessoryVisible(const UMeshComponent* Component);
 
 	/** Tint assembled garments without creating accessory geometry. */
 	static void ApplyGarmentPalette(

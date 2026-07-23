@@ -1,0 +1,11 @@
+Cordero Biomedical Bio-Circuit High-Top
+================================================
+Blender source: Content/MetaHumans/Source/Footwear/CorderoBiomedical/CorderoBiomedical_HighTop.blend
+Unreal FBX source: Content/Import/Characters/Footwear/SM_CorderoBiomedical_HighTopPair.fbx
+Preview: Content/MetaHumans/Source/Footwear/CorderoBiomedical/CorderoBiomedical_HighTopPreview.png
+Shoe mesh parts: 76
+Evaluated triangles: 20168
+Scale: metres; reference shoe length 0.28 m
+Orientation: +X toe-forward, +Z up
+Signature details: nanofiber forefoot, deep-red support cage, transparent circuit window, active chip, heel air unit, 10 traction pods per shoe, padded high-top collar, CB tongue badge.
+Runtime integration: USprawlBiomedicalShoeModule; fit and bind the imported pair to MetaHuman foot skeletons before shipping.

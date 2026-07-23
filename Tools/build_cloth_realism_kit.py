@@ -152,7 +152,9 @@ def add_pinning_vertex_group(obj, group_name, condition_func):
     return group, len(weights)
 
 
-def author_realistic_garment_mesh(name, rings, preset_key, color, collection, pin_type="waist"):
+def author_realistic_garment_mesh(
+        name, rings, preset_key, color, collection, pin_type="waist",
+        add_sleeves=False):
     """Create a realistic garment mesh with pinning vertex groups and physics setup."""
     segments = 24
     vertices = []
@@ -176,6 +178,37 @@ def author_realistic_garment_mesh(name, rings, preset_key, color, collection, pi
             c = (ring + 1) * segments + nxt
             d = (ring + 1) * segments + side
             faces.append((a, b, c, d))
+
+    if add_sleeves:
+        sleeve_segments = 16
+        # A-pose sleeves overlap the torso at their roots. Skin-weight transfer
+        # in Unreal binds each disconnected shell to Zarri's live arm chain.
+        for direction in (-1.0, 1.0):
+            sleeve_rings = (
+                ((0.0, direction * 0.22, 1.50), 0.112),
+                ((0.0, direction * 0.35, 1.40), 0.105),
+                ((0.0, direction * 0.47, 1.25), 0.094),
+                ((0.0, direction * 0.58, 1.08), 0.080),
+            )
+            sleeve_start = len(vertices)
+            for ring_idx, (center, radius) in enumerate(sleeve_rings):
+                for side in range(sleeve_segments):
+                    angle = math.tau * side / sleeve_segments
+                    wrinkle = 0.003 * math.sin(
+                        angle * 3.0 + ring_idx * 1.4)
+                    vertices.append((
+                        center[0] + math.cos(angle) * (radius + wrinkle),
+                        center[1],
+                        center[2] + math.sin(angle) * (radius + wrinkle),
+                    ))
+            for ring in range(len(sleeve_rings) - 1):
+                for side in range(sleeve_segments):
+                    nxt = (side + 1) % sleeve_segments
+                    a = sleeve_start + ring * sleeve_segments + side
+                    b = sleeve_start + ring * sleeve_segments + nxt
+                    c = sleeve_start + (ring + 1) * sleeve_segments + nxt
+                    d = sleeve_start + (ring + 1) * sleeve_segments + side
+                    faces.append((a, b, c, d))
 
     mesh = bpy.data.meshes.new(name + "_Mesh")
     mesh.from_pydata(vertices, [], faces)
@@ -226,8 +259,13 @@ def main():
 
     hoodie = author_realistic_garment_mesh(
         "SM_RealCloth_Hoodie",
-        ((1.08, 0.18, 0.28), (1.18, 0.19, 0.30), (1.48, 0.18, 0.31), (1.64, 0.16, 0.25)),
-        "COTTON_FLEECE", (0.16, 0.18, 0.22), collection, pin_type="shoulders")
+        # The final neck ring closes the shoulder surface instead of leaving
+        # the old open tube that simulated like a poncho.
+        ((1.04, 0.155, 0.245), (1.16, 0.165, 0.255),
+         (1.42, 0.165, 0.265), (1.56, 0.140, 0.235),
+         (1.63, 0.090, 0.105)),
+        "COTTON_FLEECE", (0.16, 0.18, 0.22), collection,
+        pin_type="shoulders", add_sleeves=True)
 
     bomber = author_realistic_garment_mesh(
         "SM_RealCloth_Bomber",

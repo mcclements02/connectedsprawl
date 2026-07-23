@@ -13,6 +13,7 @@ class UButton;
 class UCanvasPanel;
 class UTextBlock;
 class ASprawlPlayerController;
+class USprawlMiniMapWidget;
 
 UCLASS()
 class CONNECTEDSPRAWL_API USprawlNativeHUD : public USprawlHUDWidget
@@ -56,6 +57,7 @@ private:
 	void RefreshTouchButtonLabels(bool bForce = false);
 	ASprawlPlayerController* GetSprawlPC() const;
 
+	UPROPERTY() TObjectPtr<USprawlMiniMapWidget> MiniMap;
 	UPROPERTY() TObjectPtr<UTextBlock> StatsText;
 	UPROPERTY() TObjectPtr<UTextBlock> ObjectiveText;
 	UPROPERTY() TObjectPtr<UTextBlock> PhoneText;

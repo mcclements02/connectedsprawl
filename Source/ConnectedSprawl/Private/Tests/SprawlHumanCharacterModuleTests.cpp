@@ -16,10 +16,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSprawlHumanCharacterModuleTest,
 bool FSprawlHumanCharacterModuleTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
-	using Grid = USprawlCityGridSubsystem;
+	using HumanTestGrid = USprawlCityGridSubsystem;
 
 	const FVector Junction(
-		Grid::BlockCenter(3), Grid::BlockCenter(3), 0.f);
+		HumanTestGrid::BlockCenter(3), HumanTestGrid::BlockCenter(3), 0.f);
 	const FSprawlCharacterProfile Profile =
 		USprawlCharacterDeveloper::DevelopCharacter(41277, Junction, 12.f);
 	const FSprawlHumanCustomization First =

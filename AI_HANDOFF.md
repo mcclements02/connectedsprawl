@@ -1,7 +1,7 @@
 # AI Handoff Ledger — Project State
 
 <!-- Version control: bump Version and Last updated on every edit to this file. -->
-**Version:** 86 · **Last updated:** 2026-07-22 16:37 PDT · **Updated by:** codex
+**Version:** 89 · **Last updated:** 2026-07-23 13:05 PDT · **Updated by:** claude
 
 Single source of truth for **in-flight work across every worktree, branch, and
 AI agent** (claude · gemini · chatgpt · copilot). How to use it is defined in
@@ -20,11 +20,114 @@ this table merges cleanly. Remove a row once its branch is merged or abandoned
 
 | Branch | Worktree | Agent | Status | Summary | Updated |
 |--------|----------|-------|--------|---------|---------|
+| `main` | `/Users/matthewx/code/ConnectedSprawl` | claude · codex | committed + pushed | Everything on `main` pushed to `origin/main` at user request: codex's Blender Live MCP + streetwear/wardrobe/footwear/panel-cloth/reference-clothing/minimap runtime, and claude's Blender garment authoring (CC0 base, denim jacket, parameterized outfit). Worktree clean. | 2026-07-23 13:05 PDT |
 
 ## Log (append newest on top)
 
 Append-only. One entry per handoff. Never rewrite or delete past entries. A merge
 conflict here means two agents diverged — keep **both** entries.
+
+### 2026-07-23 · main · claude (Blender garment authoring + push-all to origin/main)
+- **New authoring module `Tools/build_zarri_denim_jacket.py`:** downloads and
+  preps the CC0 Blender Studio Human Base Meshes male body (recentred, scaled to
+  Zarri's 1.775 m, saved as `Content/MetaHumans/Source/BaseMeshes/HumanBaseMale.blend`),
+  then authors a denim trucker jacket by extracting the garment shell from the
+  BODY'S OWN FACES (real anatomical fit), with collar, placket, copper buttons,
+  flap pockets, cuffs, tan twin-needle topstitch, noise-displace wrinkles and an
+  indigo twill material. Exports `Content/Import/Characters/Denim/SM_ZarriDenimJacket.fbx`.
+- **New authoring module `Tools/build_zarri_outfit.py`:** parameterized full fit
+  (colours via `PARAMS` or a JSON argv override) — fitted top, jeans, bucket hat,
+  and sneakers built as a **lofted last** (18 elliptical sections, widest at the
+  ball, D-shaped flat-bottomed sections so the upper meets the sole), plus teal
+  lace bars and side stripe. Exports `Content/Import/Characters/Outfit/SM_ZarriOutfit.fbx`.
+- **Two real technique bugs found and recorded:** (1) inflating a shell *before*
+  relaxing it lets smoothing shrink it back inside the body — skin poked through
+  as holes at the thighs/crotch; the order must be **relax → then inflate**, and
+  `LOOSE` below ~0.017 on the legs reopens them. (2) A full-ellipse shoe section
+  pinches to a point at the bottom, so the sole flared out as a bare plate; a
+  D-section fixes it.
+- **Status of these assets:** source/preview only — **unrigged and NOT imported
+  or skinned onto Zarri**; they do not affect the runtime. Nothing in the
+  existing streetwear/wardrobe systems was modified.
+- **Validation:** all Blender passes ran clean headless; `ConnectedSprawlEditor
+  Mac Development` reports Result: Succeeded (up to date) against the full
+  working tree, so this push does not break `main`'s compile.
+- **NOTE — this commit is a user-requested "push all":** it also carries codex's
+  in-flight streetwear/wardrobe/footwear/panel-cloth/reference-clothing/minimap
+  C++ and assets, plus an untracked `Source/ConnectedSprawlEditor/` that is **not
+  declared in `.uproject` Modules** (inert, not built). claude did not author or
+  independently validate that work beyond the compile check above — see codex's
+  own entries below for its state.
+- **Risk:** no cook, package, iPhone/device, or performance profile was run. LFS
+  storage grows by ~115 MB with this push (running total roughly 380 MB against
+  GitHub's 1 GiB free tier).
+<!-- entry:blender-garment-authoring-and-push-all -->
+
+### 2026-07-22 · main · codex (Blender Live MCP + Zarri fitted reference outfit)
+- **Result:** created and installed the external personal `blender-live` Codex
+  plugin, whose localhost-only MCP bridge can launch Blender, summarize a
+  scene, run scripts, save, and capture the live viewport. Built an editable
+  17-piece light-gray long-sleeve shirt and dark straight-pants outfit from the
+  supplied reference, normalized the 12 limb exports to local `+Z`, imported
+  all pieces, and added Blueprint-facing `USprawlReferenceClothingModule` to
+  fit them to Zarri's live MetaHuman pose. Standard gameplay now swaps out the
+  bulky hoodie/bomber/cargo only after the complete kit loads, retains shoes
+  and beanie, and lets the opt-in Panel Cloth preview hide the rigid shirt.
+- **Files:** new Blender builder, editable `.blend`, preview/report, 17 FBX and
+  imported mesh assets, Unreal import command, reference-clothing runtime
+  module/test, Zarri integration, cook rule, README, and GDD. The personal MCP
+  plugin lives outside the repository at `/Users/matthewx/plugins/blender-live`.
+- **Validation:** Blender 5.1 regenerated the source, preview, report, and 17
+  exports; Unreal imported all 17 meshes without errors or warnings; the UE 5.8
+  Mac Development editor build and focused
+  `ConnectedSprawl.Characters.ReferenceClothingModule` automation passed. A
+  real-Metal 1280x720 wardrobe audit loaded 17 pieces with 12 live fits and
+  passed a forced-run visual check (mean luma 105.60, 0.03% crushed, 0.13%
+  clipped).
+  Plugin manifest, Node syntax, bridge Python syntax, and manual MCP
+  scene-summary/viewport-capture calls passed.
+- **Risk:** the outfit is a segmented rigid approximation, not a continuously
+  skinned or simulated garment. More front/back/side and material references
+  are needed for production seam accuracy. Poliigon 1.16.2 is installed,
+  enabled, and authenticated locally, but profile/marketing onboarding and a
+  licensed fabric download require the user's choices; the procedural material
+  remains active. iOS cook, package, device, and performance validation were
+  not run.
+- **Status:** validated and uncommitted on `main`; unrelated dirty city,
+  biomedical, footwear, minimap, UI, world, prior cloth, and local Poliigon
+  source work was preserved. No branch, worktree, stage, commit, or remote
+  operation was performed.
+<!-- entry:blender-live-zarri-reference-outfit -->
+
+### 2026-07-22 · main · codex (Zarri Unreal Panel Cloth integration)
+- **Result:** enabled Unreal 5.8 Chaos Cloth Asset/Dataflow editor support and
+  added a `ConnectedSprawlEditor` authoring module that imports the Blender
+  hoodie shell, builds an editable Panel Cloth Dataflow graph, paints movement,
+  transfers MetaHuman weights, configures collision/material/solver properties,
+  and bakes a graph-free runtime asset. Zarri owns a runtime cloth bridge, but
+  it is gated behind `-SprawlPanelClothPreview`; normal gameplay keeps the
+  validated rigid streetwear because visual QA found folded sleeve weights.
+  Footwear remains on the rigid/skinned Blender topology and optional ZBrush
+  detail-bake path rather than Chaos Cloth.
+- **Files:** project/module/plugin configuration; new runtime Panel Cloth module
+  and test; new editor module and Python authoring command; Zarri/streetwear
+  integration; refined Blender hoodie simulation topology and generated
+  source/runtime cloth assets/material; README and GDD contracts.
+- **Validation:** Blender 5.1 regenerated the editable cloth kit and FBX files;
+  the Unreal authoring command completed cleanly with 1,216 painted simulation
+  vertices; UE 5.8 Mac Development editor build passed; focused
+  `ConnectedSprawl.Characters.PanelClothModule` automation passed 1/1. Real-
+  Metal default and opt-in preview audits both passed at 1280x720: default kept
+  rigid streetwear; preview loaded one cloth model with MetaHuman sphyl
+  collision and no missing Dataflow-node or cloth-material warnings.
+- **Risk:** the preview hoodie is not production-fitted—the automatically
+  transferred sleeves fold across the torso and require manual weight/paint
+  cleanup in Panel Cloth Editor. iOS cook, package, device, and performance
+  validation were not run.
+- **Status:** validated and uncommitted on `main`; unrelated dirty city,
+  biomedical, footwear, minimap, UI, and world work was preserved. No branch,
+  worktree, stage, commit, or remote operation was performed.
+<!-- entry:zarri-unreal-panel-cloth-integration -->
 
 ### 2026-07-22 · main · codex (commit Zarri authored streetwear)
 - **Result:** Prepared the validated Zarri Nanobanana runtime module, its cloth

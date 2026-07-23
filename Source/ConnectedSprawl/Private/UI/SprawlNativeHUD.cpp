@@ -13,6 +13,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "SprawlPlayerController.h"
+#include "UI/SprawlMiniMapWidget.h"
 #include "Vehicles/SprawlCar.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 
@@ -56,6 +57,26 @@ void USprawlNativeHUD::BuildUI()
 		UCanvasPanel::StaticClass(), TEXT("HUDRoot"));
 	WidgetTree->RootWidget = Root;
 
+	constexpr float MiniMapMargin = 24.f;
+	// Reserve the corner for the minimap; the stats panel stacks underneath it.
+	constexpr float MiniMapBlockHeight =
+		USprawlMiniMapWidget::MiniMapSizePx + 30.f;
+
+	MiniMap = CreateWidget<USprawlMiniMapWidget>(
+		GetOwningPlayer(), USprawlMiniMapWidget::StaticClass());
+	if (MiniMap)
+	{
+		MiniMap->SetVisibility(ESlateVisibility::HitTestInvisible);
+		if (UCanvasPanelSlot* Slot = Root->AddChildToCanvas(MiniMap))
+		{
+			Slot->SetAnchors(FAnchors(0.f, 0.f));
+			Slot->SetPosition(FVector2D(MiniMapMargin, MiniMapMargin));
+			Slot->SetSize(FVector2D(
+				USprawlMiniMapWidget::MiniMapSizePx, MiniMapBlockHeight));
+			Slot->SetZOrder(6);
+		}
+	}
+
 	UBorder* StatsPanel = MakeNativeHUDPanel(WidgetTree, TEXT("StatsPanel"));
 	// Read-only panels must not swallow touches meant for movement or look.
 	StatsPanel->SetVisibility(ESlateVisibility::HitTestInvisible);
@@ -65,7 +86,8 @@ void USprawlNativeHUD::BuildUI()
 	if (UCanvasPanelSlot* Slot = Root->AddChildToCanvas(StatsPanel))
 	{
 		Slot->SetAnchors(FAnchors(0.f, 0.f));
-		Slot->SetPosition(FVector2D(24.f, 24.f));
+		Slot->SetPosition(FVector2D(
+			MiniMapMargin, MiniMapMargin + MiniMapBlockHeight + 12.f));
 		Slot->SetSize(FVector2D(350.f, 70.f));
 	}
 

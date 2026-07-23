@@ -1,0 +1,12 @@
+base: recentred, scaled x1.050 -> height 1.775m verts=10582
+saved base figure -> Content/MetaHumans/Source/BaseMeshes/HumanBaseMale.blend
+shell: 2724 faces from body, off-skin 30mm, relaxed
+details: collar, placket, 6 copper buttons, 2 pockets+studs, cuffs, hem
+stitching: twin-needle placket, yoke seam, pocket flap + mouth seams
+jacket assembled: 2250 faces, 3 material slots
+rendered /private/tmp/claude-501/-Users-matthewx-code-ConnectedSprawl/dc4ad07d-766d-4cdc-a9e3-4ce18bf21fc6/scratchpad/denim_front.png
+rendered /private/tmp/claude-501/-Users-matthewx-code-ConnectedSprawl/dc4ad07d-766d-4cdc-a9e3-4ce18bf21fc6/scratchpad/denim_back.png
+rendered /private/tmp/claude-501/-Users-matthewx-code-ConnectedSprawl/dc4ad07d-766d-4cdc-a9e3-4ce18bf21fc6/scratchpad/denim_detail.png
+exported Content/Import/Characters/Denim/SM_ZarriDenimJacket.fbx (989.8 KB)
+saved jacket source -> Content/MetaHumans/Source/Denim/ConnectedSprawl_DenimJacket.blend
+DONE renders=3

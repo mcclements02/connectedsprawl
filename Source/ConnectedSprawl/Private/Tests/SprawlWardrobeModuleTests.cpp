@@ -92,4 +92,86 @@ bool FSprawlWardrobeModuleTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSprawlJacketProfileTest,
+	"ConnectedSprawl.Characters.JacketProfile",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSprawlJacketProfileTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	const ESprawlWardrobeOuterwear Jackets[] = {
+		ESprawlWardrobeOuterwear::UtilityJacket,
+		ESprawlWardrobeOuterwear::BomberJacket,
+		ESprawlWardrobeOuterwear::Blazer,
+		ESprawlWardrobeOuterwear::TrackJacket,
+	};
+	FString Error;
+	// Every jacket must stay human-scale across the full range of bodies the
+	// crowd generator produces, not just the average one.
+	for (const ESprawlWardrobeOuterwear Jacket : Jackets)
+	{
+		for (const float Shoulder : {13.f, 18.f, 26.f})
+		{
+			for (const float Torso : {38.f, 50.f, 68.f})
+			{
+				const FSprawlJacketProfile Profile =
+					USprawlWardrobeModule::DevelopJacketProfile(
+						Jacket, Shoulder, Torso);
+				TestTrue(*FString::Printf(
+					TEXT("Jacket %d fits a %.0f/%.0f cm body"),
+					static_cast<int32>(Jacket), Shoulder, Torso),
+					USprawlWardrobeModule::ValidateJacketProfile(Profile, Error));
+				// A shell cut to the joint span vanishes inside the torso, so
+				// every jacket must flare past the deltoids it covers.
+				TestTrue(TEXT("A jacket always clears the shoulders it covers"),
+					Profile.ShoulderHalfWidthCm > Shoulder * 1.3f);
+				TestTrue(TEXT("A jacket chest clears the ribcage"),
+					Profile.ChestHalfWidthCm > Shoulder * 1.1f);
+				TestTrue(TEXT("Sleeves clear the arm inside them"),
+					Profile.SleeveUpperRadiusCm > Shoulder * 0.4f);
+			}
+		}
+	}
+
+	const FSprawlJacketProfile Bomber =
+		USprawlWardrobeModule::DevelopJacketProfile(
+			ESprawlWardrobeOuterwear::BomberJacket, 18.f, 50.f);
+	const FSprawlJacketProfile Blazer =
+		USprawlWardrobeModule::DevelopJacketProfile(
+			ESprawlWardrobeOuterwear::Blazer, 18.f, 50.f);
+	const FSprawlJacketProfile Utility =
+		USprawlWardrobeModule::DevelopJacketProfile(
+			ESprawlWardrobeOuterwear::UtilityJacket, 18.f, 50.f);
+	const FSprawlJacketProfile Track =
+		USprawlWardrobeModule::DevelopJacketProfile(
+			ESprawlWardrobeOuterwear::TrackJacket, 18.f, 50.f);
+
+	TestTrue(TEXT("A blazer hangs lower than a cropped bomber"),
+		Blazer.HemDropCm > Bomber.HemDropCm);
+	TestTrue(TEXT("A bomber gathers into a hem tighter than its chest"),
+		Bomber.HemHalfWidthCm < Bomber.ChestHalfWidthCm);
+	TestTrue(TEXT("A utility jacket is roomier than a track jacket"),
+		Utility.ChestHalfWidthCm > Track.ChestHalfWidthCm);
+	TestTrue(TEXT("A blazer carries the tallest lapel"),
+		Blazer.CollarHeightCm > Bomber.CollarHeightCm
+		&& Blazer.CollarHeightCm > Track.CollarHeightCm);
+
+	FSprawlJacketProfile Barrel = Bomber;
+	Barrel.ChestHalfDepthCm = Barrel.ChestHalfWidthCm + 1.f;
+	TestFalse(TEXT("A jacket deeper than it is wide is rejected"),
+		USprawlWardrobeModule::ValidateJacketProfile(Barrel, Error));
+
+	FSprawlJacketProfile Broken = Bomber;
+	Broken.ShellHeightCm = NAN;
+	TestFalse(TEXT("A non-finite jacket profile is rejected"),
+		USprawlWardrobeModule::ValidateJacketProfile(Broken, Error));
+
+	const FSprawlJacketProfile Degenerate =
+		USprawlWardrobeModule::DevelopJacketProfile(
+			ESprawlWardrobeOuterwear::BomberJacket, NAN, -0.f);
+	TestTrue(TEXT("Unusable measurements still cut a wearable jacket"),
+		USprawlWardrobeModule::ValidateJacketProfile(Degenerate, Error));
+	return true;
+}
+
 #endif

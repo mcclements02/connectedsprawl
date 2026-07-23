@@ -134,6 +134,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Connected Sprawl|Streetwear")
 	void ClearStreetwear();
 
+	/** Show or hide one authored rigid layer without disturbing the others. */
+	UFUNCTION(BlueprintCallable, Category="Connected Sprawl|Streetwear")
+	void SetLayerVisibility(ESprawlStreetwearLayer Layer, bool bVisible);
+
 	UFUNCTION(BlueprintPure, Category="Connected Sprawl|Streetwear")
 	int32 GetPieceCount() const { return SpawnedPieces.Num(); }
 
@@ -158,6 +162,8 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UStaticMeshComponent>> SpawnedPieces;
+
+	TArray<ESprawlStreetwearLayer> SpawnedPieceLayers;
 
 	TArray<TWeakObjectPtr<UMeshComponent>> HiddenBaseGarments;
 	TWeakObjectPtr<USkeletalMeshComponent> HiddenFootBodyMesh;

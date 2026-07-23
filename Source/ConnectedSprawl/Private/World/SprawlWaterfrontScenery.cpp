@@ -21,7 +21,7 @@ namespace
 // The lake sits in a sunken basin (see ASprawlLakeBasin), so the water surface
 // is well below the Z0 promenade rather than flush with it.
 constexpr float WaterSurfaceZ = -120.f;
-constexpr float ShapeMeshSize = 100.f;
+constexpr float WaterfrontShapeMeshSize = 100.f;
 
 FTransform NormalizeToMeshBounds(const FTransform& DesiredTransform,
 	const UStaticMesh* Mesh)
@@ -39,7 +39,7 @@ FTransform NormalizeToMeshBounds(const FTransform& DesiredTransform,
 	// Layout scales express the desired silhouette dimensions in metres. Asset
 	// normalization lets authored rocks replace primitive cones without baking
 	// knowledge of their import scale into the city layout.
-	const FVector Scale = DesiredTransform.GetScale3D() * ShapeMeshSize / MeshSize;
+	const FVector Scale = DesiredTransform.GetScale3D() * WaterfrontShapeMeshSize / MeshSize;
 	FVector Location = DesiredTransform.GetLocation();
 	const float ScaledMeshBottom =
 		(Bounds.Origin.Z - Bounds.BoxExtent.Z) * Scale.Z;
